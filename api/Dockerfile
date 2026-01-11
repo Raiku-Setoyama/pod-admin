@@ -1,0 +1,55 @@
+# syntax=docker/dockerfile:1
+
+FROM python:3.12-slim AS base
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Set working directory
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
+
+# Development stage
+FROM base AS development
+
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies
+RUN uv sync --frozen --no-install-project --dev
+
+# Copy application code
+COPY . .
+
+# Install project
+RUN uv sync --frozen --dev
+
+# Expose port
+EXPOSE 8000
+
+# Run with uvicorn (development mode with reload)
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+# Production stage
+FROM base AS production
+
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies (production only)
+RUN uv sync --frozen --no-install-project --no-dev
+
+# Copy application code
+COPY . .
+
+# Install project
+RUN uv sync --frozen --no-dev
+
+# Run with uvicorn (production mode)
+# NOTE: --reset flag included temporarily for seeding. Remove after deploy.
+CMD ["sh", "-c", "uv run alembic upgrade head && uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

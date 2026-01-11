@@ -1,0 +1,223 @@
+"""Manufacturer order service for managing orders by manufacturer."""
+
+from datetime import datetime
+from urllib.parse import urlparse
+import os
+
+import httpx
+
+from app.models.order import OrderStatus
+from app.repositories.order_repository import OrderRepository
+from app.repositories.manufacturer_repository import ManufacturerRepository
+from app.schemas.manufacturer import (
+    ManufacturerOrderSummary,
+    ManufacturerOrderSummaryListResponse,
+    ManufacturerOrderItemResponse,
+    ManufacturerOrderItemListResponse,
+    ManufacturerOrderStatusUpdate,
+)
+from app.utils.exceptions import NotFoundError
+from app.utils.order_list_generator import OrderListGenerator, get_product_type_name
+from app.utils.zip_builder import ZipBuilder
+
+
+class ManufacturerOrderService:
+    """Service for manufacturer order operations."""
+
+    def __init__(
+        self,
+        order_repo: OrderRepository,
+        manufacturer_repo: ManufacturerRepository,
+    ):
+        self._order_repo = order_repo
+        self._manufacturer_repo = manufacturer_repo
+        self._order_list_gen = OrderListGenerator()
+
+    async def get_order_summary_list(
+        self,
+        page: int = 1,
+        limit: int = 20,
+    ) -> ManufacturerOrderSummaryListResponse:
+        """メーカー別発注サマリー一覧を取得"""
+        summaries = await self._order_repo.get_ordered_items_summary_by_manufacturer()
+
+        total = len(summaries)
+        offset = (page - 1) * limit
+        paginated = summaries[offset : offset + limit]
+
+        items = [
+            ManufacturerOrderSummary(
+                id=s["id"],
+                name=s["name"],
+                email=s["email"],
+                phone=s["phone"],
+                ordered_item_count=s["ordered_item_count"],
+                total_quantity=s["total_quantity"] or 0,
+                total_amount=s["total_amount"] or 0,
+                lead_time_days=s["lead_time_days"],
+                is_active=s["is_active"],
+            )
+            for s in paginated
+        ]
+
+        return ManufacturerOrderSummaryListResponse(
+            items=items,
+            total=total,
+            page=page,
+            limit=limit,
+        )
+
+    async def get_order_items_by_manufacturer(
+        self,
+        manufacturer_id: str,
+    ) -> ManufacturerOrderItemListResponse:
+        """メーカー別受注明細一覧を取得"""
+        manufacturer = await self._manufacturer_repo.find_by_id(manufacturer_id)
+        if not manufacturer:
+            raise NotFoundError("Manufacturer", manufacturer_id)
+
+        rows = await self._order_repo.find_ordered_items_by_manufacturer_detail(
+            manufacturer_id
+        )
+
+        items = []
+        total_quantity = 0
+        total_amount = 0
+
+        for order_item, order_number, ordered_at, customer_name in rows:
+            items.append(
+                ManufacturerOrderItemResponse(
+                    id=order_item.id,
+                    order_id=order_item.order_id,
+                    order_number=order_number,
+                    uid=order_item.uid,
+                    product_id=order_item.product_id,
+                    product_name=order_item.product_name,
+                    product_type=order_item.product_type,
+                    price=order_item.price,
+                    quantity=order_item.quantity,
+                    size=order_item.size,
+                    position=order_item.position,
+                    color=order_item.color,
+                    design_image_url=order_item.design_image_url,
+                    thumbnail_image_url=order_item.thumbnail_image_url,
+                    ordered_at=ordered_at,
+                    customer_name=customer_name,
+                )
+            )
+            total_quantity += order_item.quantity
+            total_amount += order_item.price * order_item.quantity
+
+        return ManufacturerOrderItemListResponse(
+            manufacturer_id=manufacturer_id,
+            manufacturer_name=manufacturer.name,
+            items=items,
+            total=len(items),
+            total_quantity=total_quantity,
+            total_amount=total_amount,
+        )
+
+    async def update_order_status(
+        self,
+        manufacturer_id: str,
+        data: ManufacturerOrderStatusUpdate,
+    ) -> int:
+        """メーカーの受注ステータスを一括更新"""
+        manufacturer = await self._manufacturer_repo.find_by_id(manufacturer_id)
+        if not manufacturer:
+            raise NotFoundError("Manufacturer", manufacturer_id)
+
+        # Convert string status to OrderStatus enum
+        new_status = OrderStatus(data.status)
+
+        return await self._order_repo.update_status_by_manufacturer(
+            manufacturer_id=manufacturer_id,
+            new_status=new_status,
+            order_item_ids=data.order_item_ids,
+        )
+
+    async def generate_order_documents(
+        self,
+        manufacturer_id: str,
+    ) -> tuple[bytes, str]:
+        """発注資料ZIPを生成"""
+        manufacturer = await self._manufacturer_repo.find_by_id(manufacturer_id)
+        if not manufacturer:
+            raise NotFoundError("Manufacturer", manufacturer_id)
+
+        rows = await self._order_repo.find_ordered_items_by_manufacturer_detail(
+            manufacturer_id
+        )
+
+        # 商品タイプ別にグループ化
+        items_by_type: dict[str, list[dict]] = {}
+        for order_item, order_number, ordered_at, customer_name in rows:
+            product_type = order_item.product_type
+            if product_type not in items_by_type:
+                items_by_type[product_type] = []
+
+            items_by_type[product_type].append(
+                {
+                    "ordered_date": ordered_at,
+                    "order_number": order_number,
+                    "uid": order_item.uid,
+                    "product_name": order_item.product_name,
+                    "quantity": order_item.quantity,
+                    "design_image_url": order_item.design_image_url,
+                    "thumbnail_image_url": order_item.thumbnail_image_url,
+                }
+            )
+
+        # ZIP生成
+        now = datetime.now()
+        zip_builder = ZipBuilder()
+        dir_name = ZipBuilder.create_directory_name(manufacturer.name, now)
+        date_str = now.strftime("%Y%m%d")
+
+        for product_type, type_items in items_by_type.items():
+            product_type_name = get_product_type_name(product_type)
+            type_folder = f"{dir_name}/{product_type_name}_{date_str}"
+
+            # CSV追加
+            csv_filename = f"{product_type_name}-発注リスト_{date_str}.csv"
+            csv_content = self._order_list_gen.generate_order_list_csv(type_items)
+            zip_builder.add_csv(f"{type_folder}/{csv_filename}", csv_content)
+
+            # 画像ダウンロード・追加
+            for item in type_items:
+                order_folder = f"{type_folder}/{item['order_number']}"
+
+                # デザイン画像
+                if item.get("design_image_url"):
+                    content, filename = await self._download_file(
+                        item["design_image_url"]
+                    )
+                    if content:
+                        zip_builder.add_file(f"{order_folder}/{filename}", content)
+
+                # サムネイル画像
+                if item.get("thumbnail_image_url"):
+                    content, filename = await self._download_file(
+                        item["thumbnail_image_url"]
+                    )
+                    if content:
+                        zip_builder.add_file(
+                            f"{order_folder}/thumbnail_{filename}", content
+                        )
+
+        return zip_builder.build(), f"{dir_name}.zip"
+
+    async def _download_file(self, url: str) -> tuple[bytes | None, str]:
+        """URLからファイルをダウンロード"""
+        if not url:
+            return None, ""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(url)
+                if response.status_code == 200:
+                    parsed = urlparse(url)
+                    filename = os.path.basename(parsed.path) or "file"
+                    return response.content, filename
+        except Exception:
+            pass
+        return None, ""

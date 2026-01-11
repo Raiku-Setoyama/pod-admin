@@ -1,0 +1,44 @@
+"""Product model."""
+
+from enum import Enum
+
+from sqlalchemy import Boolean, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+
+class ProductType(str, Enum):
+    """Product types."""
+
+    ACRYLIC_KEYCHAIN = "acrylic_keychain"  # アクリルキーホルダー
+    ACRYLIC_STAND = "acrylic_stand"  # アクリルスタンド
+    STICKER = "sticker"  # ステッカー
+    MUG = "mug"  # マグカップ
+    TSHIRT = "tshirt"  # Tシャツ
+
+
+class Product(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """Product model for product master."""
+
+    __tablename__ = "products"
+
+    product_type: Mapped[str] = mapped_column(String(50), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    size: Mapped[str] = mapped_column(String(50))
+    color: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    manufacturer_id: Mapped[str] = mapped_column(ForeignKey("manufacturers.id"))
+    cost: Mapped[int] = mapped_column(Integer)
+    lead_time_days: Mapped[int] = mapped_column(Integer)
+    order_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Relationships
+    manufacturer: Mapped["Manufacturer"] = relationship(back_populates="products")
+
+    def __repr__(self) -> str:
+        return f"<Product(id={self.id}, name={self.name}, type={self.product_type})>"
+
+
+# Import here to avoid circular imports
+from app.models.manufacturer import Manufacturer  # noqa: E402, F401
