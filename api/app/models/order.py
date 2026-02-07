@@ -114,6 +114,7 @@ class Order(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # Order info
     order_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     status: Mapped[str] = mapped_column(String(20), default=OrderStatus.ORDERED.value, index=True)
+    source: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
 
     # Product info (deprecated - kept for backward compatibility)
     product_id: Mapped[str | None] = mapped_column(ForeignKey("products.id"), nullable=True)

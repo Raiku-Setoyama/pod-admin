@@ -238,12 +238,13 @@ async def get_current_manufacturer(
 # API Key authentication
 async def verify_api_key(
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
-) -> str:
-    """Verify API key from header."""
+) -> tuple[str, str]:
+    """Verify API key from header and return (api_key, source_name)."""
     if not x_api_key:
         raise UnauthorizedError("API key required")
 
-    if x_api_key not in settings.API_KEYS:
+    source = settings.API_KEY_SOURCES.get(x_api_key)
+    if not source:
         raise UnauthorizedError("Invalid API key")
 
-    return x_api_key
+    return x_api_key, source

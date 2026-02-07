@@ -32,7 +32,7 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 async def create_order(
     data: OrderCreate,
     service: OrderService = Depends(get_order_service),
-    api_key: str = Depends(verify_api_key),
+    api_key_info: tuple[str, str] = Depends(verify_api_key),
 ) -> OrderResponse:
     """Create a new order from external sales site (API Key authentication).
 
@@ -63,7 +63,8 @@ async def create_order(
         ]
     }
     """
-    return await service.create(data)
+    _, source = api_key_info
+    return await service.create(data, source=source)
 
 
 @router.get("", response_model=OrderListResponse)

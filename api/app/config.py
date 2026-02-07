@@ -34,7 +34,12 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     API_KEY_HEADER: str = "X-API-Key"
-    API_KEYS: list[str] = ["dev-api-key"]
+    API_KEY_SOURCES: dict[str, str] = {"dev-api-key": "DEV"}
+
+    @property
+    def API_KEYS(self) -> list[str]:
+        """Get list of valid API keys."""
+        return list(self.API_KEY_SOURCES.keys())
 
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]

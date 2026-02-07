@@ -90,6 +90,7 @@ class OrderResponse(BaseModel):
     id: str
     order_number: str
     status: OrderStatus
+    source: str | None = None
     customer_name: str
     customer_postal_code: str
     customer_address: str

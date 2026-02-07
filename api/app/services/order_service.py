@@ -50,6 +50,7 @@ class OrderService:
     async def create(
         self,
         data: OrderCreate,
+        source: str | None = None,
     ) -> OrderResponse:
         """Create a new order from external sales site."""
         # Check for duplicate order number
@@ -77,6 +78,7 @@ class OrderService:
         # Create order
         order = Order(
             order_number=data.order_number,
+            source=source,
             customer_name=data.customer.name,
             customer_postal_code=data.customer.postal_code,
             customer_address=data.customer.address,
@@ -200,6 +202,7 @@ class OrderService:
             id=order.id,
             order_number=order.order_number,
             status=OrderStatus(order.status),
+            source=order.source,
             customer_name=order.customer_name,
             customer_postal_code=order.customer_postal_code,
             customer_address=order.customer_address,
