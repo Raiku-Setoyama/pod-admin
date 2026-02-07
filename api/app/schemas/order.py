@@ -81,6 +81,16 @@ class OrderCreate(BaseModel):
     items: list[OrderItemCreate] = Field(..., min_length=1)
 
 
+# Order shipment info schema
+class OrderShipmentInfo(BaseModel):
+    """Shipment info embedded in order response."""
+
+    id: str
+    status: str  # "pending" | "ready" | "shipped"
+    tracking_number: str | None = None
+    carrier: str | None = None
+
+
 # Order response schema
 class OrderResponse(BaseModel):
     """Order response schema."""
@@ -99,6 +109,7 @@ class OrderResponse(BaseModel):
     ordered_at: datetime
     total_price: int
     items: list[OrderItemResponse] = []
+    shipment: OrderShipmentInfo | None = None
     # Legacy fields (for backward compatibility)
     product_id: str | None = None
     product_name: str | None = None

@@ -8,12 +8,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import { StatusBadge } from "@/components/common/status-badge";
 import type { Shipment } from "@/types/api";
 
 interface ShipmentListProps {
   shipments: Shipment[];
   onRowClick?: (shipment: Shipment) => void;
+  selectedIds: Set<string>;
+  onSelectChange: (ids: Set<string>) => void;
 }
 
 function formatDate(dateString: string): string {
@@ -25,12 +28,49 @@ function formatDate(dateString: string): string {
   });
 }
 
-export function ShipmentList({ shipments, onRowClick }: ShipmentListProps) {
+export function ShipmentList({
+  shipments,
+  onRowClick,
+  selectedIds,
+  onSelectChange,
+}: ShipmentListProps) {
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      onSelectChange(new Set(shipments.map((s) => s.id)));
+    } else {
+      onSelectChange(new Set());
+    }
+  };
+
+  const handleItemSelect = (id: string, checked: boolean) => {
+    const newSelected = new Set(selectedIds);
+    if (checked) {
+      newSelected.add(id);
+    } else {
+      newSelected.delete(id);
+    }
+    onSelectChange(newSelected);
+  };
+
+  const isAllSelected = shipments.length > 0 && selectedIds.size === shipments.length;
+  const isSomeSelected = selectedIds.size > 0 && !isAllSelected;
+
   return (
     <div className="rounded-lg border border-border bg-white">
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-[50px]">
+              <Checkbox
+                checked={isAllSelected}
+                ref={(el) => {
+                  if (el) {
+                    (el as HTMLButtonElement & { indeterminate: boolean }).indeterminate = isSomeSelected;
+                  }
+                }}
+                onCheckedChange={handleSelectAll}
+              />
+            </TableHead>
             <TableHead>配送ID</TableHead>
             <TableHead>宛先</TableHead>
             <TableHead>商品数</TableHead>
@@ -42,7 +82,7 @@ export function ShipmentList({ shipments, onRowClick }: ShipmentListProps) {
         <TableBody>
           {shipments.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+              <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                 該当する配送がありません
               </TableCell>
             </TableRow>
@@ -53,6 +93,14 @@ export function ShipmentList({ shipments, onRowClick }: ShipmentListProps) {
                 className="cursor-pointer hover:bg-accent/50"
                 onClick={() => onRowClick?.(shipment)}
               >
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  <Checkbox
+                    checked={selectedIds.has(shipment.id)}
+                    onCheckedChange={(checked) =>
+                      handleItemSelect(shipment.id, !!checked)
+                    }
+                  />
+                </TableCell>
                 <TableCell>
                   <div className="font-medium">{shipment.id.slice(0, 8)}</div>
                 </TableCell>

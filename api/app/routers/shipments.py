@@ -10,7 +10,8 @@ from app.dependencies import get_current_admin, get_shipment_service
 from app.models.shipment import ShipmentStatus
 from app.models.user import User
 from app.schemas.shipment import (
-    ShipmentCreate,
+    ShipmentBulkStatusUpdate,
+    ShipmentBulkStatusUpdateResponse,
     ShipmentListResponse,
     ShipmentResponse,
     ShipmentStatusUpdate,
@@ -60,14 +61,14 @@ async def list_shipments(
     )
 
 
-@router.post("", response_model=ShipmentResponse, status_code=201)
-async def create_shipment(
-    data: ShipmentCreate,
+@router.patch("/bulk-status", response_model=ShipmentBulkStatusUpdateResponse)
+async def bulk_update_shipment_status(
+    data: ShipmentBulkStatusUpdate,
     service: Annotated[ShipmentService, Depends(get_shipment_service)],
     current_user: Annotated[User, Depends(get_current_admin)],
-) -> ShipmentResponse:
-    """Create a new shipment."""
-    return await service.create(data)
+) -> ShipmentBulkStatusUpdateResponse:
+    """配送ステータスを一括更新"""
+    return await service.bulk_update_status(data)
 
 
 @router.get("/{shipment_id}", response_model=ShipmentResponse)

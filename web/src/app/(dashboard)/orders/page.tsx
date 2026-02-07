@@ -8,14 +8,17 @@ import { PageLoading } from "@/components/common/loading-spinner";
 import { OrderFilters } from "@/features/orders/components/order-filters";
 import { OrderList } from "@/features/orders/components/order-list";
 import { useOrders } from "@/features/orders/hooks/use-orders";
-import type { Order, OrderStatus } from "@/types/api";
+import type { Order, OrderStatus, ShipmentStatus } from "@/types/api";
+
+// 表示用ステータス（Shipmentステータスを含む）
+type DisplayStatus = OrderStatus | ShipmentStatus;
 
 export default function OrdersPage() {
   const router = useRouter();
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<OrderStatus | null>(null);
+  const [status, setStatus] = useState<DisplayStatus | null>(null);
 
   const { orders, total, isLoading } = useOrders({
     page,

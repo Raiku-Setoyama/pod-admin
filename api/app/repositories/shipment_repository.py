@@ -157,3 +157,44 @@ class ShipmentRepository:
         await self._db.flush()
         await self._db.refresh(shipment)
         return shipment
+
+    async def find_by_order_ids(self, order_ids: list[str]) -> dict[str, Shipment]:
+        """Find shipments by order IDs.
+
+        Returns a dict mapping order_id -> Shipment for batch lookup (N+1 avoidance).
+        """
+        if not order_ids:
+            return {}
+
+        query = (
+            select(Shipment, ShipmentItem.order_id)
+            .join(ShipmentItem, ShipmentItem.shipment_id == Shipment.id)
+            .where(ShipmentItem.order_id.in_(order_ids))
+        )
+
+        result = await self._db.execute(query)
+        rows = result.all()
+
+        # Map order_id -> Shipment
+        order_shipment_map: dict[str, Shipment] = {}
+        for shipment, order_id in rows:
+            order_shipment_map[order_id] = shipment
+
+        return order_shipment_map
+
+    async def exists_for_order(self, order_id: str) -> bool:
+        """Check if a shipment already exists for the given order.
+
+        Args:
+            order_id: The order ID to check.
+
+        Returns:
+            True if a shipment exists for this order, False otherwise.
+        """
+        query = (
+            select(func.count(ShipmentItem.id))
+            .where(ShipmentItem.order_id == order_id)
+        )
+        result = await self._db.execute(query)
+        count = result.scalar() or 0
+        return count > 0

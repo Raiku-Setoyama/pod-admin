@@ -6,9 +6,10 @@ import os
 
 import httpx
 
-from app.models.order import OrderStatus
+from app.models.order import Order, OrderStatus
 from app.repositories.order_repository import OrderRepository
 from app.repositories.manufacturer_repository import ManufacturerRepository
+from app.repositories.shipment_repository import ShipmentRepository
 from app.schemas.manufacturer import (
     ManufacturerOrderSummary,
     ManufacturerOrderSummaryListResponse,
@@ -28,9 +29,11 @@ class ManufacturerOrderService:
         self,
         order_repo: OrderRepository,
         manufacturer_repo: ManufacturerRepository,
+        shipment_repo: ShipmentRepository,
     ):
         self._order_repo = order_repo
         self._manufacturer_repo = manufacturer_repo
+        self._shipment_repo = shipment_repo
         self._order_list_gen = OrderListGenerator()
 
     async def get_order_summary_list(
@@ -128,7 +131,11 @@ class ManufacturerOrderService:
         manufacturer_id: str,
         data: ManufacturerOrderStatusUpdate,
     ) -> int:
-        """メーカーの受注ステータスを一括更新"""
+        """メーカーの受注ステータスを一括更新
+
+        delivered ステータスへの更新時は、各受注に対してShipmentを自動作成します。
+        Shipment作成に失敗した場合、トランザクション全体がロールバックされます。
+        """
         manufacturer = await self._manufacturer_repo.find_by_id(manufacturer_id)
         if not manufacturer:
             raise NotFoundError("Manufacturer", manufacturer_id)
@@ -136,10 +143,35 @@ class ManufacturerOrderService:
         # Convert string status to OrderStatus enum
         new_status = OrderStatus(data.status)
 
-        return await self._order_repo.update_status_by_manufacturer(
+        updated_orders = await self._order_repo.update_status_by_manufacturer(
             manufacturer_id=manufacturer_id,
             new_status=new_status,
             order_item_ids=data.order_item_ids,
+        )
+
+        # delivered になった場合は Shipment を自動作成
+        if new_status == OrderStatus.DELIVERED:
+            for order in updated_orders:
+                await self._create_shipment_for_order(order)
+
+        return len(updated_orders)
+
+    async def _create_shipment_for_order(self, order: Order) -> None:
+        """Create a shipment for the delivered order.
+
+        This method is idempotent - if a shipment already exists for the order,
+        it will not create a duplicate.
+        """
+        # Check if shipment already exists (prevent duplicates)
+        if await self._shipment_repo.exists_for_order(order.id):
+            return
+
+        await self._shipment_repo.create(
+            order_ids=[order.id],
+            customer_name=order.customer_name,
+            customer_postal_code=order.customer_postal_code,
+            customer_address=order.customer_address,
+            customer_phone=order.customer_phone,
         )
 
     async def generate_order_documents(

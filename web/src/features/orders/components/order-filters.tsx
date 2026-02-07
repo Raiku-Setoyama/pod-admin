@@ -9,21 +9,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { OrderStatus } from "@/types/api";
+import type { OrderStatus, ShipmentStatus } from "@/types/api";
 
-const statusOptions: { value: OrderStatus | "all"; label: string }[] = [
+// 表示用ステータス（Shipmentステータスを含む）
+type DisplayStatus = OrderStatus | ShipmentStatus;
+
+const statusOptions: { value: DisplayStatus | "all"; label: string }[] = [
   { value: "all", label: "全てのステータス" },
   { value: "ordered", label: "発注中" },
   { value: "manufacturing", label: "製造中" },
-  { value: "delivered", label: "納入済" },
+  { value: "pending", label: "配送準備中" },
+  { value: "ready", label: "準備完了" },
   { value: "shipped", label: "発送完了" },
 ];
 
 interface OrderFiltersProps {
   search: string;
-  status: OrderStatus | null;
+  status: DisplayStatus | null;
   onSearchChange: (value: string) => void;
-  onStatusChange: (value: OrderStatus | null) => void;
+  onStatusChange: (value: DisplayStatus | null) => void;
 }
 
 export function OrderFilters({
@@ -47,7 +51,7 @@ export function OrderFilters({
       <Select
         value={status ?? "all"}
         onValueChange={(value) =>
-          onStatusChange(value === "all" ? null : (value as OrderStatus))
+          onStatusChange(value === "all" ? null : (value as DisplayStatus))
         }
       >
         <SelectTrigger className="w-[180px]">

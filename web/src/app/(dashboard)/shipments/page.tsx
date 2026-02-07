@@ -2,8 +2,25 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Upload } from "lucide-react";
+import { RefreshCw, Upload } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { apiClient } from "@/lib/api/client";
 import { PageContainer } from "@/components/layout/page-container";
 import { Pagination } from "@/components/common/pagination";
 import { PageLoading } from "@/components/common/loading-spinner";
@@ -34,7 +51,13 @@ export default function ShipmentsPage() {
   const [sortBy, setSortBy] = useState<SortBy>("created_at");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
 
-  const { shipments, total, isLoading } = useShipments({
+  // 一括更新用state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBulkStatusDialogOpen, setIsBulkStatusDialogOpen] = useState(false);
+  const [bulkNewStatus, setBulkNewStatus] = useState<ShipmentStatus>("ready");
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const { shipments, total, isLoading, mutate } = useShipments({
     page,
     limit,
     status,
@@ -77,19 +100,47 @@ export default function ShipmentsPage() {
     setPage(1);
   };
 
+  const handleBulkStatusUpdate = async () => {
+    setIsUpdating(true);
+    try {
+      const response = await apiClient("/shipments/bulk-status", {
+        method: "PATCH",
+        body: JSON.stringify({
+          shipment_ids: Array.from(selectedIds),
+          status: bulkNewStatus,
+        }),
+        headers: { "Content-Type": "application/json" },
+      });
+      toast.success(`${response.updated_count}件のステータスを更新しました`);
+      if (response.failed_count > 0) {
+        toast.warning(`${response.failed_count}件は更新できませんでした（ステータス遷移不可）`);
+      }
+      setIsBulkStatusDialogOpen(false);
+      setSelectedIds(new Set());
+      mutate();
+    } catch (error) {
+      console.error("Status update failed:", error);
+      toast.error("ステータス更新に失敗しました");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   return (
     <PageContainer
       title="配送一覧"
       description="配送管理・追跡情報"
       actions={
         <div className="flex gap-2">
+          {selectedIds.size > 0 && (
+            <Button onClick={() => setIsBulkStatusDialogOpen(true)}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              選択した{selectedIds.size}件を更新
+            </Button>
+          )}
           <Button variant="outline">
             <Upload className="h-4 w-4" />
             伝票番号インポート
-          </Button>
-          <Button>
-            <Plus className="h-4 w-4" />
-            新規配送
           </Button>
         </div>
       }
@@ -126,7 +177,12 @@ export default function ShipmentsPage() {
           <PageLoading />
         ) : (
           <>
-            <ShipmentList shipments={shipments} onRowClick={handleRowClick} />
+            <ShipmentList
+              shipments={shipments}
+              onRowClick={handleRowClick}
+              selectedIds={selectedIds}
+              onSelectChange={setSelectedIds}
+            />
             <Pagination
               page={page}
               limit={limit}
@@ -140,6 +196,44 @@ export default function ShipmentsPage() {
           </>
         )}
       </div>
+
+      {/* 配送ステータス一括更新ダイアログ */}
+      <Dialog open={isBulkStatusDialogOpen} onOpenChange={setIsBulkStatusDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>配送ステータス一括更新</DialogTitle>
+            <DialogDescription>
+              選択された{selectedIds.size}件の配送ステータスを更新します。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Select
+              value={bulkNewStatus}
+              onValueChange={(v) => setBulkNewStatus(v as ShipmentStatus)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pending">配送準備中</SelectItem>
+                <SelectItem value="ready">配送準備完了</SelectItem>
+                <SelectItem value="shipped">発送済み</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsBulkStatusDialogOpen(false)}
+            >
+              キャンセル
+            </Button>
+            <Button onClick={handleBulkStatusUpdate} disabled={isUpdating}>
+              {isUpdating ? "更新中..." : "一括更新"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageContainer>
   );
 }

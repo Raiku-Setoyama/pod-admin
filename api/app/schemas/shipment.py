@@ -77,3 +77,20 @@ class ShipmentListResponse(BaseModel):
     total: int
     page: int
     limit: int
+
+
+class ShipmentBulkStatusUpdate(BaseModel):
+    """配送ステータス一括更新スキーマ"""
+
+    shipment_ids: list[str] = Field(..., min_length=1)
+    status: ShipmentStatus
+    tracking_number: str | None = None
+    carrier: str | None = None
+
+
+class ShipmentBulkStatusUpdateResponse(BaseModel):
+    """配送ステータス一括更新レスポンス"""
+
+    updated_count: int
+    failed_count: int
+    failed_ids: list[str]

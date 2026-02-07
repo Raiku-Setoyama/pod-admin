@@ -28,6 +28,13 @@ export interface ManufacturingDataInfo {
   download_url: string | null;
 }
 
+export interface OrderShipmentInfo {
+  id: string;
+  status: ShipmentStatus;
+  tracking_number: string | null;
+  carrier: string | null;
+}
+
 export interface Order {
   id: string;
   order_number: string;
@@ -41,6 +48,7 @@ export interface Order {
   ordered_at: string;
   total_price: number;
   items: OrderItem[];
+  shipment: OrderShipmentInfo | null;
   // Legacy fields (for backward compatibility)
   product_id: string | null;
   product_name: string | null;

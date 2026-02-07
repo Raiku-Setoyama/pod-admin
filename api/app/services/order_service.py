@@ -20,6 +20,8 @@ from app.models.order import (
 from app.models.product import ProductType
 from app.repositories.order_repository import OrderRepository
 from app.repositories.product_repository import ProductRepository
+from app.repositories.shipment_repository import ShipmentRepository
+from app.models.shipment import Shipment
 from app.schemas.order import (
     ManufacturingDataInfo,
     OrderCreate,
@@ -27,6 +29,7 @@ from app.schemas.order import (
     OrderItemResponse,
     OrderListResponse,
     OrderResponse,
+    OrderShipmentInfo,
 )
 from app.utils.exceptions import (
     DuplicateError,
@@ -43,9 +46,11 @@ class OrderService:
         self,
         order_repo: OrderRepository,
         product_repo: ProductRepository,
+        shipment_repo: ShipmentRepository,
     ):
         self._order_repo = order_repo
         self._product_repo = product_repo
+        self._shipment_repo = shipment_repo
 
     async def create(
         self,
@@ -106,7 +111,7 @@ class OrderService:
             order.items.append(order_item)
 
         order = await self._order_repo.create(order)
-        return self._to_response(order)
+        return await self._to_response(order)
 
     def _validate_item_attributes(self, item_data: OrderItemCreate) -> None:
         """Validate item attributes based on product_type."""
@@ -126,7 +131,8 @@ class OrderService:
         order = await self._order_repo.find_by_id(order_id)
         if not order:
             raise OrderNotFoundError(order_id)
-        return self._to_response(order)
+
+        return await self._to_response(order)
 
     async def list(
         self,
@@ -149,8 +155,18 @@ class OrderService:
             search=search,
         )
 
+        # Fetch shipment info for all orders in batch (N+1 avoidance)
+        order_ids = [o.id for o in orders]
+        shipment_map = await self._shipment_repo.find_by_order_ids(order_ids)
+
+        # Convert to responses with pre-fetched shipments
+        items = [
+            await self._to_response(o, shipment_map.get(o.id))
+            for o in orders
+        ]
+
         return OrderListResponse(
-            items=[self._to_response(o) for o in orders],
+            items=items,
             total=total,
             page=page,
             limit=limit,
@@ -164,10 +180,49 @@ class OrderService:
 
         order.status = status.value
         order = await self._order_repo.update(order)
-        return self._to_response(order)
 
-    def _to_response(self, order: Order) -> OrderResponse:
-        """Convert order model to response schema."""
+        # delivered になったら Shipment を自動作成
+        if status == OrderStatus.DELIVERED:
+            await self._create_shipment_for_order(order)
+
+        return await self._to_response(order)
+
+    async def _create_shipment_for_order(self, order: Order) -> None:
+        """Create a shipment for the delivered order.
+
+        This method is idempotent - if a shipment already exists for the order,
+        it will not create a duplicate. The shipment creation happens within
+        the same transaction as the order status update, ensuring atomicity.
+
+        Args:
+            order: The order that was just marked as delivered.
+
+        Raises:
+            Exception: If shipment creation fails, the entire transaction
+                       (including order status update) will be rolled back.
+        """
+        # Check if shipment already exists (prevent duplicates)
+        if await self._shipment_repo.exists_for_order(order.id):
+            return
+
+        await self._shipment_repo.create(
+            order_ids=[order.id],
+            customer_name=order.customer_name,
+            customer_postal_code=order.customer_postal_code,
+            customer_address=order.customer_address,
+            customer_phone=order.customer_phone,
+        )
+
+    async def _to_response(
+        self, order: Order, shipment: Shipment | None = None
+    ) -> OrderResponse:
+        """Convert order model to response schema.
+
+        Args:
+            order: Order model to convert.
+            shipment: Optional shipment info. If None, will be fetched from DB.
+                      Pass explicitly for batch operations to avoid N+1.
+        """
         # Legacy manufacturing data (for backward compatibility)
         manufacturing_data = None
         if order.manufacturing_data_path:
@@ -198,6 +253,21 @@ class OrderService:
             for item in order.items
         ]
 
+        # Fetch shipment if not provided (for single order operations)
+        if shipment is None:
+            shipment_map = await self._shipment_repo.find_by_order_ids([order.id])
+            shipment = shipment_map.get(order.id)
+
+        # Convert shipment info
+        shipment_info = None
+        if shipment:
+            shipment_info = OrderShipmentInfo(
+                id=shipment.id,
+                status=shipment.status,
+                tracking_number=shipment.tracking_number,
+                carrier=shipment.carrier,
+            )
+
         return OrderResponse(
             id=order.id,
             order_number=order.order_number,
@@ -211,6 +281,7 @@ class OrderService:
             ordered_at=order.ordered_at,
             total_price=order.total_price,
             items=items,
+            shipment=shipment_info,
             # Legacy fields (for backward compatibility)
             product_id=order.product_id,
             product_name=order.product_name,

@@ -29,6 +29,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Download, Factory, Loader2, Package, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
 import type { ManufacturerOrderItemListResponse, ProductType } from "@/types/api";
 import { ManufacturerOrderFilters } from "./manufacturer-order-filters";
@@ -95,15 +96,33 @@ export function ManufacturerOrderDetail({
     try {
       await apiClient(`/manufacturers/${data.manufacturer_id}/order-status`, {
         method: "PATCH",
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({
+          status: newStatus,
+          order_item_ids: selectedIds.size > 0 ? Array.from(selectedIds) : undefined,
+        }),
         headers: {
           "Content-Type": "application/json",
         },
       });
+
+      // 納入済みの場合、配送リスト追加の通知
+      if (newStatus === "delivered") {
+        const count = selectedIds.size > 0 ? selectedIds.size : data.total;
+        toast.success(`${count}件の配送が配送リストに追加されました`, {
+          description: "配送ステータス: 配送準備中",
+          action: {
+            label: "配送リストを見る",
+            onClick: () => window.location.href = "/shipments",
+          },
+        });
+      }
+
       setIsStatusDialogOpen(false);
+      setSelectedIds(new Set());
       onStatusUpdate?.();
     } catch (error) {
       console.error("Status update failed:", error);
+      toast.error("ステータス更新に失敗しました");
     } finally {
       setIsUpdating(false);
     }
@@ -199,7 +218,9 @@ export function ManufacturerOrderDetail({
                 disabled={data.total === 0}
               >
                 <RefreshCw className="h-4 w-4 mr-2" />
-                ステータス一括更新
+                {selectedIds.size > 0
+                  ? `選択した${selectedIds.size}件を更新`
+                  : "ステータス一括更新"}
               </Button>
             </div>
           </div>
@@ -336,8 +357,9 @@ export function ManufacturerOrderDetail({
           <DialogHeader>
             <DialogTitle>ステータス一括更新</DialogTitle>
             <DialogDescription>
-              {data.manufacturer_name}の発注中明細{data.total}
-              件のステータスを一括更新します。
+              {selectedIds.size > 0
+                ? `${data.manufacturer_name}の選択された${selectedIds.size}件のステータスを更新します。`
+                : `${data.manufacturer_name}の発注中明細${data.total}件のステータスを一括更新します。`}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">

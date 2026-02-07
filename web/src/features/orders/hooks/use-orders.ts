@@ -1,11 +1,14 @@
 import useSWR from "swr";
 import { apiClient } from "@/lib/api/client";
-import type { OrderListResponse, OrderStatus } from "@/types/api";
+import type { OrderListResponse, OrderStatus, ShipmentStatus } from "@/types/api";
+
+// 表示用ステータス（Shipmentステータスを含む）
+type DisplayStatus = OrderStatus | ShipmentStatus;
 
 interface UseOrdersParams {
   page?: number;
   limit?: number;
-  status?: OrderStatus | null;
+  status?: DisplayStatus | null;
   search?: string;
   ordered_from?: string;
   ordered_to?: string;

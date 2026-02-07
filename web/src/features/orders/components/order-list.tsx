@@ -9,11 +9,19 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/common/status-badge";
-import type { Order } from "@/types/api";
+import type { Order, OrderStatus, ShipmentStatus } from "@/types/api";
 
 interface OrderListProps {
   orders: Order[];
   onRowClick?: (order: Order) => void;
+}
+
+function getDisplayStatus(order: Order): OrderStatus | ShipmentStatus {
+  // Shipmentがある場合はShipmentのステータスを優先表示
+  if (order.shipment) {
+    return order.shipment.status;
+  }
+  return order.status;
 }
 
 function formatDate(dateString: string): string {
@@ -98,7 +106,7 @@ export function OrderList({ orders, onRowClick }: OrderListProps) {
                   </TableCell>
                   <TableCell>{formatDate(order.ordered_at)}</TableCell>
                   <TableCell>
-                    <StatusBadge status={order.status} />
+                    <StatusBadge status={getDisplayStatus(order)} />
                   </TableCell>
                 </TableRow>
               );

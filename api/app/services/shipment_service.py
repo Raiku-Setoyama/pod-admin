@@ -11,6 +11,8 @@ from app.models.shipment import Shipment, ShipmentStatus
 from app.repositories.order_repository import OrderRepository
 from app.repositories.shipment_repository import ShipmentRepository
 from app.schemas.shipment import (
+    ShipmentBulkStatusUpdate,
+    ShipmentBulkStatusUpdateResponse,
     ShipmentCreate,
     ShipmentItemResponse,
     ShipmentListResponse,
@@ -45,6 +47,9 @@ class ShipmentService:
                 raise ValidationError(f"Order {order_id} not found")
             if order.status != OrderStatus.DELIVERED.value:
                 raise ValidationError(f"Order {order_id} is not in delivered status")
+            # Check if shipment already exists for this order (prevent duplicates)
+            if await self._shipment_repo.exists_for_order(order_id):
+                raise ValidationError(f"Order {order_id} already has a shipment")
             if first_order is None:
                 first_order = order
 
@@ -178,6 +183,47 @@ class ShipmentService:
                 await self._shipment_repo.update(shipment)
                 results.append(await self._to_response(shipment))
         return results
+
+    async def bulk_update_status(
+        self, data: ShipmentBulkStatusUpdate
+    ) -> ShipmentBulkStatusUpdateResponse:
+        """配送ステータスを一括更新（バリデーション付き）"""
+        updated_count = 0
+        failed_count = 0
+        failed_ids = []
+
+        for shipment_id in data.shipment_ids:
+            shipment = await self._shipment_repo.find_by_id(shipment_id)
+            if not shipment:
+                failed_ids.append(shipment_id)
+                failed_count += 1
+                continue
+
+            current_status = ShipmentStatus(shipment.status)
+            if not self._is_valid_transition(current_status, data.status):
+                failed_ids.append(shipment_id)
+                failed_count += 1
+                continue
+
+            shipment.status = data.status.value
+            if data.tracking_number:
+                shipment.tracking_number = data.tracking_number
+            if data.carrier:
+                shipment.carrier = data.carrier
+
+            if data.status == ShipmentStatus.SHIPPED:
+                shipment.shipped_at = datetime.now(timezone.utc)
+                for item in shipment.items:
+                    await self._order_repo.update_status(item.order_id, OrderStatus.SHIPPED)
+
+            await self._shipment_repo.update(shipment)
+            updated_count += 1
+
+        return ShipmentBulkStatusUpdateResponse(
+            updated_count=updated_count,
+            failed_count=failed_count,
+            failed_ids=failed_ids,
+        )
 
     def _is_valid_transition(
         self, current: ShipmentStatus, target: ShipmentStatus

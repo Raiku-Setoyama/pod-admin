@@ -265,7 +265,7 @@ class OrderRepository:
         manufacturer_id: str,
         new_status: OrderStatus,
         order_item_ids: list[str] | None = None,
-    ) -> int:
+    ) -> list[Order]:
         """メーカーの受注ステータスを一括更新
 
         指定されたメーカーに紐づくORDEREDステータスの受注を一括更新。
@@ -276,7 +276,7 @@ class OrderRepository:
             order_item_ids: 更新対象のOrderItem ID（指定がなければ全て）
 
         Returns:
-            更新された受注数
+            更新されたOrderのリスト
         """
         from app.models.product import Product
 
@@ -297,12 +297,12 @@ class OrderRepository:
         order_ids = [row[0] for row in result.all()]
 
         # Orderのステータスを更新
-        updated_count = 0
+        updated_orders: list[Order] = []
         for order_id in order_ids:
             order = await self.find_by_id(order_id)
             if order:
                 order.status = new_status.value
                 await self._db.flush()
-                updated_count += 1
+                updated_orders.append(order)
 
-        return updated_count
+        return updated_orders

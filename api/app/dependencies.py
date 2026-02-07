@@ -108,9 +108,10 @@ def get_manufacturer_service(
 def get_order_service(
     order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
     product_repo: Annotated[ProductRepository, Depends(get_product_repository)],
+    shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
 ) -> OrderService:
     """Get order service."""
-    return OrderService(order_repo, product_repo)
+    return OrderService(order_repo, product_repo, shipment_repo)
 
 
 def get_shipment_service(
@@ -149,9 +150,10 @@ def get_order_list_service(
 def get_manufacturer_order_service(
     order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
     manufacturer_repo: Annotated[ManufacturerRepository, Depends(get_manufacturer_repository)],
+    shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
 ) -> ManufacturerOrderService:
     """Get manufacturer order service."""
-    return ManufacturerOrderService(order_repo, manufacturer_repo)
+    return ManufacturerOrderService(order_repo, manufacturer_repo, shipment_repo)
 
 
 def get_manufacturer_portal_service(
