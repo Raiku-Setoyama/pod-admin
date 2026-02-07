@@ -3,20 +3,28 @@
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Form, Header, Query
 from fastapi.responses import StreamingResponse
 
 from app.dependencies import (
+    get_chat_service,
     get_current_manufacturer,
     get_manufacturer_order_service,
     get_manufacturer_portal_service,
 )
+from app.models.chat_message import MessageSender
 from app.models.manufacturer import Manufacturer
+from app.schemas.chat import (
+    ChatMessageCreate,
+    ChatMessageListResponse,
+    ChatMessageResponse,
+)
 from app.schemas.manufacturer import ManufacturerOrderItemListResponse
 from app.schemas.manufacturer_portal import (
     ManufacturerLoginRequest,
     ManufacturerLoginResponse,
 )
+from app.services.chat_service import ChatService
 from app.services.manufacturer_order_service import ManufacturerOrderService
 from app.services.manufacturer_portal_service import ManufacturerPortalService
 from app.utils.security import decode_token
@@ -101,4 +109,41 @@ async def download_order_documents(
         headers={
             "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
         },
+    )
+
+
+@router.get("/chat", response_model=ChatMessageListResponse)
+async def get_chat_messages(
+    manufacturer: Annotated[Manufacturer, Depends(get_current_manufacturer)],
+    service: Annotated[ChatService, Depends(get_chat_service)],
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+) -> ChatMessageListResponse:
+    """メーカー向けチャットメッセージ一覧取得
+
+    ログイン中のメーカーのチャットメッセージを取得します。
+    """
+    return await service.get_messages(
+        manufacturer_id=str(manufacturer.id),
+        page=page,
+        limit=limit,
+    )
+
+
+@router.post("/chat", response_model=ChatMessageResponse)
+async def send_chat_message(
+    content: Annotated[str, Form()],
+    manufacturer: Annotated[Manufacturer, Depends(get_current_manufacturer)],
+    service: Annotated[ChatService, Depends(get_chat_service)],
+) -> ChatMessageResponse:
+    """メーカー向けチャットメッセージ送信
+
+    ログイン中のメーカーとしてメッセージを送信します。
+    """
+    return await service.send_message(
+        manufacturer_id=str(manufacturer.id),
+        data=ChatMessageCreate(content=content),
+        sender_type=MessageSender.MANUFACTURER,
+        sender_name=manufacturer.name,
+        attachments=None,
     )

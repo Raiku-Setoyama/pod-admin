@@ -9,13 +9,20 @@ from fastapi.responses import StreamingResponse
 from urllib.parse import quote
 
 from app.dependencies import (
+    get_chat_service,
     get_current_admin,
     get_manufacturer_order_service,
     get_manufacturer_service,
     get_order_list_service,
 )
+from app.models.chat_message import MessageSender
 from app.models.order import OrderStatus
 from app.models.user import User
+from app.schemas.chat import (
+    ChatMessageCreate,
+    ChatMessageListResponse,
+    ChatMessageResponse,
+)
 from app.schemas.manufacturer import (
     ManufacturerCreate,
     ManufacturerListResponse,
@@ -25,6 +32,7 @@ from app.schemas.manufacturer import (
     ManufacturerResponse,
     ManufacturerUpdate,
 )
+from app.services.chat_service import ChatService
 from app.services.manufacturer_order_service import ManufacturerOrderService
 from app.services.manufacturer_service import ManufacturerService
 from app.services.order_list_service import OrderListService
@@ -218,3 +226,39 @@ async def update_manufacturer_order_status(
     """
     updated_count = await service.update_order_status(manufacturer_id, data)
     return {"updated_count": updated_count}
+
+
+# === チャットエンドポイント ===
+
+
+@router.get("/{manufacturer_id}/chat", response_model=ChatMessageListResponse)
+async def get_chat_messages(
+    manufacturer_id: str,
+    service: Annotated[ChatService, Depends(get_chat_service)],
+    current_user: Annotated[User, Depends(get_current_admin)],
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+) -> ChatMessageListResponse:
+    """メーカーとのチャットメッセージ一覧を取得"""
+    return await service.get_messages(
+        manufacturer_id=manufacturer_id,
+        page=page,
+        limit=limit,
+    )
+
+
+@router.post("/{manufacturer_id}/chat", response_model=ChatMessageResponse)
+async def send_chat_message(
+    manufacturer_id: str,
+    data: ChatMessageCreate,
+    service: Annotated[ChatService, Depends(get_chat_service)],
+    current_user: Annotated[User, Depends(get_current_admin)],
+) -> ChatMessageResponse:
+    """メーカーにチャットメッセージを送信"""
+    return await service.send_message(
+        manufacturer_id=manufacturer_id,
+        data=data,
+        sender_type=MessageSender.ADMIN,
+        sender_name=current_user.name,
+        attachments=None,
+    )
