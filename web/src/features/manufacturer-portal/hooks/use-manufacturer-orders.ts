@@ -32,6 +32,12 @@ export interface ManufacturerOrderItemsResponse {
   total_amount: number;
 }
 
+export interface ManufacturerOrderFilters {
+  orderedFrom?: string;
+  orderedTo?: string;
+  productType?: string | null;
+}
+
 const fetcher = async (url: string) => {
   const token = localStorage.getItem("manufacturer_token");
   if (!token) {
@@ -44,7 +50,7 @@ const fetcher = async (url: string) => {
   });
 };
 
-export function useManufacturerOrderItems() {
+export function useManufacturerOrderItems(filters?: ManufacturerOrderFilters) {
   // useStateでトークンを管理し、変更時にSWRキーを更新させる
   const [token, setToken] = useState<string | null>(null);
 
@@ -54,9 +60,23 @@ export function useManufacturerOrderItems() {
     setToken(storedToken);
   }, []);
 
-  const { data, error, isLoading, mutate } = useSWR<ManufacturerOrderItemsResponse>(
-    token ? `/manufacturer-portal/order-items` : null,
-    fetcher
+  // クエリパラメータ構築
+  const queryParams = new URLSearchParams();
+  if (filters?.orderedFrom) queryParams.set("ordered_from", filters.orderedFrom);
+  if (filters?.orderedTo) queryParams.set("ordered_to", filters.orderedTo);
+  if (filters?.productType) queryParams.set("product_type", filters.productType);
+
+  const queryString = queryParams.toString();
+  const url = token
+    ? `/manufacturer-portal/order-items${queryString ? `?${queryString}` : ""}`
+    : null;
+
+  const { data, error, isLoading, isValidating, mutate } = useSWR<ManufacturerOrderItemsResponse>(
+    url,
+    fetcher,
+    {
+      keepPreviousData: true,
+    }
   );
 
   return {
@@ -66,6 +86,8 @@ export function useManufacturerOrderItems() {
     totalQuantity: data?.total_quantity ?? 0,
     totalAmount: data?.total_amount ?? 0,
     isLoading: token === null || isLoading, // トークン取得前もloading扱い
+    // フィルター変更中はisValidatingがtrueになる（データ再取得中）
+    isFiltering: isValidating && !isLoading,
     error,
     mutate,
   };
@@ -75,10 +97,23 @@ export function useManufacturerOrderItems() {
  * メーカー単位で全発注資料をダウンロード（ZIP形式）
  * ログイン中のメーカーの全発注中アイテムを含むZIPを取得します
  */
-export async function downloadAllOrderDocuments(): Promise<Blob> {
+export async function downloadAllOrderDocuments(
+  filters?: ManufacturerOrderFilters,
+  orderItemIds?: string[]
+): Promise<Blob> {
   const token = localStorage.getItem("manufacturer_token");
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-  const response = await fetch(`${apiUrl}/manufacturer-portal/order-documents`, {
+
+  const params = new URLSearchParams();
+  if (filters?.orderedFrom) params.set("ordered_from", filters.orderedFrom);
+  if (filters?.orderedTo) params.set("ordered_to", filters.orderedTo);
+  if (filters?.productType) params.set("product_type", filters.productType);
+  if (orderItemIds?.length) params.set("order_item_ids", orderItemIds.join(","));
+
+  const queryString = params.toString();
+  const url = `${apiUrl}/manufacturer-portal/order-documents${queryString ? `?${queryString}` : ""}`;
+
+  const response = await fetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,
     },

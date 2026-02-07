@@ -175,6 +175,7 @@ export type ProductType =
   | "acrylic_keychain"
   | "acrylic_stand"
   | "sticker"
+  | "tote_bag"
   | "mug"
   | "tshirt";
 

@@ -1,6 +1,6 @@
 """Manufacturer order service for managing orders by manufacturer."""
 
-from datetime import datetime
+from datetime import date, datetime
 from urllib.parse import urlparse
 import os
 
@@ -70,6 +70,9 @@ class ManufacturerOrderService:
     async def get_order_items_by_manufacturer(
         self,
         manufacturer_id: str,
+        ordered_from: date | None = None,
+        ordered_to: date | None = None,
+        product_type: str | None = None,
     ) -> ManufacturerOrderItemListResponse:
         """メーカー別受注明細一覧を取得"""
         manufacturer = await self._manufacturer_repo.find_by_id(manufacturer_id)
@@ -77,7 +80,10 @@ class ManufacturerOrderService:
             raise NotFoundError("Manufacturer", manufacturer_id)
 
         rows = await self._order_repo.find_ordered_items_by_manufacturer_detail(
-            manufacturer_id
+            manufacturer_id,
+            ordered_from=ordered_from,
+            ordered_to=ordered_to,
+            product_type=product_type,
         )
 
         items = []
@@ -139,6 +145,10 @@ class ManufacturerOrderService:
     async def generate_order_documents(
         self,
         manufacturer_id: str,
+        ordered_from: date | None = None,
+        ordered_to: date | None = None,
+        product_type: str | None = None,
+        order_item_ids: list[str] | None = None,
     ) -> tuple[bytes, str]:
         """発注資料ZIPを生成"""
         manufacturer = await self._manufacturer_repo.find_by_id(manufacturer_id)
@@ -146,8 +156,15 @@ class ManufacturerOrderService:
             raise NotFoundError("Manufacturer", manufacturer_id)
 
         rows = await self._order_repo.find_ordered_items_by_manufacturer_detail(
-            manufacturer_id
+            manufacturer_id,
+            ordered_from=ordered_from,
+            ordered_to=ordered_to,
+            product_type=product_type,
         )
+
+        # order_item_idsが指定された場合、そのIDのみにフィルタリング
+        if order_item_ids:
+            rows = [row for row in rows if row[0].id in order_item_ids]
 
         # 商品タイプ別にグループ化
         items_by_type: dict[str, list[dict]] = {}

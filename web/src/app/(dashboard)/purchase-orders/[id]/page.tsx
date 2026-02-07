@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
@@ -7,16 +8,35 @@ import { PageContainer } from "@/components/layout/page-container";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { ManufacturerOrderDetail } from "@/features/purchase-orders/components/manufacturer-order-detail";
 import { useManufacturerOrderItems } from "@/features/purchase-orders/hooks/use-manufacturer-orders";
+import type { ProductType } from "@/types/api";
 
 export default function PurchaseOrderDetailPage() {
   const params = useParams();
   const router = useRouter();
   const manufacturerId = params.id as string;
 
-  const { data, isLoading, error, mutate } =
-    useManufacturerOrderItems(manufacturerId);
+  // フィルター状態
+  const [orderedFrom, setOrderedFrom] = useState("");
+  const [orderedTo, setOrderedTo] = useState("");
+  const [productType, setProductType] = useState<ProductType | null>(null);
 
-  if (isLoading) {
+  const { data, isLoading, isFiltering, error, mutate } = useManufacturerOrderItems(
+    manufacturerId,
+    {
+      orderedFrom: orderedFrom || undefined,
+      orderedTo: orderedTo || undefined,
+      productType,
+    }
+  );
+
+  const handleFilterReset = () => {
+    setOrderedFrom("");
+    setOrderedTo("");
+    setProductType(null);
+  };
+
+  // 初回ロード時のみ全画面ローディングを表示（dataがない場合）
+  if (isLoading && !data) {
     return (
       <PageContainer title="発注詳細" description="読み込み中...">
         <div className="flex items-center justify-center py-12">
@@ -59,7 +79,18 @@ export default function PurchaseOrderDetailPage() {
         </Button>
       }
     >
-      <ManufacturerOrderDetail data={data} onStatusUpdate={() => mutate()} />
+      <ManufacturerOrderDetail
+        data={data}
+        isLoading={isFiltering}
+        onStatusUpdate={() => mutate()}
+        orderedFrom={orderedFrom}
+        orderedTo={orderedTo}
+        productType={productType}
+        onOrderedFromChange={setOrderedFrom}
+        onOrderedToChange={setOrderedTo}
+        onProductTypeChange={setProductType}
+        onFilterReset={handleFilterReset}
+      />
     </PageContainer>
   );
 }

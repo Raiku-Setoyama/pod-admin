@@ -27,13 +27,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Download, Factory, Package, RefreshCw } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Download, Factory, Loader2, Package, RefreshCw } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
-import type { ManufacturerOrderItemListResponse } from "@/types/api";
+import type { ManufacturerOrderItemListResponse, ProductType } from "@/types/api";
+import { ManufacturerOrderFilters } from "./manufacturer-order-filters";
 
 interface ManufacturerOrderDetailProps {
   data: ManufacturerOrderItemListResponse;
+  isLoading?: boolean;
   onStatusUpdate?: () => void;
+  // フィルター
+  orderedFrom: string;
+  orderedTo: string;
+  productType: ProductType | null;
+  onOrderedFromChange: (value: string) => void;
+  onOrderedToChange: (value: string) => void;
+  onProductTypeChange: (value: ProductType | null) => void;
+  onFilterReset: () => void;
 }
 
 const statusOptions = [
@@ -45,6 +56,7 @@ const productTypeLabels: Record<string, string> = {
   acrylic_keychain: "アクリルキーホルダー",
   acrylic_stand: "アクリルスタンド",
   sticker: "ステッカー",
+  tote_bag: "トートバッグ",
   mug: "マグカップ",
   tshirt: "Tシャツ",
 };
@@ -60,7 +72,15 @@ function formatDate(dateString: string): string {
 
 export function ManufacturerOrderDetail({
   data,
+  isLoading = false,
   onStatusUpdate,
+  orderedFrom,
+  orderedTo,
+  productType,
+  onOrderedFromChange,
+  onOrderedToChange,
+  onProductTypeChange,
+  onFilterReset,
 }: ManufacturerOrderDetailProps) {
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
   const [newStatus, setNewStatus] = useState<"manufacturing" | "delivered">(
@@ -68,6 +88,7 @@ export function ManufacturerOrderDetail({
   );
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const handleStatusUpdate = async () => {
     setIsUpdating(true);
@@ -94,30 +115,61 @@ export function ManufacturerOrderDetail({
       const token = localStorage.getItem("access_token");
       const apiUrl =
         process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-      const response = await fetch(
-        `${apiUrl}/manufacturers/${data.manufacturer_id}/order-documents`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+
+      const params = new URLSearchParams();
+      if (orderedFrom) params.set("ordered_from", orderedFrom);
+      if (orderedTo) params.set("ordered_to", orderedTo);
+      if (productType) params.set("product_type", productType);
+      if (selectedIds.size > 0) {
+        params.set("order_item_ids", Array.from(selectedIds).join(","));
+      }
+
+      const queryString = params.toString();
+      const url = `${apiUrl}/manufacturers/${data.manufacturer_id}/order-documents${queryString ? `?${queryString}` : ""}`;
+
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
       if (!response.ok) {
         throw new Error("Download failed");
       }
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const blobUrl = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
+      a.href = blobUrl;
       a.download = `${data.manufacturer_name}_発注資料.zip`;
       a.click();
-      window.URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(blobUrl);
     } catch (error) {
       console.error("Download failed:", error);
     } finally {
       setIsDownloading(false);
     }
   };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(new Set(data.items.map((item) => item.id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
+  const handleItemSelect = (id: string, checked: boolean) => {
+    const newSelected = new Set(selectedIds);
+    if (checked) {
+      newSelected.add(id);
+    } else {
+      newSelected.delete(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  const isAllSelected =
+    data.items.length > 0 && selectedIds.size === data.items.length;
+  const isSomeSelected = selectedIds.size > 0 && !isAllSelected;
 
   return (
     <div className="space-y-6">
@@ -133,10 +185,14 @@ export function ManufacturerOrderDetail({
               <Button
                 variant="outline"
                 onClick={handleDownload}
-                disabled={isDownloading || data.total === 0}
+                disabled={isDownloading || selectedIds.size === 0}
               >
                 <Download className="h-4 w-4 mr-2" />
-                {isDownloading ? "ダウンロード中..." : "発注資料をダウンロード"}
+                {isDownloading
+                  ? "ダウンロード中..."
+                  : selectedIds.size > 0
+                    ? `選択した${selectedIds.size}件をダウンロード`
+                    : "ダウンロードする項目を選択"}
               </Button>
               <Button
                 onClick={() => setIsStatusDialogOpen(true)}
@@ -177,10 +233,32 @@ export function ManufacturerOrderDetail({
           </CardTitle>
         </CardHeader>
         <CardContent>
+          {/* フィルター */}
+          <ManufacturerOrderFilters
+            orderedFrom={orderedFrom}
+            orderedTo={orderedTo}
+            productType={productType}
+            onOrderedFromChange={onOrderedFromChange}
+            onOrderedToChange={onOrderedToChange}
+            onProductTypeChange={onProductTypeChange}
+            onReset={onFilterReset}
+          />
+
           <div className="rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-[50px]">
+                    <Checkbox
+                      checked={isAllSelected}
+                      ref={(el) => {
+                        if (el) {
+                          (el as HTMLButtonElement & { indeterminate: boolean }).indeterminate = isSomeSelected;
+                        }
+                      }}
+                      onCheckedChange={handleSelectAll}
+                    />
+                  </TableHead>
                   <TableHead>注文番号</TableHead>
                   <TableHead>製品番号</TableHead>
                   <TableHead>商品名</TableHead>
@@ -192,10 +270,22 @@ export function ManufacturerOrderDetail({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.items.length === 0 ? (
+                {isLoading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={8}
+                      colSpan={9}
+                      className="h-24 text-center text-muted-foreground"
+                    >
+                      <div className="flex items-center justify-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        読み込み中...
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : data.items.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={9}
                       className="h-24 text-center text-muted-foreground"
                     >
                       発注中の明細がありません
@@ -204,6 +294,14 @@ export function ManufacturerOrderDetail({
                 ) : (
                   data.items.map((item) => (
                     <TableRow key={item.id}>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedIds.has(item.id)}
+                          onCheckedChange={(checked) =>
+                            handleItemSelect(item.id, !!checked)
+                          }
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">
                         {item.order_number}
                       </TableCell>

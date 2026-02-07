@@ -165,12 +165,20 @@ async def get_manufacturer_order_items(
     manufacturer_id: str,
     service: Annotated[ManufacturerOrderService, Depends(get_manufacturer_order_service)],
     current_user: Annotated[User, Depends(get_current_admin)],
+    ordered_from: date | None = None,
+    ordered_to: date | None = None,
+    product_type: str | None = None,
 ) -> ManufacturerOrderItemListResponse:
     """メーカー別受注明細一覧を取得
 
     指定されたメーカーに紐づく発注中（ORDERED）ステータスの受注明細一覧を返します。
     """
-    return await service.get_order_items_by_manufacturer(manufacturer_id)
+    return await service.get_order_items_by_manufacturer(
+        manufacturer_id,
+        ordered_from=ordered_from,
+        ordered_to=ordered_to,
+        product_type=product_type,
+    )
 
 
 @router.get("/{manufacturer_id}/order-documents")
@@ -178,6 +186,10 @@ async def download_manufacturer_order_documents(
     manufacturer_id: str,
     service: Annotated[ManufacturerOrderService, Depends(get_manufacturer_order_service)],
     current_user: Annotated[User, Depends(get_current_admin)],
+    ordered_from: date | None = None,
+    ordered_to: date | None = None,
+    product_type: str | None = None,
+    order_item_ids: str | None = None,
 ) -> StreamingResponse:
     """メーカー別発注資料ZIPをダウンロード
 
@@ -189,7 +201,14 @@ async def download_manufacturer_order_documents(
     - デザイン画像
     - サムネイル画像
     """
-    content, filename = await service.generate_order_documents(manufacturer_id)
+    item_ids = order_item_ids.split(",") if order_item_ids else None
+    content, filename = await service.generate_order_documents(
+        manufacturer_id,
+        ordered_from=ordered_from,
+        ordered_to=ordered_to,
+        product_type=product_type,
+        order_item_ids=item_ids,
+    )
 
     encoded_filename = quote(filename)
 

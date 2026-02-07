@@ -225,6 +225,9 @@ class OrderRepository:
         self,
         manufacturer_id: str,
         status: OrderStatus = OrderStatus.ORDERED,
+        ordered_from: date | None = None,
+        ordered_to: date | None = None,
+        product_type: str | None = None,
     ) -> list[tuple]:
         """メーカー別のORDERED受注明細を詳細情報付きで取得"""
         from app.models.product import Product
@@ -241,8 +244,18 @@ class OrderRepository:
             .join(Product, OrderItem.product_id == Product.id)
             .where(Product.manufacturer_id == manufacturer_id)
             .where(Order.status == status.value)
-            .order_by(Order.ordered_at.desc())
         )
+
+        if ordered_from:
+            query = query.where(func.date(Order.ordered_at) >= ordered_from)
+
+        if ordered_to:
+            query = query.where(func.date(Order.ordered_at) <= ordered_to)
+
+        if product_type:
+            query = query.where(OrderItem.product_type == product_type)
+
+        query = query.order_by(Order.ordered_at.desc())
 
         result = await self._db.execute(query)
         return result.all()

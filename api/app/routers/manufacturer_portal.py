@@ -1,5 +1,6 @@
 """Manufacturer portal router."""
 
+from datetime import date
 from typing import Annotated
 from urllib.parse import quote
 
@@ -76,18 +77,30 @@ async def debug_token(
 async def get_order_items(
     manufacturer: Annotated[Manufacturer, Depends(get_current_manufacturer)],
     service: Annotated[ManufacturerOrderService, Depends(get_manufacturer_order_service)],
+    ordered_from: date | None = None,
+    ordered_to: date | None = None,
+    product_type: str | None = None,
 ) -> ManufacturerOrderItemListResponse:
     """発注中アイテム一覧を取得
 
     ログイン中のメーカーに紐づく発注中（ORDERED）ステータスの受注明細一覧を返します。
     """
-    return await service.get_order_items_by_manufacturer(manufacturer.id)
+    return await service.get_order_items_by_manufacturer(
+        manufacturer.id,
+        ordered_from=ordered_from,
+        ordered_to=ordered_to,
+        product_type=product_type,
+    )
 
 
 @router.get("/order-documents")
 async def download_order_documents(
     manufacturer: Annotated[Manufacturer, Depends(get_current_manufacturer)],
     service: Annotated[ManufacturerOrderService, Depends(get_manufacturer_order_service)],
+    ordered_from: date | None = None,
+    ordered_to: date | None = None,
+    product_type: str | None = None,
+    order_item_ids: str | None = None,
 ) -> StreamingResponse:
     """発注資料ZIPをダウンロード
 
@@ -99,7 +112,14 @@ async def download_order_documents(
     - デザイン画像
     - サムネイル画像
     """
-    content, filename = await service.generate_order_documents(manufacturer.id)
+    item_ids = order_item_ids.split(",") if order_item_ids else None
+    content, filename = await service.generate_order_documents(
+        manufacturer.id,
+        ordered_from=ordered_from,
+        ordered_to=ordered_to,
+        product_type=product_type,
+        order_item_ids=item_ids,
+    )
 
     encoded_filename = quote(filename)
 
