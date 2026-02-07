@@ -14,6 +14,7 @@ class ProductType(str, Enum):
     ACRYLIC_KEYCHAIN = "acrylic_keychain"  # アクリルキーホルダー
     ACRYLIC_STAND = "acrylic_stand"  # アクリルスタンド
     STICKER = "sticker"  # ステッカー
+    TOTE_BAG = "tote_bag"  # トートバッグ
     MUG = "mug"  # マグカップ
     TSHIRT = "tshirt"  # Tシャツ
 
@@ -24,8 +25,8 @@ class Product(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "products"
 
     product_type: Mapped[str] = mapped_column(String(50), index=True)
-    name: Mapped[str] = mapped_column(String(200))
     size: Mapped[str] = mapped_column(String(50))
+    position: Mapped[str | None] = mapped_column(String(50), nullable=True)
     color: Mapped[str | None] = mapped_column(String(50), nullable=True)
     manufacturer_id: Mapped[str] = mapped_column(ForeignKey("manufacturers.id"))
     cost: Mapped[int] = mapped_column(Integer)
@@ -37,7 +38,7 @@ class Product(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     manufacturer: Mapped["Manufacturer"] = relationship(back_populates="products")
 
     def __repr__(self) -> str:
-        return f"<Product(id={self.id}, name={self.name}, type={self.product_type})>"
+        return f"<Product(id={self.id}, type={self.product_type}, size={self.size})>"
 
 
 # Import here to avoid circular imports

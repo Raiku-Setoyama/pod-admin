@@ -43,10 +43,7 @@ class ProductRepository:
             query = query.where(Product.is_active == is_active)
             count_query = count_query.where(Product.is_active == is_active)
 
-        if search:
-            search_filter = Product.name.ilike(f"%{search}%")
-            query = query.where(search_filter)
-            count_query = count_query.where(search_filter)
+        # Note: search parameter is no longer used (name column removed)
 
         # Get total count
         total_result = await self._db.execute(count_query)

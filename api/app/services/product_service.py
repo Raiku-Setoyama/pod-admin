@@ -32,8 +32,8 @@ class ProductService:
 
         product = Product(
             product_type=data.product_type.value,
-            name=data.name,
             size=data.size,
+            position=data.position,
             color=data.color,
             manufacturer_id=data.manufacturer_id,
             cost=data.cost,

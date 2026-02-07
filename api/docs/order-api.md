@@ -149,7 +149,7 @@ POST /api/v1/orders
 | フィールド | 型 | 必須 | 説明 | 制約 |
 |-----------|-----|:---:|------|------|
 | uid | string | ○ | 外部販売サイトのオリジナル商品ID | 1-100文字 |
-| product_type | string | ○ | 製造種類（商品タイプ） | 有効値: tshirt, mug, acrylic_keychain, acrylic_stand, sticker |
+| product_type | string | ○ | 製造種類（商品タイプ） | 有効値: tshirt, acrylic_keychain, acrylic_stand, sticker, tote_bag |
 | product_name | string | ○ | 外部販売サイトの商品名 | 1-200文字 |
 | price | integer | ○ | 単価（税込） | 0以上 |
 | quantity | integer | ○ | 数量 | 1以上（デフォルト: 1） |
@@ -159,12 +159,39 @@ POST /api/v1/orders
 | design_image_url | string | - | デザイン画像URL | 最大2048文字 |
 | thumbnail_image_url | string | - | サムネイル画像URL | 最大2048文字 |
 
-**注意**:
-- **Tシャツの場合** (`product_type: tshirt`): `size`、`color`、`position` はすべて必須で、以下の値のみ許可されます:
+**商品タイプ別のバリデーション**:
+
+| 商品タイプ | size | color | position |
+|-----------|:----:|:-----:|:--------:|
+| tshirt | 必須 | 必須 | 必須 |
+| acrylic_keychain | 必須 | 任意 | - |
+| acrylic_stand | 必須 | 任意 | - |
+| sticker | 必須 | 必須 | - |
+| tote_bag | 必須 | 必須 | 必須 |
+
+**各商品タイプの有効値**:
+
+- **Tシャツ** (`product_type: tshirt`)
   - `size`: `S`, `M`, `L`, `XL`
   - `color`: `白`
   - `position`: `正面`
-- 他の商品タイプは今後対応予定です。
+
+- **アクリルキーホルダー** (`product_type: acrylic_keychain`)
+  - `size`: `50x50mm`, `70x70mm`, `100x100mm`
+  - `color`: `アクリル`（任意）
+
+- **アクリルスタンド** (`product_type: acrylic_stand`)
+  - `size`: `50x50mm`, `70x70mm`, `100x100mm`
+  - `color`: `アクリル`（任意）
+
+- **ステッカー** (`product_type: sticker`)
+  - `size`: `100x100mm`
+  - `color`: `クリア`, `ホワイト`
+
+- **トートバッグ** (`product_type: tote_bag`)
+  - `size`: `M`
+  - `color`: `ナチュラル`
+  - `position`: `正面`
 
 ---
 
@@ -345,7 +372,7 @@ Tシャツに対して、許可されていない値を指定した場合：
 | acrylic_keychain | アクリルキーホルダー |
 | acrylic_stand | アクリルスタンド |
 | sticker | ステッカー |
-| mug | マグカップ |
+| tote_bag | トートバッグ |
 | tshirt | Tシャツ |
 
 ### 受注ステータス（status）
@@ -384,6 +411,81 @@ Tシャツ（`product_type: tshirt`）の場合、以下の値のみ許可され
 |----|------|
 | 正面 | フロントプリント |
 
+### アクリルキーホルダー属性値
+
+アクリルキーホルダー（`product_type: acrylic_keychain`）の場合、以下の値のみ許可されます。
+
+#### サイズ（size）
+
+| 値 | 説明 | 原価 |
+|----|------|------|
+| 50x50mm | 50x50mm | 285円 |
+| 70x70mm | 70x70mm | 350円 |
+| 100x100mm | 100x100mm | 475円 |
+
+#### カラー（color）※任意
+
+| 値 | 説明 |
+|----|------|
+| アクリル | アクリル素材 |
+
+### アクリルスタンド属性値
+
+アクリルスタンド（`product_type: acrylic_stand`）の場合、以下の値のみ許可されます。
+
+#### サイズ（size）
+
+| 値 | 説明 | 原価 |
+|----|------|------|
+| 50x50mm | 50x50mm | 310円 |
+| 70x70mm | 70x70mm | 345円 |
+| 100x100mm | 100x100mm | 735円 |
+
+#### カラー（color）※任意
+
+| 値 | 説明 |
+|----|------|
+| アクリル | アクリル素材 |
+
+### ステッカー属性値
+
+ステッカー（`product_type: sticker`）の場合、以下の値のみ許可されます。
+
+#### サイズ（size）
+
+| 値 | 説明 |
+|----|------|
+| 100x100mm | 100x100mm |
+
+#### カラー（color）
+
+| 値 | 説明 | 原価 |
+|----|------|------|
+| クリア | 透明 | 105円 |
+| ホワイト | 白 | 79円 |
+
+### トートバッグ属性値
+
+トートバッグ（`product_type: tote_bag`）の場合、以下の値のみ許可されます。
+
+#### サイズ（size）
+
+| 値 | 説明 |
+|----|------|
+| M | Mサイズ |
+
+#### カラー（color）
+
+| 値 | 説明 |
+|----|------|
+| ナチュラル | ナチュラルカラー |
+
+#### プリント位置（position）
+
+| 値 | 説明 |
+|----|------|
+| 正面 | フロントプリント |
+
 ---
 
 ## 商品属性取得API
@@ -405,7 +507,7 @@ GET /api/v1/external/product-options/{product_type}
 
 | パラメータ | 型 | 必須 | 説明 |
 |-----------|-----|:---:|------|
-| product_type | string | ○ | 製造種類（現在は `tshirt` のみサポート） |
+| product_type | string | ○ | 製造種類（`tshirt`, `acrylic_keychain`, `acrylic_stand`, `sticker`, `tote_bag`） |
 
 ### レスポンス例
 
@@ -416,6 +518,50 @@ GET /api/v1/external/product-options/{product_type}
   "product_type": "tshirt",
   "size": ["S", "M", "L", "XL"],
   "color": ["白"],
+  "position": ["正面"]
+}
+```
+
+#### アクリルキーホルダーの場合
+
+```json
+{
+  "product_type": "acrylic_keychain",
+  "size": ["50x50mm", "70x70mm", "100x100mm"],
+  "color": ["アクリル"],
+  "position": []
+}
+```
+
+#### アクリルスタンドの場合
+
+```json
+{
+  "product_type": "acrylic_stand",
+  "size": ["50x50mm", "70x70mm", "100x100mm"],
+  "color": ["アクリル"],
+  "position": []
+}
+```
+
+#### ステッカーの場合
+
+```json
+{
+  "product_type": "sticker",
+  "size": ["100x100mm"],
+  "color": ["クリア", "ホワイト"],
+  "position": []
+}
+```
+
+#### トートバッグの場合
+
+```json
+{
+  "product_type": "tote_bag",
+  "size": ["M"],
+  "color": ["ナチュラル"],
   "position": ["正面"]
 }
 ```
@@ -445,7 +591,24 @@ GET /api/v1/external/product-options/{product_type}
 ### cURL例
 
 ```bash
+# Tシャツ
 curl -X GET "https://api.example.com/api/v1/external/product-options/tshirt" \
+  -H "X-API-Key: your-api-key-here"
+
+# アクリルキーホルダー
+curl -X GET "https://api.example.com/api/v1/external/product-options/acrylic_keychain" \
+  -H "X-API-Key: your-api-key-here"
+
+# アクリルスタンド
+curl -X GET "https://api.example.com/api/v1/external/product-options/acrylic_stand" \
+  -H "X-API-Key: your-api-key-here"
+
+# ステッカー
+curl -X GET "https://api.example.com/api/v1/external/product-options/sticker" \
+  -H "X-API-Key: your-api-key-here"
+
+# トートバッグ
+curl -X GET "https://api.example.com/api/v1/external/product-options/tote_bag" \
   -H "X-API-Key: your-api-key-here"
 ```
 
@@ -483,11 +646,18 @@ POST /api/v1/external/price-calculation
 
 | フィールド | 型 | 必須 | 説明 | 制約 |
 |-----------|-----|:---:|------|------|
-| product_type | string | ○ | 製造種類 | 現在は `tshirt` のみサポート |
-| size | string | ○ | サイズ | Tシャツ: S, M, L, XL |
-| color | string | ○ | カラー | Tシャツ: 白 |
-| position | string | ○ | プリント位置 | Tシャツ: 正面 |
+| product_type | string | ○ | 製造種類 | `tshirt`, `acrylic_keychain`, `acrylic_stand`, `sticker`, `tote_bag` |
+| size | string | ○ | サイズ | 商品タイプにより異なる（下記参照） |
+| color | string | 条件付 | カラー | 商品タイプにより異なる |
+| position | string | 条件付 | プリント位置 | Tシャツ・トートバッグ: 正面 |
 | quantity | integer | - | 数量 | 1以上（デフォルト: 1） |
+
+**商品タイプ別の有効値**:
+- `tshirt`: size=S/M/L/XL, color=白, position=正面
+- `acrylic_keychain`: size=50x50mm/70x70mm/100x100mm
+- `acrylic_stand`: size=50x50mm/70x70mm/100x100mm
+- `sticker`: size=100x100mm, color=クリア/ホワイト
+- `tote_bag`: size=M, color=ナチュラル, position=正面
 
 ### レスポンス例
 
@@ -509,8 +679,8 @@ POST /api/v1/external/price-calculation
 |-----------|-----|------|
 | product_type | string | 製造種類 |
 | size | string | サイズ |
-| color | string | カラー |
-| position | string | プリント位置 |
+| color | string \ null | カラー（商品タイプにより任意） |
+| position | string \ null | プリント位置（商品タイプにより任意） |
 | quantity | integer | 数量 |
 | unit_price | integer | 単価（税込） |
 | total_price | integer | 合計金額（unit_price × quantity） |
@@ -542,6 +712,7 @@ POST /api/v1/external/price-calculation
 ### cURL例
 
 ```bash
+# Tシャツ（color, position必須）
 curl -X POST "https://api.example.com/api/v1/external/price-calculation" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-api-key-here" \
@@ -551,6 +722,27 @@ curl -X POST "https://api.example.com/api/v1/external/price-calculation" \
     "color": "白",
     "position": "正面",
     "quantity": 2
+  }'
+
+# アクリルキーホルダー（sizeのみ必須）
+curl -X POST "https://api.example.com/api/v1/external/price-calculation" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key-here" \
+  -d '{
+    "product_type": "acrylic_keychain",
+    "size": "70x70mm",
+    "quantity": 5
+  }'
+
+# ステッカー（size, color必須）
+curl -X POST "https://api.example.com/api/v1/external/price-calculation" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key-here" \
+  -d '{
+    "product_type": "sticker",
+    "size": "100x100mm",
+    "color": "クリア",
+    "quantity": 10
   }'
 ```
 
@@ -763,6 +955,7 @@ if ($statusCode === 201) {
 
 | バージョン | 日付 | 内容 |
 |-----------|------|------|
+| 2.1.0 | 2026-01-29 | 5商品対応: アクリルキーホルダー、アクリルスタンド、ステッカー、トートバッグ追加 |
 | 2.0.0 | 2026-01-10 | **破壊的変更**: `product_id`を`product_type`に変更、商品属性取得API追加、価格取得API追加 |
 | 1.2.0 | 2026-01-10 | Tシャツ属性のENUMバリデーション追加 |
 | 1.1.0 | 2024-01-XX | `uid` フィールド追加、`product_type` を自動取得に変更 |

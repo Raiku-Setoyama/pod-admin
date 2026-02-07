@@ -11,8 +11,8 @@ class ProductBase(BaseModel):
     """Base product schema."""
 
     product_type: ProductType
-    name: str = Field(..., min_length=1, max_length=200)
     size: str = Field(..., min_length=1, max_length=50)
+    position: str | None = Field(None, max_length=50)
     color: str | None = Field(None, max_length=50)
     manufacturer_id: str
     cost: int = Field(..., ge=0)
@@ -30,8 +30,8 @@ class ProductUpdate(BaseModel):
     """Product update schema."""
 
     product_type: ProductType | None = None
-    name: str | None = Field(None, min_length=1, max_length=200)
     size: str | None = Field(None, min_length=1, max_length=50)
+    position: str | None = Field(None, max_length=50)
     color: str | None = Field(None, max_length=50)
     manufacturer_id: str | None = None
     cost: int | None = Field(None, ge=0)

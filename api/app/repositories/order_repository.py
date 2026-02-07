@@ -150,6 +150,7 @@ class OrderRepository:
                 OrderItem,
                 Order.order_number,
                 Order.ordered_at,
+                Product.cost,
             )
             .join(Order, OrderItem.order_id == Order.id)
             .join(Product, OrderItem.product_id == Product.id)
@@ -171,13 +172,18 @@ class OrderRepository:
         rows = result.all()
 
         items = []
-        for order_item, order_number, ordered_at in rows:
+        for order_item, order_number, ordered_at, cost in rows:
             items.append({
                 "ordered_date": ordered_at,
                 "order_number": order_number,
                 "uid": order_item.uid,
                 "product_name": order_item.product_name,
+                "product_type": order_item.product_type,
                 "quantity": order_item.quantity,
+                "size": order_item.size,
+                "position": order_item.position,
+                "color": order_item.color,
+                "cost": cost,
             })
 
         return items
@@ -229,6 +235,7 @@ class OrderRepository:
                 Order.order_number,
                 Order.ordered_at,
                 Order.customer_name,
+                Product.cost,
             )
             .join(Order, OrderItem.order_id == Order.id)
             .join(Product, OrderItem.product_id == Product.id)

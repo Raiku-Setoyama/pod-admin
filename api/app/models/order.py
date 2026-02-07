@@ -43,6 +43,69 @@ class TshirtPosition(str, Enum):
     FRONT = "正面"
 
 
+# アクリルキーホルダー属性
+class AcrylicKeychainSize(str, Enum):
+    """アクリルキーホルダーサイズ."""
+
+    MM50X50 = "50x50mm"
+    MM70X70 = "70x70mm"
+    MM100X100 = "100x100mm"
+
+
+class AcrylicKeychainColor(str, Enum):
+    """アクリルキーホルダーカラー."""
+
+    ACRYLIC = "アクリル"
+
+
+# アクリルスタンド属性
+class AcrylicStandSize(str, Enum):
+    """アクリルスタンドサイズ."""
+
+    MM50X50 = "50x50mm"
+    MM70X70 = "70x70mm"
+    MM100X100 = "100x100mm"
+
+
+class AcrylicStandColor(str, Enum):
+    """アクリルスタンドカラー."""
+
+    ACRYLIC = "アクリル"
+
+
+# ステッカー属性
+class StickerSize(str, Enum):
+    """ステッカーサイズ."""
+
+    MM100X100 = "100x100mm"
+
+
+class StickerColor(str, Enum):
+    """ステッカーカラー."""
+
+    CLEAR = "クリア"
+    WHITE = "ホワイト"
+
+
+# トートバッグ属性
+class ToteBagSize(str, Enum):
+    """トートバッグサイズ."""
+
+    M = "M"
+
+
+class ToteBagColor(str, Enum):
+    """トートバッグカラー."""
+
+    NATURAL = "ナチュラル"
+
+
+class ToteBagPosition(str, Enum):
+    """トートバッグプリント位置."""
+
+    FRONT = "正面"
+
+
 class Order(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """Order model."""
 

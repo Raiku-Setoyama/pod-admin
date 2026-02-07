@@ -84,7 +84,7 @@ class ManufacturerOrderService:
         total_quantity = 0
         total_amount = 0
 
-        for order_item, order_number, ordered_at, customer_name in rows:
+        for order_item, order_number, ordered_at, customer_name, cost in rows:
             items.append(
                 ManufacturerOrderItemResponse(
                     id=order_item.id,
@@ -151,7 +151,7 @@ class ManufacturerOrderService:
 
         # 商品タイプ別にグループ化
         items_by_type: dict[str, list[dict]] = {}
-        for order_item, order_number, ordered_at, customer_name in rows:
+        for order_item, order_number, ordered_at, customer_name, cost in rows:
             product_type = order_item.product_type
             if product_type not in items_by_type:
                 items_by_type[product_type] = []
@@ -163,6 +163,10 @@ class ManufacturerOrderService:
                     "uid": order_item.uid,
                     "product_name": order_item.product_name,
                     "quantity": order_item.quantity,
+                    "size": order_item.size,
+                    "position": order_item.position,
+                    "color": order_item.color,
+                    "cost": cost,
                     "design_image_url": order_item.design_image_url,
                     "thumbnail_image_url": order_item.thumbnail_image_url,
                 }
@@ -180,19 +184,28 @@ class ManufacturerOrderService:
 
             # CSV追加
             csv_filename = f"{product_type_name}-発注リスト_{date_str}.csv"
-            csv_content = self._order_list_gen.generate_order_list_csv(type_items)
+            csv_content = self._order_list_gen.generate_order_list_csv(
+                type_items, product_type=product_type
+            )
             zip_builder.add_csv(f"{type_folder}/{csv_filename}", csv_content)
 
             # 画像ダウンロード・追加
             for item in type_items:
                 order_folder = f"{type_folder}/{item['order_number']}"
 
-                # デザイン画像
+                # デザイン画像（製造データ）
                 if item.get("design_image_url"):
-                    content, filename = await self._download_file(
+                    content, original_filename = await self._download_file(
                         item["design_image_url"]
                     )
                     if content:
+                        # ai形式の場合はファイル名を {注文番号}_{製造番号}_{商品種類}.ai に変更
+                        ext = os.path.splitext(original_filename)[1].lower()
+                        if ext == ".ai":
+                            uid = item.get("uid") or "unknown"
+                            filename = f"{item['order_number']}_{uid}_{product_type_name}.ai"
+                        else:
+                            filename = original_filename
                         zip_builder.add_file(f"{order_folder}/{filename}", content)
 
                 # サムネイル画像

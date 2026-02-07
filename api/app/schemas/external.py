@@ -20,8 +20,8 @@ class PriceCalculationRequest(BaseModel):
 
     product_type: ProductType
     size: str = Field(..., min_length=1, max_length=50)
-    color: str = Field(..., min_length=1, max_length=50)
-    position: str = Field(..., min_length=1, max_length=50)
+    color: str | None = Field(None, max_length=50)
+    position: str | None = Field(None, max_length=50)
     quantity: int = Field(1, ge=1)
 
 
@@ -30,8 +30,8 @@ class PriceCalculationResponse(BaseModel):
 
     product_type: ProductType
     size: str
-    color: str
-    position: str
+    color: str | None = None
+    position: str | None = None
     quantity: int
     unit_price: int
     total_price: int
