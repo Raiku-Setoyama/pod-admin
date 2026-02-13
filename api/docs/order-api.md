@@ -8,11 +8,12 @@
 2. [認証](#認証)
 3. [エンドポイント一覧](#エンドポイント一覧)
 4. [受注作成API](#受注作成api)
-5. [商品属性取得API](#商品属性取得api)
-6. [価格取得API](#価格取得api)
-7. [エラーハンドリング](#エラーハンドリング)
-8. [データ定義](#データ定義)
-9. [サンプルコード](#サンプルコード)
+5. [注文ステータス取得API](#注文ステータス取得api)
+6. [商品属性取得API](#商品属性取得api)
+7. [価格取得API](#価格取得api)
+8. [エラーハンドリング](#エラーハンドリング)
+9. [データ定義](#データ定義)
+10. [サンプルコード](#サンプルコード)
 
 ---
 
@@ -72,6 +73,7 @@ APIキーは事前に発行されたものをご使用ください。
 | エンドポイント | メソッド | 説明 |
 |---------------|---------|------|
 | `/api/v1/orders` | POST | 受注作成 |
+| `/api/v1/external/orders/{order_number}/status` | GET | 注文ステータス取得 |
 | `/api/v1/external/product-options/{product_type}` | GET | 商品属性取得 |
 | `/api/v1/external/price-calculation` | POST | 価格取得 |
 
@@ -266,6 +268,69 @@ POST /api/v1/orders
 | thumbnail_image_url | string \| null | サムネイル画像URL |
 | created_at | datetime | 作成日時 |
 | updated_at | datetime | 更新日時 |
+
+---
+
+## 注文ステータス取得API
+
+指定した注文番号の現在のステータスを取得します。
+
+```
+GET /api/v1/external/orders/{order_number}/status
+```
+
+| 項目 | 内容 |
+|------|------|
+| メソッド | GET |
+| URL | `/api/v1/external/orders/{order_number}/status` |
+| 認証 | API Key（`X-API-Key`ヘッダー） |
+| レスポンス | 200 OK（成功時） |
+
+### パスパラメータ
+
+| パラメータ | 型 | 必須 | 説明 |
+|-----------|-----|:---:|------|
+| order_number | string | ○ | 注文番号（受注作成時に指定したもの） |
+
+### レスポンス例
+
+```json
+{
+  "order_number": "ORD-2024-001",
+  "status": "manufacturing",
+  "ordered_at": "2024-01-15T10:30:00+09:00",
+  "updated_at": "2024-01-16T14:00:00+09:00"
+}
+```
+
+### レスポンスフィールド
+
+| フィールド | 型 | 説明 |
+|-----------|-----|------|
+| order_number | string | 注文番号 |
+| status | string | 現在のステータス（`ordered`, `manufacturing`, `delivered`, `shipped`） |
+| ordered_at | datetime | 受注日時 |
+| updated_at | datetime | 最終更新日時 |
+
+### エラー例
+
+#### 注文が見つからない（404 Not Found）
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Order with order_number 'ORD-INVALID' not found"
+  }
+}
+```
+
+### cURL例
+
+```bash
+curl -X GET "https://api.example.com/api/v1/external/orders/ORD-2024-001/status" \
+  -H "X-API-Key: your-api-key-here"
+```
 
 ---
 
@@ -955,6 +1020,7 @@ if ($statusCode === 201) {
 
 | バージョン | 日付 | 内容 |
 |-----------|------|------|
+| 2.2.0 | 2026-02-13 | 注文ステータス取得API追加 |
 | 2.1.0 | 2026-01-29 | 5商品対応: アクリルキーホルダー、アクリルスタンド、ステッカー、トートバッグ追加 |
 | 2.0.0 | 2026-01-10 | **破壊的変更**: `product_id`を`product_type`に変更、商品属性取得API追加、価格取得API追加 |
 | 1.2.0 | 2026-01-10 | Tシャツ属性のENUMバリデーション追加 |

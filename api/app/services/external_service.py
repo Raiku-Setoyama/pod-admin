@@ -5,6 +5,7 @@ from app.models.order import (
     AcrylicKeychainSize,
     AcrylicStandColor,
     AcrylicStandSize,
+    OrderStatus,
     StickerColor,
     StickerSize,
     ToteBagColor,
@@ -15,13 +16,15 @@ from app.models.order import (
     TshirtSize,
 )
 from app.models.product import ProductType
+from app.repositories.order_repository import OrderRepository
 from app.repositories.product_repository import ProductRepository
 from app.schemas.external import (
+    OrderStatusResponse,
     PriceCalculationRequest,
     PriceCalculationResponse,
     ProductOptionsResponse,
 )
-from app.utils.exceptions import ValidationError
+from app.utils.exceptions import NotFoundError, ValidationError
 
 # 価格マッピング
 ACRYLIC_KEYCHAIN_PRICES = {
@@ -45,8 +48,9 @@ STICKER_PRICES = {
 class ExternalService:
     """Service for external sales site operations."""
 
-    def __init__(self, product_repo: ProductRepository):
+    def __init__(self, product_repo: ProductRepository, order_repo: OrderRepository):
         self._product_repo = product_repo
+        self._order_repo = order_repo
 
     def get_product_options(self, product_type: ProductType) -> ProductOptionsResponse:
         """Get available options for a product type."""
@@ -308,4 +312,19 @@ class ExternalService:
             quantity=data.quantity,
             unit_price=unit_price,
             total_price=total_price,
+        )
+
+    async def get_order_status_by_order_number(
+        self, order_number: str
+    ) -> OrderStatusResponse:
+        """Get order status by order number."""
+        order = await self._order_repo.find_by_order_number(order_number)
+        if not order:
+            raise NotFoundError(f"Order with order_number '{order_number}' not found")
+
+        return OrderStatusResponse(
+            order_number=order.order_number,
+            status=OrderStatus(order.status),
+            ordered_at=order.ordered_at,
+            updated_at=order.updated_at,
         )

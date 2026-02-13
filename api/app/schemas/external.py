@@ -1,8 +1,10 @@
 """External API schemas for external sales sites."""
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
-from app.models.order import TshirtColor, TshirtPosition, TshirtSize
+from app.models.order import OrderStatus, TshirtColor, TshirtPosition, TshirtSize
 from app.models.product import ProductType
 
 
@@ -35,3 +37,12 @@ class PriceCalculationResponse(BaseModel):
     quantity: int
     unit_price: int
     total_price: int
+
+
+class OrderStatusResponse(BaseModel):
+    """Response schema for order status lookup."""
+
+    order_number: str
+    status: OrderStatus
+    ordered_at: datetime
+    updated_at: datetime

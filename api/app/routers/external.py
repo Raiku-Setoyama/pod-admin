@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from app.dependencies import get_external_service, verify_api_key
 from app.models.product import ProductType
 from app.schemas.external import (
+    OrderStatusResponse,
     PriceCalculationRequest,
     PriceCalculationResponse,
     ProductOptionsResponse,
@@ -48,3 +49,20 @@ async def calculate_price(
     Currently only supports T-shirts.
     """
     return await service.calculate_price(data)
+
+
+@router.get(
+    "/orders/{order_number}/status",
+    response_model=OrderStatusResponse,
+)
+async def get_order_status(
+    order_number: str,
+    service: Annotated[ExternalService, Depends(get_external_service)],
+    api_key: Annotated[str, Depends(verify_api_key)],
+) -> OrderStatusResponse:
+    """Get order status by order number.
+
+    Returns the status and timestamps for the specified order.
+    Returns 404 if the order is not found.
+    """
+    return await service.get_order_status_by_order_number(order_number)

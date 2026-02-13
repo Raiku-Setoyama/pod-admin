@@ -108,6 +108,18 @@ make clean           # コンテナ・ボリューム削除
 | `CORS_ORIGINS` | CORS許可オリジン |
 | `API_KEYS` | 外部API用キー |
 
+## ドキュメント更新ルール
+
+### 外部公開API
+外部販売サイト向けAPI（`/api/v1/external/*` および `/api/v1/orders`）に変更を加えた場合は、**必ず** `api/docs/order-api.md` を更新すること。
+
+更新対象：
+- 新規エンドポイントの追加
+- リクエスト/レスポンス形式の変更
+- パラメータの追加・削除・変更
+- エラーコードの追加・変更
+- 変更履歴の追記
+
 ---
 
 # AI-DLC and Spec-Driven Development
