@@ -104,7 +104,9 @@ POST /api/v1/orders
   "customer": {
     "name": "山田太郎",
     "postal_code": "123-4567",
-    "address": "東京都渋谷区〇〇町1-2-3 ○○ビル101",
+    "address_prefecture": "東京都",
+    "address_city": "渋谷区〇〇町1-2-3",
+    "address_building": "○○ビル101",
     "phone": "03-1234-5678",
     "email": "yamada@example.com"
   },
@@ -142,7 +144,9 @@ POST /api/v1/orders
 |-----------|-----|:---:|------|------|
 | name | string | ○ | 顧客名 | 1-100文字 |
 | postal_code | string | ○ | 郵便番号 | 1-10文字 |
-| address | string | ○ | 住所 | 1文字以上 |
+| address_prefecture | string | ○ | 都道府県 | 1-50文字 |
+| address_city | string | ○ | 市区町村以降 | 1文字以上 |
+| address_building | string | - | 建物名等 | 最大200文字 |
 | phone | string | ○ | 電話番号 | 1-20文字 |
 | email | string | - | メールアドレス | Email形式 |
 
@@ -204,9 +208,14 @@ POST /api/v1/orders
   "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "order_number": "ORD-2024-001",
   "status": "ordered",
+  "source": "RKSYO",
+  "order_source_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
   "customer_name": "山田太郎",
   "customer_postal_code": "123-4567",
-  "customer_address": "東京都渋谷区〇〇町1-2-3 ○○ビル101",
+  "customer_address_prefecture": "東京都",
+  "customer_address_city": "渋谷区〇〇町1-2-3",
+  "customer_address_building": "○○ビル101",
+  "customer_full_address": "東京都渋谷区〇〇町1-2-3○○ビル101",
   "customer_phone": "03-1234-5678",
   "customer_email": "yamada@example.com",
   "ordered_at": "2024-01-15T10:30:00+09:00",
@@ -240,9 +249,14 @@ POST /api/v1/orders
 | id | string | 受注ID（UUID） |
 | order_number | string | 受注番号 |
 | status | string | 受注ステータス（初期値: `ordered`） |
+| source | string \| null | 受注元コード（order_source.codeから算出） |
+| order_source_id | string \| null | 受注元ID（UUID） |
 | customer_name | string | 顧客名 |
 | customer_postal_code | string | 郵便番号 |
-| customer_address | string | 住所 |
+| customer_address_prefecture | string | 都道府県 |
+| customer_address_city | string | 市区町村以降 |
+| customer_address_building | string \| null | 建物名等 |
+| customer_full_address | string | 住所（結合済み、自動生成） |
 | customer_phone | string | 電話番号 |
 | customer_email | string \| null | メールアドレス |
 | ordered_at | datetime | 受注日時 |
@@ -827,7 +841,9 @@ curl -X POST "https://api.example.com/api/v1/orders" \
     "customer": {
       "name": "山田太郎",
       "postal_code": "123-4567",
-      "address": "東京都渋谷区〇〇町1-2-3",
+      "address_prefecture": "東京都",
+      "address_city": "渋谷区〇〇町1-2-3",
+      "address_building": "○○ビル101",
       "phone": "03-1234-5678",
       "email": "yamada@example.com"
     },
@@ -863,7 +879,9 @@ payload = {
     "customer": {
         "name": "山田太郎",
         "postal_code": "123-4567",
-        "address": "東京都渋谷区〇〇町1-2-3",
+        "address_prefecture": "東京都",
+        "address_city": "渋谷区〇〇町1-2-3",
+        "address_building": "○○ビル101",
         "phone": "03-1234-5678",
         "email": "yamada@example.com"
     },
@@ -903,7 +921,9 @@ const createOrder = async () => {
     customer: {
       name: "山田太郎",
       postal_code: "123-4567",
-      address: "東京都渋谷区〇〇町1-2-3",
+      address_prefecture: "東京都",
+      address_city: "渋谷区〇〇町1-2-3",
+      address_building: "○○ビル101",
       phone: "03-1234-5678",
       email: "yamada@example.com"
     },
@@ -956,7 +976,9 @@ $payload = [
     "customer" => [
         "name" => "山田太郎",
         "postal_code" => "123-4567",
-        "address" => "東京都渋谷区〇〇町1-2-3",
+        "address_prefecture" => "東京都",
+        "address_city" => "渋谷区〇〇町1-2-3",
+        "address_building" => "○○ビル101",
         "phone" => "03-1234-5678",
         "email" => "yamada@example.com"
     ],
@@ -1020,6 +1042,9 @@ if ($statusCode === 201) {
 
 | バージョン | 日付 | 内容 |
 |-----------|------|------|
+| 3.1.0 | 2026-02-14 | レスポンスに `source` および `order_source_id` フィールド追加。受注元管理がDB管理に完全移行。 |
+| 3.0.0 | 2026-02-14 | **破壊的変更**: 住所フィールド正規化。`address` を削除し、`address_prefecture` + `address_city` を必須に。レスポンスの `customer_address` を `customer_full_address` に変更（自動生成）。 |
+| 2.3.0 | 2026-02-14 | 住所分割フィールド追加（address_prefecture, address_city, address_building）。配送CSVエクスポート対応。 |
 | 2.2.0 | 2026-02-13 | 注文ステータス取得API追加 |
 | 2.1.0 | 2026-01-29 | 5商品対応: アクリルキーホルダー、アクリルスタンド、ステッカー、トートバッグ追加 |
 | 2.0.0 | 2026-01-10 | **破壊的変更**: `product_id`を`product_type`に変更、商品属性取得API追加、価格取得API追加 |

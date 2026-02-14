@@ -2,10 +2,11 @@
 
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.order import Order, OrderItem
 from app.models.shipment import Shipment, ShipmentItem, ShipmentStatus
 
 
@@ -19,7 +20,14 @@ class ShipmentRepository:
         """Find a shipment by ID."""
         result = await self._db.execute(
             select(Shipment)
-            .options(selectinload(Shipment.items))
+            .options(
+                selectinload(Shipment.items)
+                .selectinload(ShipmentItem.order)
+                .selectinload(Order.items),
+                selectinload(Shipment.items)
+                .selectinload(ShipmentItem.order)
+                .selectinload(Order.order_source),
+            )
             .where(Shipment.id == shipment_id)
         )
         return result.scalar_one_or_none()
@@ -28,7 +36,14 @@ class ShipmentRepository:
         """Find a shipment by tracking number."""
         result = await self._db.execute(
             select(Shipment)
-            .options(selectinload(Shipment.items))
+            .options(
+                selectinload(Shipment.items)
+                .selectinload(ShipmentItem.order)
+                .selectinload(Order.items),
+                selectinload(Shipment.items)
+                .selectinload(ShipmentItem.order)
+                .selectinload(Order.order_source),
+            )
             .where(Shipment.tracking_number == tracking_number)
         )
         return result.scalar_one_or_none()
@@ -51,7 +66,9 @@ class ShipmentRepository:
         sort_order: str = "desc",
     ) -> tuple[list[Shipment], int]:
         """Find all shipments with pagination and filters."""
-        query = select(Shipment).options(selectinload(Shipment.items))
+        query = select(Shipment).options(
+            selectinload(Shipment.items).selectinload(ShipmentItem.order)
+        )
         count_query = select(func.count(Shipment.id))
 
         # Apply filters
@@ -68,10 +85,16 @@ class ShipmentRepository:
             count_query = count_query.where(func.date(Shipment.created_at) <= created_to)
 
         if search:
-            search_filter = (
-                Shipment.tracking_number.ilike(f"%{search}%")
-                | Shipment.customer_name.ilike(f"%{search}%")
-                | Shipment.id.ilike(f"%{search}%")
+            # Search by tracking_number, shipment id, or customer_name via Order
+            search_subquery = (
+                select(ShipmentItem.shipment_id)
+                .join(Order, ShipmentItem.order_id == Order.id)
+                .where(Order.customer_name.ilike(f"%{search}%"))
+            )
+            search_filter = or_(
+                Shipment.tracking_number.ilike(f"%{search}%"),
+                Shipment.id.ilike(f"%{search}%"),
+                Shipment.id.in_(search_subquery),
             )
             query = query.where(search_filter)
             count_query = count_query.where(search_filter)
@@ -121,21 +144,12 @@ class ShipmentRepository:
 
         return shipments, total
 
-    async def create(
-        self,
-        order_ids: list[str],
-        customer_name: str,
-        customer_postal_code: str,
-        customer_address: str,
-        customer_phone: str,
-    ) -> Shipment:
-        """Create a new shipment."""
-        shipment = Shipment(
-            customer_name=customer_name,
-            customer_postal_code=customer_postal_code,
-            customer_address=customer_address,
-            customer_phone=customer_phone,
-        )
+    async def create(self, order_ids: list[str]) -> Shipment:
+        """Create a new shipment.
+
+        顧客情報は order_ids の最初の注文から参照します。
+        """
+        shipment = Shipment()
         self._db.add(shipment)
         await self._db.flush()
 

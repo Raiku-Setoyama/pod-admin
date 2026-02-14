@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from app.models.shipment import ShipmentStatus
 
@@ -49,9 +49,10 @@ class ShipmentItemResponse(BaseModel):
 
 
 class ShipmentResponse(BaseModel):
-    """Shipment response schema."""
+    """Shipment response schema.
 
-    model_config = ConfigDict(from_attributes=True)
+    顧客情報は紐づく注文の first_order から取得します。
+    """
 
     id: str
     status: ShipmentStatus
@@ -61,13 +62,27 @@ class ShipmentResponse(BaseModel):
     shipped_at: datetime | None
     delivered_at: datetime | None
     note: str | None
+    # Customer info (populated from first order)
     customer_name: str
     customer_postal_code: str
-    customer_address: str
+    customer_address_prefecture: str
+    customer_address_city: str
+    customer_address_building: str | None = None
     customer_phone: str
     items: list[ShipmentItemResponse]
     created_at: datetime
     updated_at: datetime
+
+    @computed_field
+    @property
+    def customer_full_address(self) -> str:
+        """結合された完全な住所."""
+        parts = [
+            self.customer_address_prefecture,
+            self.customer_address_city,
+            self.customer_address_building,
+        ]
+        return "".join(p for p in parts if p)
 
 
 class ShipmentListResponse(BaseModel):
@@ -94,3 +109,9 @@ class ShipmentBulkStatusUpdateResponse(BaseModel):
     updated_count: int
     failed_count: int
     failed_ids: list[str]
+
+
+class ShipmentExportRequest(BaseModel):
+    """配送CSVエクスポートリクエスト"""
+
+    shipment_ids: list[str] = Field(..., min_length=1)

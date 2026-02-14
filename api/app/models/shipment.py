@@ -2,11 +2,15 @@
 
 from datetime import datetime
 from enum import Enum
+from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+if TYPE_CHECKING:
+    from app.models.order import Order
 
 
 class ShipmentStatus(str, Enum):
@@ -18,7 +22,10 @@ class ShipmentStatus(str, Enum):
 
 
 class Shipment(Base, UUIDPrimaryKeyMixin, TimestampMixin):
-    """Shipment model."""
+    """Shipment model.
+
+    顧客情報は items[0].order から取得します。
+    """
 
     __tablename__ = "shipments"
 
@@ -32,16 +39,17 @@ class Shipment(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Customer info (copied from order for shipping)
-    customer_name: Mapped[str] = mapped_column(String(100))
-    customer_postal_code: Mapped[str] = mapped_column(String(10))
-    customer_address: Mapped[str] = mapped_column(Text)
-    customer_phone: Mapped[str] = mapped_column(String(20))
-
     # Relationships
     items: Mapped[list["ShipmentItem"]] = relationship(
         back_populates="shipment", cascade="all, delete-orphan"
     )
+
+    @property
+    def first_order(self) -> "Order | None":
+        """最初の注文を取得（顧客情報の取得元）."""
+        if self.items:
+            return self.items[0].order
+        return None
 
     def __repr__(self) -> str:
         return f"<Shipment(id={self.id}, status={self.status})>"

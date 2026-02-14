@@ -166,13 +166,8 @@ class ManufacturerOrderService:
         if await self._shipment_repo.exists_for_order(order.id):
             return
 
-        await self._shipment_repo.create(
-            order_ids=[order.id],
-            customer_name=order.customer_name,
-            customer_postal_code=order.customer_postal_code,
-            customer_address=order.customer_address,
-            customer_phone=order.customer_phone,
-        )
+        # Customer info is now accessed via shipment.first_order relationship
+        await self._shipment_repo.create(order_ids=[order.id])
 
     async def generate_order_documents(
         self,

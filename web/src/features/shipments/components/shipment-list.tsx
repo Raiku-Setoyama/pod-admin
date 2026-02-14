@@ -107,7 +107,7 @@ export function ShipmentList({
                 <TableCell>
                   <div>{shipment.customer_name}</div>
                   <div className="text-xs text-muted-foreground">
-                    {shipment.customer_address}
+                    {shipment.customer_full_address}
                   </div>
                 </TableCell>
                 <TableCell>{shipment.items.length}点</TableCell>

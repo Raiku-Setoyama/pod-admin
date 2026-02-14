@@ -3,15 +3,18 @@
 from datetime import date
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.dependencies import get_current_admin, get_shipment_service
 from app.models.shipment import ShipmentStatus
 from app.models.user import User
+from urllib.parse import quote
+
 from app.schemas.shipment import (
     ShipmentBulkStatusUpdate,
     ShipmentBulkStatusUpdateResponse,
+    ShipmentExportRequest,
     ShipmentListResponse,
     ShipmentResponse,
     ShipmentStatusUpdate,
@@ -71,6 +74,36 @@ async def bulk_update_shipment_status(
     return await service.bulk_update_status(data)
 
 
+@router.post("/export-csv")
+async def export_shipments_csv(
+    data: ShipmentExportRequest,
+    service: Annotated[ShipmentService, Depends(get_shipment_service)],
+    current_user: Annotated[User, Depends(get_current_admin)],
+) -> StreamingResponse:
+    """配送CSVをエクスポート
+
+    選択された発送データを配送業者向けCSVとしてエクスポートします。
+    17列のCSV形式で、配送元情報はOrderSourceから取得します。
+
+    Args:
+        data: エクスポート対象のshipment_idsリスト
+
+    Returns:
+        UTF-8 BOM付きCSVファイル
+    """
+    csv_bytes, filename = await service.export_csv(data.shipment_ids)
+
+    encoded_filename = quote(filename)
+
+    return StreamingResponse(
+        iter([csv_bytes]),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
+        },
+    )
+
+
 @router.get("/{shipment_id}", response_model=ShipmentResponse)
 async def get_shipment(
     shipment_id: str,
@@ -126,12 +159,16 @@ async def download_shipment_documents(
 
     csv_gen = CSVGenerator()
 
+    # ShipmentResponse already contains customer info from first order
+    if not shipment.customer_name:
+        raise HTTPException(status_code=400, detail="Shipment has no orders")
+
     if format == "shipping_label":
         content = csv_gen.generate_shipping_csv(
             carrier=carrier,
             shipments=[{
                 "postal_code": shipment.customer_postal_code,
-                "address": shipment.customer_address,
+                "address": shipment.customer_full_address,
                 "name": shipment.customer_name,
                 "phone": shipment.customer_phone,
                 "product_name": "グッズ",
@@ -147,8 +184,10 @@ async def download_shipment_documents(
         )
         filename = f"同梱リスト_{shipment_id[:8]}.csv"
 
+    encoded_filename = quote(filename)
+
     return StreamingResponse(
         iter([content]),
-        media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
     )

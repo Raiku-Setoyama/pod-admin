@@ -63,8 +63,8 @@ async def create_order(
         ]
     }
     """
-    _, source = api_key_info
-    return await service.create(data, source=source)
+    _, order_source_id = api_key_info
+    return await service.create(data, order_source_id=order_source_id)
 
 
 @router.get("", response_model=OrderListResponse)

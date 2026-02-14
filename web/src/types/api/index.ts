@@ -42,7 +42,10 @@ export interface Order {
   source: string | null;
   customer_name: string;
   customer_postal_code: string;
-  customer_address: string;
+  customer_address_prefecture: string;
+  customer_address_city: string;
+  customer_address_building: string | null;
+  customer_full_address: string;
   customer_phone: string | null;
   customer_email: string | null;
   ordered_at: string;
@@ -141,7 +144,10 @@ export interface Shipment {
   note: string | null;
   customer_name: string;
   customer_postal_code: string;
-  customer_address: string;
+  customer_address_prefecture: string;
+  customer_address_city: string;
+  customer_address_building: string | null;
+  customer_full_address: string;
   customer_phone: string | null;
   items: ShipmentItem[];
   created_at: string;

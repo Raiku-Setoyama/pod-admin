@@ -226,7 +226,7 @@ export function OrderDetail({ order }: OrderDetailProps) {
               <dd className="font-medium">
                 〒{order.customer_postal_code}
                 <br />
-                {order.customer_address}
+                {order.customer_full_address}
               </dd>
             </div>
             <div className="col-span-2">

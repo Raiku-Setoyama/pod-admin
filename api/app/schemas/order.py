@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
 
 from app.models.order import OrderStatus
 from app.models.product import ProductType
@@ -14,7 +14,9 @@ class CustomerInfo(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=100)
     postal_code: str = Field(..., min_length=1, max_length=10)
-    address: str = Field(..., min_length=1)
+    address_prefecture: str = Field(..., min_length=1, max_length=50)  # 都道府県（必須）
+    address_city: str = Field(..., min_length=1)  # 市区町村以降（必須）
+    address_building: str | None = Field(None, max_length=200)  # 建物名等（任意）
     phone: str = Field(..., min_length=1, max_length=20)
     email: EmailStr | None = None
 
@@ -100,10 +102,13 @@ class OrderResponse(BaseModel):
     id: str
     order_number: str
     status: OrderStatus
-    source: str | None = None
+    source: str | None = None  # Derived from order_source.code
+    order_source_id: str | None = None
     customer_name: str
     customer_postal_code: str
-    customer_address: str
+    customer_address_prefecture: str
+    customer_address_city: str
+    customer_address_building: str | None = None
     customer_phone: str
     customer_email: str | None = None
     ordered_at: datetime
@@ -118,6 +123,17 @@ class OrderResponse(BaseModel):
     manufacturing_data: ManufacturingDataInfo | None = None
     created_at: datetime
     updated_at: datetime
+
+    @computed_field
+    @property
+    def customer_full_address(self) -> str:
+        """結合された完全な住所."""
+        parts = [
+            self.customer_address_prefecture,
+            self.customer_address_city,
+            self.customer_address_building,
+        ]
+        return "".join(p for p in parts if p)
 
 
 class OrderListResponse(BaseModel):

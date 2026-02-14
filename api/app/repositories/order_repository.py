@@ -17,19 +17,25 @@ class OrderRepository:
         self._db = db
 
     async def find_by_id(self, order_id: str) -> Order | None:
-        """Find an order by ID with items loaded."""
+        """Find an order by ID with items and order_source loaded."""
         result = await self._db.execute(
             select(Order)
-            .options(selectinload(Order.items))
+            .options(
+                selectinload(Order.items),
+                selectinload(Order.order_source),
+            )
             .where(Order.id == order_id)
         )
         return result.scalar_one_or_none()
 
     async def find_by_order_number(self, order_number: str) -> Order | None:
-        """Find an order by order number with items loaded."""
+        """Find an order by order number with items and order_source loaded."""
         result = await self._db.execute(
             select(Order)
-            .options(selectinload(Order.items))
+            .options(
+                selectinload(Order.items),
+                selectinload(Order.order_source),
+            )
             .where(Order.order_number == order_number)
         )
         return result.scalar_one_or_none()
@@ -45,7 +51,10 @@ class OrderRepository:
         search: str | None = None,
     ) -> tuple[list[Order], int]:
         """Find all orders with pagination and filters."""
-        query = select(Order).options(selectinload(Order.items))
+        query = select(Order).options(
+            selectinload(Order.items),
+            selectinload(Order.order_source),
+        )
         count_query = select(func.count(Order.id))
 
         # Apply filters

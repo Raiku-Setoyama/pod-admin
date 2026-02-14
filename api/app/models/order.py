@@ -7,9 +7,10 @@ from typing import TYPE_CHECKING
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.models.base import Base, CustomerAddressMixin, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
+    from app.models.order_source import OrderSource
     from app.models.product import Product
 
 
@@ -106,7 +107,7 @@ class ToteBagPosition(str, Enum):
     FRONT = "正面"
 
 
-class Order(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+class Order(Base, UUIDPrimaryKeyMixin, CustomerAddressMixin, TimestampMixin):
     """Order model."""
 
     __tablename__ = "orders"
@@ -114,7 +115,9 @@ class Order(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # Order info
     order_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     status: Mapped[str] = mapped_column(String(20), default=OrderStatus.ORDERED.value, index=True)
-    source: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    order_source_id: Mapped[str | None] = mapped_column(
+        ForeignKey("order_sources.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     # Product info (deprecated - kept for backward compatibility)
     product_id: Mapped[str | None] = mapped_column(ForeignKey("products.id"), nullable=True)
@@ -122,11 +125,8 @@ class Order(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     price: Mapped[int | None] = mapped_column(Integer, nullable=True)
     quantity: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # Customer info
-    customer_name: Mapped[str] = mapped_column(String(100))
-    customer_postal_code: Mapped[str] = mapped_column(String(10))
-    customer_address: Mapped[str] = mapped_column(Text)
-    customer_phone: Mapped[str] = mapped_column(String(20))
+    # Customer info (CustomerAddressMixin provides: customer_name, customer_postal_code,
+    # customer_address_prefecture, customer_address_city, customer_address_building, customer_phone)
     customer_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Manufacturing data (deprecated - kept for backward compatibility)
@@ -142,6 +142,7 @@ class Order(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     # Relationships
     product: Mapped["Product | None"] = relationship()
+    order_source: Mapped["OrderSource | None"] = relationship()
     items: Mapped[list["OrderItem"]] = relationship(
         back_populates="order", cascade="all, delete-orphan"
     )

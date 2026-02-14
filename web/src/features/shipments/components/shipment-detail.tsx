@@ -29,8 +29,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/common/status-badge";
 import { PackingPhotoUpload } from "./packing-photo-upload";
-import { ShipmentDocuments } from "./shipment-documents";
-import { Truck, User, Package, MapPin } from "lucide-react";
+import { Truck, Package, MapPin } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import type { Shipment, ShipmentStatus } from "@/types/api";
 
@@ -166,7 +165,7 @@ export function ShipmentDetail({ shipment, onUpdate }: ShipmentDetailProps) {
               <dd className="font-medium">
                 〒{shipment.customer_postal_code}
                 <br />
-                {shipment.customer_address}
+                {shipment.customer_full_address}
               </dd>
             </div>
           </dl>
@@ -179,16 +178,6 @@ export function ShipmentDetail({ shipment, onUpdate }: ShipmentDetailProps) {
         currentPhotoPath={shipment.packing_photo_path}
         onUploadComplete={onUpdate}
       />
-
-      {/* 配送資料ダウンロード */}
-      <Card>
-        <CardHeader>
-          <CardTitle>配送資料</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ShipmentDocuments shipmentId={shipment.id} />
-        </CardContent>
-      </Card>
 
       {/* 含まれる商品一覧 */}
       <Card>

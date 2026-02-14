@@ -55,7 +55,7 @@ class OrderService:
     async def create(
         self,
         data: OrderCreate,
-        source: str | None = None,
+        order_source_id: str | None = None,
     ) -> OrderResponse:
         """Create a new order from external sales site."""
         # Check for duplicate order number
@@ -80,15 +80,18 @@ class OrderService:
         # Calculate total price
         total_price = sum(item.price * item.quantity for item in data.items)
 
-        # Create order
+        # Create order with split address fields
+        customer = data.customer
         order = Order(
             order_number=data.order_number,
-            source=source,
-            customer_name=data.customer.name,
-            customer_postal_code=data.customer.postal_code,
-            customer_address=data.customer.address,
-            customer_phone=data.customer.phone,
-            customer_email=data.customer.email,
+            order_source_id=order_source_id,
+            customer_name=customer.name,
+            customer_postal_code=customer.postal_code,
+            customer_address_prefecture=customer.address_prefecture,
+            customer_address_city=customer.address_city,
+            customer_address_building=customer.address_building,
+            customer_phone=customer.phone,
+            customer_email=customer.email,
             ordered_at=data.ordered_at,
             total_price=total_price,
         )
@@ -194,6 +197,8 @@ class OrderService:
         it will not create a duplicate. The shipment creation happens within
         the same transaction as the order status update, ensuring atomicity.
 
+        顧客情報は Shipment から Order のリレーションを経由して取得します。
+
         Args:
             order: The order that was just marked as delivered.
 
@@ -205,13 +210,7 @@ class OrderService:
         if await self._shipment_repo.exists_for_order(order.id):
             return
 
-        await self._shipment_repo.create(
-            order_ids=[order.id],
-            customer_name=order.customer_name,
-            customer_postal_code=order.customer_postal_code,
-            customer_address=order.customer_address,
-            customer_phone=order.customer_phone,
-        )
+        await self._shipment_repo.create(order_ids=[order.id])
 
     async def _to_response(
         self, order: Order, shipment: Shipment | None = None
@@ -272,10 +271,13 @@ class OrderService:
             id=order.id,
             order_number=order.order_number,
             status=OrderStatus(order.status),
-            source=order.source,
+            source=order.order_source.code if order.order_source else None,
+            order_source_id=order.order_source_id,
             customer_name=order.customer_name,
             customer_postal_code=order.customer_postal_code,
-            customer_address=order.customer_address,
+            customer_address_prefecture=order.customer_address_prefecture,
+            customer_address_city=order.customer_address_city,
+            customer_address_building=order.customer_address_building,
             customer_phone=order.customer_phone,
             customer_email=order.customer_email,
             ordered_at=order.ordered_at,

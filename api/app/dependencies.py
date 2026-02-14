@@ -13,6 +13,7 @@ from app.models.user import User, UserRole
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.manufacturer_repository import ManufacturerRepository
 from app.repositories.order_repository import OrderRepository
+from app.repositories.order_source_repository import OrderSourceRepository
 from app.repositories.product_repository import ProductRepository
 from app.repositories.shipment_repository import ShipmentRepository
 from app.repositories.user_repository import UserRepository
@@ -83,6 +84,13 @@ def get_chat_repository(
     return ChatRepository(db)
 
 
+def get_order_source_repository(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> OrderSourceRepository:
+    """Get order source repository."""
+    return OrderSourceRepository(db)
+
+
 # Service dependencies
 def get_auth_service(
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
@@ -119,9 +127,10 @@ def get_shipment_service(
     shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
     order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
     file_storage: Annotated[FileStorage, Depends(lambda: LocalFileStorage(settings.UPLOAD_DIR))],
+    order_source_repo: Annotated[OrderSourceRepository, Depends(get_order_source_repository)],
 ) -> ShipmentService:
     """Get shipment service."""
-    return ShipmentService(shipment_repo, order_repo, file_storage)
+    return ShipmentService(shipment_repo, order_repo, file_storage, order_source_repo)
 
 
 def get_chat_service(
@@ -250,13 +259,19 @@ async def get_current_manufacturer(
 # API Key authentication
 async def verify_api_key(
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    order_source_repo: OrderSourceRepository = Depends(get_order_source_repository),
 ) -> tuple[str, str]:
-    """Verify API key from header and return (api_key, source_name)."""
+    """Verify API key from header and return (api_key, order_source_id).
+
+    Looks up the API key in the order_sources table.
+    """
     if not x_api_key:
         raise UnauthorizedError("API key required")
 
-    source = settings.API_KEY_SOURCES.get(x_api_key)
-    if not source:
-        raise UnauthorizedError("Invalid API key")
+    order_source = await order_source_repo.find_by_api_key(x_api_key)
+    if order_source:
+        if not order_source.is_active:
+            raise UnauthorizedError("API key is disabled")
+        return x_api_key, order_source.id
 
-    return x_api_key, source
+    raise UnauthorizedError("Invalid API key")

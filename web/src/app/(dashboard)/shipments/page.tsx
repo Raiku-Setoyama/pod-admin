@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { RefreshCw, Upload } from "lucide-react";
+import { Download, RefreshCw, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,6 +56,7 @@ export default function ShipmentsPage() {
   const [isBulkStatusDialogOpen, setIsBulkStatusDialogOpen] = useState(false);
   const [bulkNewStatus, setBulkNewStatus] = useState<ShipmentStatus>("ready");
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const { shipments, total, isLoading, mutate } = useShipments({
     page,
@@ -110,7 +111,7 @@ export default function ShipmentsPage() {
           status: bulkNewStatus,
         }),
         headers: { "Content-Type": "application/json" },
-      });
+      }) as { updated_count: number; failed_count: number };
       toast.success(`${response.updated_count}件のステータスを更新しました`);
       if (response.failed_count > 0) {
         toast.warning(`${response.failed_count}件は更新できませんでした（ステータス遷移不可）`);
@@ -126,12 +127,72 @@ export default function ShipmentsPage() {
     }
   };
 
+  const handleExportCsv = async () => {
+    setIsExporting(true);
+    try {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+      const response = await fetch(
+        `${apiBaseUrl}/shipments/export-csv`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+          },
+          body: JSON.stringify({
+            shipment_ids: Array.from(selectedIds),
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Export failed");
+      }
+
+      // Get filename from Content-Disposition header
+      const contentDisposition = response.headers.get("Content-Disposition");
+      let filename = "shipments_export.csv";
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename\*=UTF-8''(.+)/);
+        if (filenameMatch) {
+          filename = decodeURIComponent(filenameMatch[1]);
+        }
+      }
+
+      // Download the file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast.success(`${selectedIds.size}件の配送データをエクスポートしました`);
+    } catch (error) {
+      console.error("Export failed:", error);
+      toast.error("CSVエクスポートに失敗しました");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <PageContainer
       title="配送一覧"
       description="配送管理・追跡情報"
       actions={
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleExportCsv}
+            disabled={isExporting || selectedIds.size === 0}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            {isExporting ? "エクスポート中..." : selectedIds.size > 0 ? `受注CSV (${selectedIds.size}件)` : "受注CSV"}
+          </Button>
           {selectedIds.size > 0 && (
             <Button onClick={() => setIsBulkStatusDialogOpen(true)}>
               <RefreshCw className="h-4 w-4 mr-2" />

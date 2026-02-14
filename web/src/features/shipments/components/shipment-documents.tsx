@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Download, FileText } from "lucide-react";
-import { apiClient } from "@/lib/api/client";
+import { downloadFile } from "@/lib/api/client";
 
 interface ShipmentDocumentsProps {
   shipmentId: string;
@@ -38,24 +38,15 @@ export function ShipmentDocuments({ shipmentId }: ShipmentDocumentsProps) {
   const handleDownload = async () => {
     setIsDownloading(true);
     try {
-      const data = await apiClient<Blob>(
-        `/shipments/${shipmentId}/documents?format=${format}&carrier=${carrier}`
-      );
-
       const filename =
         format === "shipping_label"
           ? `配送ラベル_${shipmentId.slice(0, 8)}.csv`
           : `同梱リスト_${shipmentId.slice(0, 8)}.csv`;
 
-      const blob = new Blob([data], { type: "text/csv" });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      await downloadFile(
+        `/shipments/${shipmentId}/documents?format=${format}&carrier=${carrier}`,
+        filename
+      );
     } catch (error) {
       console.error("Download failed:", error);
     } finally {

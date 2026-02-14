@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_session_maker
 from app.models.manufacturer import Manufacturer
 from app.models.order import Order, OrderItem, OrderStatus
+from app.models.order_source import OrderSource
 from app.models.product import Product
 
 
@@ -51,6 +52,32 @@ async def reset_orders(session: AsyncSession) -> None:
 
     await session.commit()
     print("Order data reset complete.")
+
+
+async def get_or_create_test_order_source(session: AsyncSession) -> OrderSource:
+    """Get or create TEST OrderSource."""
+    result = await session.execute(
+        select(OrderSource).where(OrderSource.code == "TEST")
+    )
+    order_source = result.scalar_one_or_none()
+    if order_source:
+        return order_source
+
+    # Create TEST OrderSource if it doesn't exist
+    order_source = OrderSource(
+        id=generate_uuid(),
+        code="TEST",
+        api_key="test-api-key",
+        name="テスト配送元",
+        phone="03-0000-0000",
+        postal_code="000-0000",
+        address_prefecture="東京都",
+        address_city="テスト市1-1-1",
+        is_active=True,
+    )
+    session.add(order_source)
+    await session.flush()
+    return order_source
 
 
 async def get_manufacturers(session: AsyncSession) -> list[Manufacturer]:
@@ -79,35 +106,45 @@ CUSTOMERS = [
     {
         "name": "山田 太郎",
         "postal_code": "150-0001",
-        "address": "東京都渋谷区神宮前1-2-3 サンプルマンション101",
+        "address_prefecture": "東京都",
+        "address_city": "渋谷区神宮前1-2-3",
+        "address_building": "サンプルマンション101",
         "phone": "090-1234-5678",
         "email": "yamada@example.com",
     },
     {
         "name": "佐藤 花子",
         "postal_code": "160-0022",
-        "address": "東京都新宿区新宿4-5-6 テストビル2F",
+        "address_prefecture": "東京都",
+        "address_city": "新宿区新宿4-5-6",
+        "address_building": "テストビル2F",
         "phone": "080-2345-6789",
         "email": "sato@example.com",
     },
     {
         "name": "鈴木 一郎",
         "postal_code": "106-0032",
-        "address": "東京都港区六本木7-8-9",
+        "address_prefecture": "東京都",
+        "address_city": "港区六本木7-8-9",
+        "address_building": None,
         "phone": "070-3456-7890",
         "email": "suzuki@example.com",
     },
     {
         "name": "田中 美咲",
         "postal_code": "141-0021",
-        "address": "東京都品川区上大崎2-3-4 品川タワー15F",
+        "address_prefecture": "東京都",
+        "address_city": "品川区上大崎2-3-4",
+        "address_building": "品川タワー15F",
         "phone": "090-4567-8901",
         "email": "tanaka@example.com",
     },
     {
         "name": "高橋 健太",
         "postal_code": "171-0022",
-        "address": "埼玉県さいたま市浦和区常盤5-6-7",
+        "address_prefecture": "埼玉県",
+        "address_city": "さいたま市浦和区常盤5-6-7",
+        "address_building": None,
         "phone": "080-5678-9012",
         "email": "takahashi@example.com",
     },
@@ -152,6 +189,10 @@ async def seed_orders(
     """Create test orders with order items."""
     print(f"Creating {num_orders} test orders...")
 
+    # Get or create TEST OrderSource
+    test_order_source = await get_or_create_test_order_source(session)
+    print(f"  Using OrderSource: {test_order_source.code} (ID: {test_order_source.id[:8]}...)")
+
     manufacturers = await get_manufacturers(session)
     if not manufacturers:
         print("  Error: No manufacturers found. Run 'python scripts/seed.py' first.")
@@ -188,10 +229,12 @@ async def seed_orders(
             id=generate_uuid(),
             order_number=generate_order_number(i + 1),
             status=OrderStatus.ORDERED.value,
-            source="TEST",
+            order_source_id=test_order_source.id,
             customer_name=customer["name"],
             customer_postal_code=customer["postal_code"],
-            customer_address=customer["address"],
+            customer_address_prefecture=customer["address_prefecture"],
+            customer_address_city=customer["address_city"],
+            customer_address_building=customer["address_building"],
             customer_phone=customer["phone"],
             customer_email=customer["email"],
             ordered_at=ordered_at,

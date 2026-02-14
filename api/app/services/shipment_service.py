@@ -6,9 +6,13 @@ from datetime import date, datetime, timezone
 
 from fastapi import UploadFile
 
+import csv
+import io
+
 from app.models.order import OrderStatus
 from app.models.shipment import Shipment, ShipmentStatus
 from app.repositories.order_repository import OrderRepository
+from app.repositories.order_source_repository import OrderSourceRepository
 from app.repositories.shipment_repository import ShipmentRepository
 from app.schemas.shipment import (
     ShipmentBulkStatusUpdate,
@@ -32,15 +36,16 @@ class ShipmentService:
         shipment_repo: ShipmentRepository,
         order_repo: OrderRepository,
         file_storage: FileStorage,
+        order_source_repo: OrderSourceRepository | None = None,
     ):
         self._shipment_repo = shipment_repo
         self._order_repo = order_repo
         self._file_storage = file_storage
+        self._order_source_repo = order_source_repo
 
     async def create(self, data: ShipmentCreate) -> ShipmentResponse:
         """Create a new shipment."""
-        # Verify all orders exist and get customer info from first order
-        first_order = None
+        # Verify all orders exist and are in the correct status
         for order_id in data.order_ids:
             order = await self._order_repo.find_by_id(order_id)
             if not order:
@@ -50,29 +55,18 @@ class ShipmentService:
             # Check if shipment already exists for this order (prevent duplicates)
             if await self._shipment_repo.exists_for_order(order_id):
                 raise ValidationError(f"Order {order_id} already has a shipment")
-            if first_order is None:
-                first_order = order
 
-        if not first_order:
-            raise ValidationError("No valid orders provided")
+        # Create shipment (customer info is accessed via first order relationship)
+        shipment = await self._shipment_repo.create(order_ids=data.order_ids)
 
-        # Create shipment
-        shipment = await self._shipment_repo.create(
-            order_ids=data.order_ids,
-            customer_name=first_order.customer_name,
-            customer_postal_code=first_order.customer_postal_code,
-            customer_address=first_order.customer_address,
-            customer_phone=first_order.customer_phone,
-        )
-
-        return await self._to_response(shipment)
+        return self._to_response(shipment)
 
     async def get_by_id(self, shipment_id: str) -> ShipmentResponse:
         """Get a shipment by ID."""
         shipment = await self._shipment_repo.find_by_id(shipment_id)
         if not shipment:
             raise NotFoundError("Shipment", shipment_id)
-        return await self._to_response(shipment)
+        return self._to_response(shipment)
 
     async def list(
         self,
@@ -109,9 +103,7 @@ class ShipmentService:
             sort_order=sort_order,
         )
 
-        items = []
-        for shipment in shipments:
-            items.append(await self._to_response(shipment))
+        items = [self._to_response(shipment) for shipment in shipments]
 
         return ShipmentListResponse(
             items=items,
@@ -152,7 +144,7 @@ class ShipmentService:
                 await self._order_repo.update_status(item.order_id, OrderStatus.SHIPPED)
 
         await self._shipment_repo.update(shipment)
-        return await self._to_response(shipment)
+        return self._to_response(shipment)
 
     async def upload_packing_photo(
         self, shipment_id: str, photo: UploadFile
@@ -167,7 +159,7 @@ class ShipmentService:
         shipment.packing_photo_path = path
 
         await self._shipment_repo.update(shipment)
-        return await self._to_response(shipment)
+        return self._to_response(shipment)
 
     async def import_tracking_numbers(
         self, data: TrackingImportRequest
@@ -181,7 +173,7 @@ class ShipmentService:
                 if item.carrier:
                     shipment.carrier = item.carrier
                 await self._shipment_repo.update(shipment)
-                results.append(await self._to_response(shipment))
+                results.append(self._to_response(shipment))
         return results
 
     async def bulk_update_status(
@@ -236,11 +228,15 @@ class ShipmentService:
         }
         return target in valid_transitions.get(current, [])
 
-    async def _to_response(self, shipment: Shipment) -> ShipmentResponse:
-        """Convert shipment model to response schema."""
+    def _to_response(self, shipment: Shipment) -> ShipmentResponse:
+        """Convert shipment model to response schema.
+
+        顧客情報は最初の注文 (first_order) から取得します。
+        """
         items = []
+        first_order = shipment.first_order
         for item in shipment.items:
-            order = await self._order_repo.find_by_id(item.order_id)
+            order = item.order
             items.append(ShipmentItemResponse(
                 id=item.id,
                 order_id=item.order_id,
@@ -257,11 +253,124 @@ class ShipmentService:
             shipped_at=shipment.shipped_at,
             delivered_at=shipment.delivered_at,
             note=shipment.note,
-            customer_name=shipment.customer_name,
-            customer_postal_code=shipment.customer_postal_code,
-            customer_address=shipment.customer_address,
-            customer_phone=shipment.customer_phone,
+            # Customer info from first order
+            customer_name=first_order.customer_name if first_order else "",
+            customer_postal_code=first_order.customer_postal_code if first_order else "",
+            customer_address_prefecture=first_order.customer_address_prefecture if first_order else "",
+            customer_address_city=first_order.customer_address_city if first_order else "",
+            customer_address_building=first_order.customer_address_building if first_order else None,
+            customer_phone=first_order.customer_phone if first_order else "",
             items=items,
             created_at=shipment.created_at,
             updated_at=shipment.updated_at,
         )
+
+    def _format_product_type(self, product_type: str) -> str:
+        """Convert product_type to Japanese display name."""
+        type_map = {
+            "acrylic_keychain": "アクリルキーホルダー",
+            "acrylic_stand": "アクリルスタンド",
+            "sticker": "ステッカー",
+            "tote_bag": "トートバッグ",
+            "mug": "マグカップ",
+            "tshirt": "Tシャツ",
+        }
+        return type_map.get(product_type, product_type)
+
+    async def export_csv(self, shipment_ids: list[str]) -> tuple[bytes, str]:
+        """Export shipments to CSV for delivery.
+
+        Generates a CSV file with 17 columns for delivery company import.
+        Each row represents one order item (not one shipment).
+
+        Args:
+            shipment_ids: List of shipment IDs to export.
+
+        Returns:
+            Tuple of (CSV content as bytes with BOM, filename)
+
+        Raises:
+            NotFoundError: If a shipment is not found.
+            ValidationError: If OrderSourceRepository is not configured.
+        """
+        if not self._order_source_repo:
+            raise ValidationError("OrderSourceRepository is not configured")
+
+        # Collect CSV rows (one row per order item)
+        rows = []
+
+        for shipment_id in shipment_ids:
+            shipment = await self._shipment_repo.find_by_id(shipment_id)
+            if not shipment:
+                raise NotFoundError("Shipment", shipment_id)
+
+            # Iterate through all orders in this shipment
+            for shipment_item in shipment.items:
+                order = shipment_item.order
+                if not order:
+                    continue
+
+                # Get order source for sender info (from relationship)
+                order_source = order.order_source
+
+                # Create one row per order item
+                for item in order.items:
+                    row = [
+                        order.order_number,  # 1. 注文番号
+                        order.customer_name,  # 2. お客様氏名
+                        item.product_name,  # 3. 商品名
+                        self._format_product_type(item.product_type),  # 4. 商品種類
+                        str(item.quantity),  # 5. 数量
+                        item.uid or "",  # 6. 商品番号（アイテムUID）
+                        order.customer_phone,  # 7. お届け先電話番号
+                        order.customer_postal_code,  # 8. お届け先郵便番号
+                        order.customer_address_prefecture,  # 9. お届け先住所1（都道府県）
+                        order.customer_address_city,  # 10. お届け先住所2（市区町村番地以下）
+                        order.customer_address_building or "",  # 11. お届け先住所3（建物名等）
+                        order_source.phone if order_source else "",  # 12. 配送元電話番号
+                        order_source.postal_code if order_source else "",  # 13. 配送元郵便番号
+                        order_source.address_prefecture if order_source else "",  # 14. 配送元住所1
+                        order_source.address_city if order_source else "",  # 15. 配送元住所2
+                        order_source.address_building or "" if order_source else "",  # 16. 配送元住所3
+                        order_source.name if order_source else "",  # 17. 配送元氏名
+                    ]
+                    rows.append(row)
+
+        # Generate CSV with UTF-8 BOM for Excel compatibility
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Write header (matching template exactly)
+        header = [
+            "注文番号",
+            "お客様氏名",
+            "商品名",
+            "商品種類",
+            "数量",
+            "商品番号",
+            "お届け先電話番号",
+            "お届け先郵便番号",
+            "お届け先住所1(都道府県)",
+            "お届け先住所2(市区町村番地以下)",
+            "お届け先住所3(建物名等)",
+            "配送元電話番号",
+            "配送元郵便番号",
+            "配送元住所1(都道府県)",
+            "配送元住所2(市区町村番地以下)",
+            "配送元住所3(建物名等)",
+            "配送元氏名",
+        ]
+        writer.writerow(header)
+
+        # Write data rows
+        for row in rows:
+            writer.writerow(row)
+
+        # Get CSV content with BOM
+        csv_content = output.getvalue()
+        csv_bytes = b"\xef\xbb\xbf" + csv_content.encode("utf-8")
+
+        # Generate filename
+        filename = f"shipments_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+        return csv_bytes, filename
