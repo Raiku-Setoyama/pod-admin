@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from app.dependencies import (
     get_chat_service,
     get_current_manufacturer,
+    get_invoice_service,
     get_manufacturer_order_service,
     get_manufacturer_portal_service,
 )
@@ -20,12 +21,16 @@ from app.schemas.chat import (
     ChatMessageListResponse,
     ChatMessageResponse,
 )
+from app.schemas.invoice import InvoiceItemRequest
 from app.schemas.manufacturer import ManufacturerOrderItemListResponse
 from app.schemas.manufacturer_portal import (
     ManufacturerLoginRequest,
     ManufacturerLoginResponse,
+    ManufacturerProfileResponse,
+    ManufacturerProfileUpdate,
 )
 from app.services.chat_service import ChatService
+from app.services.invoice_service import InvoiceService
 from app.services.manufacturer_order_service import ManufacturerOrderService
 from app.services.manufacturer_portal_service import ManufacturerPortalService
 from app.utils.security import decode_token
@@ -49,6 +54,34 @@ async def login(
         manufacturer_id=manufacturer.id,
         manufacturer_name=manufacturer.name,
     )
+
+
+# === プロフィールエンドポイント ===
+
+
+@router.get("/profile", response_model=ManufacturerProfileResponse)
+async def get_profile(
+    manufacturer: Annotated[Manufacturer, Depends(get_current_manufacturer)],
+) -> ManufacturerProfileResponse:
+    """プロフィール取得
+
+    ログイン中のメーカーのプロフィール情報を取得します。
+    """
+    return ManufacturerProfileResponse.model_validate(manufacturer)
+
+
+@router.patch("/profile", response_model=ManufacturerProfileResponse)
+async def update_profile(
+    data: ManufacturerProfileUpdate,
+    manufacturer: Annotated[Manufacturer, Depends(get_current_manufacturer)],
+    service: Annotated[ManufacturerPortalService, Depends(get_manufacturer_portal_service)],
+) -> ManufacturerProfileResponse:
+    """プロフィール更新
+
+    ログイン中のメーカーのプロフィール情報を更新します。
+    """
+    updated = await service.update_profile(manufacturer.id, data)
+    return ManufacturerProfileResponse.model_validate(updated)
 
 
 @router.get("/debug-token")
@@ -130,6 +163,46 @@ async def download_order_documents(
             "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
         },
     )
+
+
+# === 請求書エンドポイント ===
+
+
+@router.post("/invoices")
+async def generate_invoice(
+    data: InvoiceItemRequest,
+    manufacturer: Annotated[Manufacturer, Depends(get_current_manufacturer)],
+    service: Annotated[InvoiceService, Depends(get_invoice_service)],
+) -> StreamingResponse:
+    """請求書PDFを発行（選択発行）
+
+    指定された受注明細に対する請求書PDFを生成してダウンロードします。
+
+    Args:
+        data: 請求書発行リクエスト
+            - order_item_ids: 請求対象のOrderItem IDリスト
+
+    Returns:
+        請求書PDFファイル
+    """
+    pdf_bytes, filename, item_count, total_amount = await service.generate_invoice_by_items(
+        manufacturer.id, data.order_item_ids
+    )
+
+    encoded_filename = quote(filename)
+
+    return StreamingResponse(
+        iter([pdf_bytes]),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+            "X-Invoice-Item-Count": str(item_count),
+            "X-Invoice-Total-Amount": str(total_amount),
+        },
+    )
+
+
+# === チャットエンドポイント ===
 
 
 @router.get("/chat", response_model=ChatMessageListResponse)

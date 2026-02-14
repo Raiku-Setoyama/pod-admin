@@ -33,6 +33,7 @@ import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
 import type { ManufacturerOrderItemListResponse, ProductType } from "@/types/api";
 import { ManufacturerOrderFilters } from "./manufacturer-order-filters";
+import { InvoiceDialog } from "@/features/invoice";
 
 interface ManufacturerOrderDetailProps {
   data: ManufacturerOrderItemListResponse;
@@ -201,6 +202,11 @@ export function ManufacturerOrderDetail({
               {data.manufacturer_name}
             </CardTitle>
             <div className="flex items-center gap-2">
+              <InvoiceDialog
+                manufacturerId={data.manufacturer_id}
+                selectedItemIds={Array.from(selectedIds)}
+                disabled={data.total === 0}
+              />
               <Button
                 variant="outline"
                 onClick={handleDownload}

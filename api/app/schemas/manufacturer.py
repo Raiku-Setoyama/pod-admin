@@ -19,6 +19,16 @@ class ManufacturerBase(BaseModel):
     lead_time_days: int = Field(..., ge=1)
     daily_order_limit: int = Field(..., ge=1)
     sharing_method: Literal["drive", "portal"] = "portal"
+    # Invoice-related fields
+    postal_code: str | None = Field(None, max_length=10)
+    address: str | None = Field(None, max_length=500)
+    bank_name: str | None = Field(None, max_length=100)
+    bank_branch: str | None = Field(None, max_length=100)
+    bank_account_type: Literal["普通", "当座"] | None = None
+    bank_account_number: str | None = Field(None, max_length=20)
+    bank_account_holder: str | None = Field(None, max_length=100)
+    representative_name: str | None = Field(None, max_length=100)
+    invoice_notes: str | None = Field(None, max_length=1000)
 
 
 class ManufacturerCreate(ManufacturerBase):
@@ -40,6 +50,16 @@ class ManufacturerUpdate(BaseModel):
     sharing_method: Literal["drive", "portal"] | None = None
     is_active: bool | None = None
     password: str | None = Field(None, min_length=8)
+    # Invoice-related fields
+    postal_code: str | None = Field(None, max_length=10)
+    address: str | None = Field(None, max_length=500)
+    bank_name: str | None = Field(None, max_length=100)
+    bank_branch: str | None = Field(None, max_length=100)
+    bank_account_type: Literal["普通", "当座"] | None = None
+    bank_account_number: str | None = Field(None, max_length=20)
+    bank_account_holder: str | None = Field(None, max_length=100)
+    representative_name: str | None = Field(None, max_length=100)
+    invoice_notes: str | None = Field(None, max_length=1000)
 
 
 class ManufacturerResponse(ManufacturerBase):

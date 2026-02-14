@@ -17,6 +17,16 @@ ENV UV_LINK_MODE=copy
 # Development stage
 FROM base AS development
 
+# Install Weasyprint dependencies and Japanese fonts
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libffi-dev \
+    shared-mime-info \
+    fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
@@ -37,6 +47,16 @@ CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "800
 
 # Production stage
 FROM base AS production
+
+# Install Weasyprint dependencies and Japanese fonts
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libffi-dev \
+    shared-mime-info \
+    fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files
 COPY pyproject.toml uv.lock ./

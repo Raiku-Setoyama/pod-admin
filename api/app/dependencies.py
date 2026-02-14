@@ -20,6 +20,7 @@ from app.services.auth_service import AuthService
 from app.services.chat_service import ChatService
 from app.services.dashboard_service import DashboardService
 from app.services.external_service import ExternalService
+from app.services.invoice_service import InvoiceService
 from app.services.manufacturer_service import ManufacturerService
 from app.services.manufacturer_order_service import ManufacturerOrderService
 from app.services.manufacturer_portal_service import ManufacturerPortalService
@@ -169,6 +170,14 @@ def get_external_service(
 ) -> ExternalService:
     """Get external service for external sales site APIs."""
     return ExternalService(product_repo, order_repo)
+
+
+def get_invoice_service(
+    manufacturer_repo: Annotated[ManufacturerRepository, Depends(get_manufacturer_repository)],
+    order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
+) -> InvoiceService:
+    """Get invoice service."""
+    return InvoiceService(manufacturer_repo, order_repo)
 
 
 # File storage dependency

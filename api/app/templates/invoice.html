@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>請求書 {{ invoice_number }}</title>
+<link rel="stylesheet" href="invoice.css">
+</head>
+<body>
+
+<div class="invoice">
+
+  <!-- タイトル -->
+  <div class="title">請求書</div>
+
+  <!-- ヘッダー：宛先 + 発行日・伝票番号 -->
+  <div class="header">
+    <div class="header-left">
+      <div class="customer-name">株式会社TOSYO　御中</div>
+    </div>
+    <div class="header-right">
+      <table>
+        <tr>
+          <td>発行日：</td>
+          <td>{{ issue_date }}</td>
+        </tr>
+        <tr>
+          <td>伝票番号：</td>
+          <td>{{ invoice_number }}</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- 送り主情報 -->
+  <div class="sender-section">
+    <div class="sender-left">
+      <div class="greeting">下記の通りご請求申し上げます。</div>
+    </div>
+    <div class="sender-right">
+      <div class="sender-company">{{ manufacturer.name }}</div>
+      {% if manufacturer.postal_code %}
+      <div>〒{{ manufacturer.postal_code }}</div>
+      {% endif %}
+      {% if manufacturer.address %}
+      <div>{{ manufacturer.address }}</div>
+      {% endif %}
+      {% if manufacturer.phone %}
+      <div>電話：　{{ manufacturer.phone }}</div>
+      {% endif %}
+      <div>E-mail：　{{ manufacturer.email }}</div>
+    </div>
+  </div>
+
+  <!-- 請求金額 + 振込先・支払期日 -->
+  <div class="billing-section">
+    <div class="billing-amount">
+      <div class="billing-amount-label">ご請求金額（税込）</div>
+      <div class="billing-amount-value">¥{{ "{:,}".format(total_amount) }}</div>
+    </div>
+    <div class="billing-details">
+      <div class="billing-row">
+        <div class="billing-row-label">振込先</div>
+        <div class="billing-row-value">
+          {% if manufacturer.bank_name %}
+          <div class="billing-row-value-line">
+            {{ manufacturer.bank_name }}<br>
+            {{ manufacturer.bank_account_type or '普通' }} {{ manufacturer.bank_account_number or '' }}
+          </div>
+          <div class="billing-row-value-line">
+            {{ manufacturer.bank_branch or '' }}<br>
+            {{ manufacturer.bank_account_holder or '' }}
+          </div>
+          {% else %}
+          -
+          {% endif %}
+        </div>
+      </div>
+      <div class="billing-row">
+        <div class="billing-row-label">支払期日</div>z
+        <div class="billing-row-value">{{ payment_due_date or '-' }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 明細テーブル -->
+  <table class="detail-table">
+    <thead>
+      <tr>
+        <th class="order-header">注文番号</th>
+        <th class="name-header">商品名</th>
+        <th>数量</th>
+        <th>単価</th>
+        <th>金額</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td class="order">{{ item.order_number }}</td>
+        <td class="name">{{ item.product_name }}{% if item.size %} ({{ item.size }}){% endif %}</td>
+        <td class="qty">{{ item.quantity }}</td>
+        <td class="price">¥{{ "{:,}".format(item.unit_price) }}</td>
+        <td class="amount">¥{{ "{:,}".format(item.amount) }}</td>
+      </tr>
+      {% endfor %}
+      {% for _ in range([0, 10 - items|length]|max) %}
+      <tr class="empty-row">
+        <td class="order"></td>
+        <td class="name"></td>
+        <td class="qty"></td>
+        <td class="price"></td>
+        <td class="amount"></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- 小計・消費税・合計 -->
+  <div class="summary-section">
+    <table class="summary-table">
+      <tr>
+        <td class="label">小計</td>
+        <td class="value">¥{{ "{:,}".format(subtotal) }}</td>
+      </tr>
+      <tr>
+        <td class="label">消費税</td>
+        <td class="value">¥{{ "{:,}".format(tax_amount) }}</td>
+      </tr>
+      <tr class="total-row">
+        <td class="label">合計金額</td>
+        <td class="value">¥{{ "{:,}".format(total_amount) }}</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- 備考 -->
+  <div class="notes-section">
+    <div class="notes-label">備考</div>
+    <div class="notes-content">{{ manufacturer.invoice_notes or '' }}</div>
+  </div>
+
+</div>
+
+</body>
+</html>

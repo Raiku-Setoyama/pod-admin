@@ -17,6 +17,7 @@ import {
   downloadAllOrderDocuments,
 } from "@/features/manufacturer-portal/hooks/use-manufacturer-orders";
 import { ManufacturerOrderFilters } from "@/features/purchase-orders/components/manufacturer-order-filters";
+import { InvoiceDialog } from "@/features/invoice";
 import { Loader2, Package, Download } from "lucide-react";
 import type { ProductType } from "@/types/api";
 
@@ -113,17 +114,24 @@ export default function ManufacturerDashboardPage() {
             発注中のアイテム一覧を確認し、製造データをダウンロードできます
           </p>
         </div>
-        <Button
-          onClick={handleDownloadAll}
-          disabled={isDownloading || selectedIds.size === 0}
-        >
-          <Download className="h-4 w-4 mr-2" />
-          {isDownloading
-            ? "ダウンロード中..."
-            : selectedIds.size > 0
-              ? `選択した${selectedIds.size}件をダウンロード`
-              : "ダウンロードする項目を選択"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <InvoiceDialog
+            selectedItemIds={Array.from(selectedIds)}
+            isPortal={true}
+            disabled={total === 0}
+          />
+          <Button
+            onClick={handleDownloadAll}
+            disabled={isDownloading || selectedIds.size === 0}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            {isDownloading
+              ? "ダウンロード中..."
+              : selectedIds.size > 0
+                ? `選択した${selectedIds.size}件をダウンロード`
+                : "ダウンロードする項目を選択"}
+          </Button>
+        </div>
       </div>
 
       {/* サマリーカード */}

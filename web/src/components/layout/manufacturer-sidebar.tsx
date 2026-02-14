@@ -1,12 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Package, MessageSquare, Factory } from "lucide-react";
+import { Package, MessageSquare, Factory, Settings } from "lucide-react";
 import { BaseSidebar, type NavItem } from "./base-sidebar";
 
 const navigation: NavItem[] = [
   { name: "発注", href: "/manufacturer", icon: Package },
   { name: "チャット", href: "/manufacturer/chat", icon: MessageSquare },
+  { name: "アカウント設定", href: "/manufacturer/settings", icon: Settings },
 ];
 
 interface ManufacturerSidebarProps {

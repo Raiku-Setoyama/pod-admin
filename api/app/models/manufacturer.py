@@ -36,6 +36,17 @@ class Manufacturer(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Invoice-related fields
+    postal_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    bank_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    bank_branch: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    bank_account_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    bank_account_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    bank_account_holder: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    representative_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    invoice_notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+
     # Relationships
     products: Mapped[list["Product"]] = relationship(back_populates="manufacturer")
 

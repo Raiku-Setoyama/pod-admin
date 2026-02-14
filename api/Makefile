@@ -17,6 +17,8 @@ help:
 	@echo "  make makemigrations  - マイグレーションファイルを作成 (MSG=メッセージ)"
 	@echo "  make seed            - シードデータを挿入"
 	@echo "  make seed-reset      - データをリセットしてシードデータを再挿入"
+	@echo "  make seed-orders     - テスト発注データを挿入"
+	@echo "  make seed-orders-reset - 発注データをリセットして再挿入"
 	@echo "  make test            - テストを実行"
 	@echo "  make clean           - コンテナとボリュームを削除"
 
@@ -70,6 +72,13 @@ seed:
 
 seed-reset:
 	docker compose exec api uv run python scripts/seed.py --reset
+
+# テスト発注データ
+seed-orders:
+	docker compose exec api uv run python scripts/seed_orders.py
+
+seed-orders-reset:
+	docker compose exec api uv run python scripts/seed_orders.py --reset
 
 # テスト
 test:

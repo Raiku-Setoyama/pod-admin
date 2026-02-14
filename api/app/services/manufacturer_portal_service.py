@@ -3,7 +3,8 @@
 from app.models.manufacturer import Manufacturer
 from app.repositories.manufacturer_repository import ManufacturerRepository
 from app.schemas.auth import TokenResponse
-from app.utils.exceptions import UnauthorizedError
+from app.schemas.manufacturer_portal import ManufacturerProfileUpdate
+from app.utils.exceptions import NotFoundError, UnauthorizedError
 from app.utils.security import create_access_token, create_refresh_token, verify_password
 
 
@@ -43,3 +44,18 @@ class ManufacturerPortalService:
             access_token=access_token,
             refresh_token=refresh_token,
         ), manufacturer
+
+    async def update_profile(
+        self, manufacturer_id: str, data: ManufacturerProfileUpdate
+    ) -> Manufacturer:
+        """Update manufacturer profile."""
+        manufacturer = await self._manufacturer_repo.find_by_id(manufacturer_id)
+        if not manufacturer:
+            raise NotFoundError("Manufacturer", manufacturer_id)
+
+        # Update fields from data (only non-None values)
+        update_data = data.model_dump(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(manufacturer, field, value)
+
+        return await self._manufacturer_repo.update(manufacturer)

@@ -11,6 +11,7 @@ from urllib.parse import quote
 from app.dependencies import (
     get_chat_service,
     get_current_admin,
+    get_invoice_service,
     get_manufacturer_order_service,
     get_manufacturer_service,
     get_order_list_service,
@@ -23,6 +24,7 @@ from app.schemas.chat import (
     ChatMessageListResponse,
     ChatMessageResponse,
 )
+from app.schemas.invoice import InvoiceItemRequest
 from app.schemas.manufacturer import (
     ManufacturerCreate,
     ManufacturerListResponse,
@@ -33,6 +35,7 @@ from app.schemas.manufacturer import (
     ManufacturerUpdate,
 )
 from app.services.chat_service import ChatService
+from app.services.invoice_service import InvoiceService
 from app.services.manufacturer_order_service import ManufacturerOrderService
 from app.services.manufacturer_service import ManufacturerService
 from app.services.order_list_service import OrderListService
@@ -245,6 +248,45 @@ async def update_manufacturer_order_status(
     """
     updated_count = await service.update_order_status(manufacturer_id, data)
     return {"updated_count": updated_count}
+
+
+# === 請求書エンドポイント ===
+
+
+@router.post("/{manufacturer_id}/invoices")
+async def generate_invoice(
+    manufacturer_id: str,
+    data: InvoiceItemRequest,
+    service: Annotated[InvoiceService, Depends(get_invoice_service)],
+    current_user: Annotated[User, Depends(get_current_admin)],
+) -> StreamingResponse:
+    """請求書PDFを発行（選択発行）
+
+    指定された受注明細に対する請求書PDFを生成してダウンロードします。
+
+    Args:
+        manufacturer_id: メーカーID
+        data: 請求書発行リクエスト
+            - order_item_ids: 請求対象のOrderItem IDリスト
+
+    Returns:
+        請求書PDFファイル
+    """
+    pdf_bytes, filename, item_count, total_amount = await service.generate_invoice_by_items(
+        manufacturer_id, data.order_item_ids
+    )
+
+    encoded_filename = quote(filename)
+
+    return StreamingResponse(
+        iter([pdf_bytes]),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+            "X-Invoice-Item-Count": str(item_count),
+            "X-Invoice-Total-Amount": str(total_amount),
+        },
+    )
 
 
 # === チャットエンドポイント ===

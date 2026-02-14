@@ -271,3 +271,38 @@ export interface User {
   role: "admin" | "staff";
   is_active: boolean;
 }
+
+// Invoice types
+export interface InvoiceItemRequest {
+  order_item_ids: string[];
+}
+
+// Manufacturer Profile types
+export interface ManufacturerProfile {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  postal_code: string | null;
+  address: string | null;
+  bank_name: string | null;
+  bank_branch: string | null;
+  bank_account_type: "普通" | "当座" | null;
+  bank_account_number: string | null;
+  bank_account_holder: string | null;
+  representative_name: string | null;
+  invoice_notes: string | null;
+}
+
+export interface ManufacturerProfileUpdate {
+  phone?: string | null;
+  postal_code?: string | null;
+  address?: string | null;
+  bank_name?: string | null;
+  bank_branch?: string | null;
+  bank_account_type?: "普通" | "当座" | null;
+  bank_account_number?: string | null;
+  bank_account_holder?: string | null;
+  representative_name?: string | null;
+  invoice_notes?: string | null;
+}
