@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "15188d9c0787",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 10,
+  "files_touched": [
+    "api/alembic/versions/add_order_sources_and_address_fields.py",
+    "api/app/dependencies.py",
+    "api/app/main.py",
+    "api/app/models/base.py",
+    "api/app/models/order.py",
+    "api/app/models/order_source.py",
+    "api/app/models/shipment.py",
+    "api/app/repositories/order_source_repository.py",
+    "api/app/repositories/shipment_repository.py",
+    "api/app/routers/order_sources.py",
+    "api/app/routers/shipments.py",
+    "api/app/schemas/order.py",
+    "api/app/schemas/order_source.py",
+    "api/app/schemas/shipment.py",
+    "api/app/services/manufacturer_order_service.py",
+    "api/app/services/order_service.py",
+    "api/app/services/shipment_service.py",
+    "api/docs/order-api.md",
+    "api/scripts/seed_orders.py",
+    "api/scripts/seed_test_shipment.py",
+    "web/src/app/(dashboard)/shipments/page.tsx",
+    "web/src/features/orders/components/order-detail.tsx",
+    "web/src/features/shipments/components/shipment-detail.tsx",
+    "web/src/features/shipments/components/shipment-documents.tsx",
+    "web/src/features/shipments/components/shipment-list.tsx",
+    "web/src/types/api/index.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/15/188d9c0787/0/metadata.json",
+      "transcript": "/15/188d9c0787/0/full.jsonl",
+      "context": "/15/188d9c0787/0/context.md",
+      "content_hash": "/15/188d9c0787/0/content_hash.txt",
+      "prompt": "/15/188d9c0787/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10949,
+    "cache_creation_tokens": 515122,
+    "cache_read_tokens": 22483989,
+    "output_tokens": 579,
+    "api_call_count": 227
+  }
+}
