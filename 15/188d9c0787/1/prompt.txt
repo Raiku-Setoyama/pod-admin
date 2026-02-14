@@ -1,0 +1,613 @@
+Implement the following plan:
+
+# Order-OrderSource FK Migration Plan
+
+## 概要
+
+`Order.source`（文字列コード）を `Order.order_source_id`（外部キー UUID）に変更し、OrderとOrderSourceを適切なリレーションで紐付ける。
+
+## 方針（ユーザー確認済み）
+
+| 項目 | 決定 |
+|-----|------|
+| 環境変数フォールバック | **廃止** - DB管理のみ |
+| sourceカラム | **削除** - order_source_idに完全移行 |
+| 既存注文 | **OrderSource作成** - LEGACY/TEST用レコードを作成して紐付け |
+
+---
+
+## 実装タスク
+
+### 1. マイグレーション作成
+
+**ファイル**: `api/alembic/versions/migrate_order_source_fk.py`
+
+```python
+def upgrade():
+    # 1. LEGACY/TEST用OrderSourceを作成
+    op.execute("""
+        INSERT INTO order_sources (id, code, api_key, name, phone, postal_code,
+            address_prefecture, address_city, is_active, created_at, updated_at)
+        VALUES
+            (gen_random_uuid(), 'LEGACY', 'legacy-disabled-key', 'レガシー注文',
+             '000-0000-0000', '000-0000', '東京都', 'レガシー', false, now(), now()),
+            (gen_random_uuid(), 'TEST', 'test-api-key', 'テスト配送元',
+             '03-0000-0000', '000-0000', '東京都', 'テスト市1-1-1', true, now(), now())
+        ON CONFLICT (code) DO NOTHING
+    """)
+
+    # 2. order_source_id カラム追加
+    op.add_column('orders', sa.Column('order_source_id', sa.UUID(), nullable=True))
+    op.create_foreign_key('fk_orders_order_source_id', 'orders', 'order_sources',
+                          ['order_source_id'], ['id'], ondelete='SET NULL')
+    op.create_index('ix_orders_order_source_id', 'orders', ['order_source_id'])
+
+    # 3. 既存データ移行（sourceコード → order_source_id）
+    op.execute("""
+        UPDATE orders o SET order_source_id = os.id
+        FROM order_sources os WHERE o.source = os.code
+    """)
+
+    # 4. source カラム削除
+    op.drop_index('ix_orders_source', 'orders')
+    op.drop_column('orders', 'source')
+```
+
+---
+
+### 2. モデル変更
+
+**ファイル**: `api/app/models/order.py`
+
+```python
+# 削除
+source: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+
+# 追加
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import relationship
+
+order_source_id: Mapped[str | None] = mapped_column(
+    ForeignKey("order_sources.id", ondelete="SET NULL"), nullable=True, index=True
+)
+order_source: Mapped["OrderSource | None"] = relationship()
+
+# TYPE_CHECKING追加
+if TYPE_CHECKING:
+    from app.models.order_source import OrderSource
+```
+
+---
+
+### 3. スキーマ変更
+
+**ファイル**: `api/app/schemas/order.py`
+
+```python
+class OrderResponse(BaseModel):
+    # sourceを残す（order_source.codeから算出）
+    source: str | None = None
+    # 新規追加
+    order_source_id: str | None = None
+```
+
+---
+
+### 4. 依存関係変更
+
+**ファイル**: `api/app/dependencies.py`
+
+```python
+# verify_api_key の戻り値変更
+async def verify_api_key(...) -> tuple[str, str]:  # (api_key, order_source_id)
+    order_source = await order_source_repo.find_by_api_key(x_api_key)
+    if order_source:
+        if not order_source.is_active:
+            raise UnauthorizedError("API key is disabled")
+        return x_api_key, order_source.id  # IDを返す
+
+    # 環境変数フォールバック削除
+    raise UnauthorizedError("Invalid API key")
+
+# get_order_service にorder_source_repo追加
+def get_order_service(..., order_source_repo: OrderSourceRepository) -> OrderService:
+    return OrderService(order_repo, product_repo, shipment_repo, order_source_repo)
+```
+
+---
+
+### 5. サービス層変更
+
+**ファイル**: `api/app/services/order_service.py`
+
+```python
+class OrderService:
+    def __init__(self, ..., order_source_repo: OrderSourceRepository):
+        self._order_source_repo = order_source_repo
+
+    async def create(self, data: OrderCreate, order_source_id: str) -> OrderResponse:
+        order = Order(
+            order_number=data.order_number,
+            order_source_id=order_source_id,  # sourceからorder_source_idに変更
+            ...
+        )
+
+    async def _to_response(self, order: Order, ...) -> OrderResponse:
+        return OrderResponse(
+            source=order.order_source.code if order.order_source else None,
+            order_source_id=order.order_source_id,
+            ...
+        )
+```
+
+**ファイル**: `api/app/services/shipment_service.py`
+
+```python
+async def export_csv(self, shipment_ids: list[str]) -> tuple[bytes, str]:
+    # find_by_codeを使わず、リレーションを直接使用
+    order_source = order.order_source  # 直接アクセス
+```
+
+---
+
+### 6. ルーター変更
+
+**ファイル**: `api/app/routers/orders.py`
+
+```python
+@router.post("", response_model=OrderResponse, status_code=201)
+async def create_order(
+    data: OrderCreate,
+    service: OrderService = Depends(get_order_service),
+    api_key_info: tuple[str, str] = Depends(verify_api_key),
+) -> OrderResponse:
+    _, order_source_id = api_key_info  # sourceからorder_source_idに変更
+    return await service.create(data, order_source_id=order_source_id)
+```
+
+---
+
+### 7. リポジトリ変更
+
+**ファイル**: `api/app/repositories/order_repository.py`
+
+```python
+# Eager loading追加
+async def find_by_id(self, order_id: str) -> Order | None:
+    result = await self._db.execute(
+        select(Order)
+        .options(
+            selectinload(Order.items),
+            selectinload(Order.order_source),  # 追加
+        )
+        .where(Order.id == order_id)
+    )
+```
+
+---
+
+### 8. シードスクリプト更新
+
+**ファイル**: `api/scripts/seed_orders.py`
+
+- `source="TEST"` を `order_source_id=<TEST_ID>` に変更
+- TESTのOrderSourceを取得/作成してIDを使用
+
+**ファイル**: `api/scripts/seed_test_shipment.py`
+
+- 同様にorder_source_idを使用
+
+---
+
+### 9. 設定変更
+
+**ファイル**: `api/app/config.py`
+
+```python
+# 削除
+API_KEY_SOURCES: dict[str, str] = {"dev-api-key": "DEV"}
+
+@property
+def API_KEYS(self) -> list[str]:
+    # この機能も削除可能（DBから取得に変更）
+```
+
+---
+
+### 10. ドキュメント更新
+
+**ファイル**: `api/docs/order-api.md`
+
+- APIレスポンスに`order_source_id`を追加
+- 変更履歴を更新
+
+---
+
+## 影響ファイル一覧
+
+| ファイル | 変更内容 |
+|---------|---------|
+| `api/app/models/order.py` | FK追加、sourceカラム削除 |
+| `api/app/schemas/order.py` | order_source_id追加 |
+| `api/app/dependencies.py` | verify_api_key戻り値変更、ENV fallback削除 |
+| `api/app/services/order_service.py` | order_source_id使用 |
+| `api/app/services/shipment_service.py` | リレーション直接アクセス |
+| `api/app/routers/orders.py` | order_source_id受け取り |
+| `api/app/repositories/order_repository.py` | Eager loading追加 |
+| `api/app/config.py` | API_KEY_SOURCES削除 |
+| `api/scripts/seed_orders.py` | order_source_id使用 |
+| `api/scripts/seed_test_shipment.py` | order_source_id使用 |
+| `api/alembic/versions/` | 新規マイグレーション |
+| `api/docs/order-api.md` | ドキュメント更新 |
+
+---
+
+## 検証方法
+
+1. **マイグレーション実行**: `alembic upgrade head`
+2. **シードデータ投入**: `python scripts/seed_orders.py --reset`
+3. **API動作確認**:
+   - `POST /api/v1/orders` - 新規注文作成（DBのAPIキー使用）
+   - `GET /api/v1/orders/{id}` - order_source_id含むレスポンス確認
+4. **CSV出力確認**: 配送CSVに配送元情報が正しく出力されること
+5. **既存データ確認**: LEGACY/TEST注文がOrderSourceと紐付いていること
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/r_setoyama/.REDACTED.jsonl
+
+---
+
+動作確認用に、配送準備中ステータスの注文データを1件作成してください。
+
+---
+
+2026-02-14 14:50:51 INFO:     172.20.0.1:61738 - "POST /api/v1/shipments/export-csv HTTP/1.1" 500 Internal Server Error
+2026-02-14 14:50:51 ERROR:    Exception in ASGI application
+2026-02-14 14:50:51 Traceback (most recent call last):
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/uvicorn/protocols/http/httptools_impl.py", line 416, in run_asgi
+2026-02-14 14:50:51     result = await app(  # type: ignore[func-returns-value]
+2026-02-14 14:50:51              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+2026-02-14 14:50:51     return await self.app(scope, receive, send)
+2026-02-14 14:50:51            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/fastapi/applications.py", line 1135, in __call__
+2026-02-14 14:50:51     await super().__call__(scope, receive, send)
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/starlette/applications.py", line 107, in __call__
+2026-02-14 14:50:51     await self.middleware_stack(scope, receive, send)
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+2026-02-14 14:50:51     raise exc
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+2026-02-14 14:50:51     await self.app(scope, receive, _send)
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/starlette/middleware/cors.py", line 93, in __call__
+2026-02-14 14:50:51     await self.simple_response(scope, receive, send, request_headers=headers)
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/starlette/middleware/cors.py", line 144, in simple_response
+2026-02-14 14:50:51     await self.app(scope, receive, send)
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+2026-02-14 14:50:51     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-14 14:50:51     raise exc
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-14 14:50:51     await app(scope, receive, sender)
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+2026-02-14 14:50:51     await self.app(scope, receive, send)
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/starlette/routing.py", line 716, in __call__
+2026-02-14 14:50:51     await self.middleware_stack(scope, receive, send)
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/starlette/routing.py", line 736, in app
+2026-02-14 14:50:51     await route.handle(scope, receive, send)
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/starlette/routing.py", line 290, in handle
+2026-02-14 14:50:51     await self.app(scope, receive, send)
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 120, in app
+2026-02-14 14:50:51     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-14 14:50:51     raise exc
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-14 14:50:51     await app(scope, receive, sender)
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 106, in app
+2026-02-14 14:50:51     response = await f(request)
+2026-02-14 14:50:51                ^^^^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 427, in app
+2026-02-14 14:50:51     raw_response = await run_endpoint_function(
+2026-02-14 14:50:51                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 313, in run_endpoint_function
+2026-02-14 14:50:51     return await dependant.call(**values)
+2026-02-14 14:50:51            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/app/routers/shipments.py", line 94, in export_shipments_csv
+2026-02-14 14:50:51     csv_bytes, filename = await service.export_csv(data.shipment_ids)
+2026-02-14 14:50:51                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/app/services/shipment_service.py", line 314, in export_csv
+2026-02-14 14:50:51     order_source = order.order_source
+2026-02-14 14:50:51                    ^^^^^^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/orm/attributes.py", line 569, in __get__
+2026-02-14 14:50:51     return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+2026-02-14 14:50:51            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/orm/attributes.py", line 1096, in get
+2026-02-14 14:50:51     value = self._fire_loader_callables(state, key, passive)
+2026-02-14 14:50:51             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/orm/attributes.py", line 1131, in _fire_loader_callables
+2026-02-14 14:50:51     return self.callable_(state, passive)
+2026-02-14 14:50:51            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/orm/strategies.py", line 978, in _load_for_state
+2026-02-14 14:50:51     return self._emit_lazyload(
+2026-02-14 14:50:51            ^^^^^^^^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/orm/strategies.py", line 1079, in _emit_lazyload
+2026-02-14 14:50:51     return loading.load_on_pk_identity(
+2026-02-14 14:50:51            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/orm/loading.py", line 695, in load_on_pk_identity
+2026-02-14 14:50:51     session.execute(
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2351, in execute
+2026-02-14 14:50:51     return self._execute_internal(
+2026-02-14 14:50:51            ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2249, in _execute_internal
+2026-02-14 14:50:51     result: Result[Any] = compile_state_cls.orm_execute_statement(
+2026-02-14 14:50:51                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py", line 306, in orm_execute_statement
+2026-02-14 14:50:51     result = conn.execute(
+2026-02-14 14:50:51              ^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1419, in execute
+2026-02-14 14:50:51     return meth(
+2026-02-14 14:50:51            ^^^^^
+2026-02-14 14:50:51 2026-02-14 05:50:51,601 INFO sqlalchemy.engine.Engine ROLLBACK
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 527, in _execute_on_connection
+2026-02-14 14:50:51     return connection._execute_clauseelement(
+2026-02-14 14:50:51            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1641, in _execute_clauseelement
+2026-02-14 14:50:51     ret = self._execute_context(
+2026-02-14 14:50:51           ^^^^^^^^^^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+2026-02-14 14:50:51     return self._exec_single_context(
+2026-02-14 14:50:51            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+2026-02-14 14:50:51     self._handle_dbapi_exception(
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2366, in _handle_dbapi_exception
+2026-02-14 14:50:51     raise exc_info[1].with_traceback(exc_info[2])
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+2026-02-14 14:50:51     self.dialect.do_execute(
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+2026-02-14 14:50:51     cursor.execute(statement, parameters)
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 585, in execute
+2026-02-14 14:50:51     self._adapt_connection.await_(
+2026-02-14 14:50:51   File "/app/.venv/lib/python3.12/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 123, in await_only
+2026-02-14 14:50:51     raise exc.MissingGreenlet(
+2026-02-14 14:50:51 sqlalchemy.exc.MissingGreenlet: greenlet_spawn has not been called; can't call await_only() here. Was IO attempted in an unexpected place? (Background on this error at: https://sqlalche.me/e/20/xd2s)
+
+---
+
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Analysis:
+Let me chronologically analyze the conversation:
+
+1. **Initial Request**: User provided a detailed migration plan for Order-OrderSource FK Migration - changing `Order.source` (string code) to `Order.order_source_id` (FK UUID).
+
+2. **Plan Overview**:
+   - Environment variable fallback: ABOLISHED - DB management only
+   - source column: DELETED - complete migration to order_source_id
+   - Existing orders: Create LEGACY/TEST OrderSource records and link them
+
+3. **Implementation Tasks Completed**:
+   - Created migration file
+   - Modified Order model
+   - Modified Order schema
+   - Modified dependencies.py
+   - Modified order_service.py
+   - Modified shipment_service.py
+   - Modified orders.py router
+   - Modified order_repository.py
+   - Updated seed scripts
+   - Updated config.py
+   - Updated documentation
+
+4. **Test Data Creation Request**: User asked to create test data with "配送準備中" (pending) status for verification.
+
+5. **CSV Export Error**: User reported a 500 error when trying to export CSV - `sqlalchemy.exc.MissingGreenlet` error because `order.order_source` was being accessed without eager loading in the shipment repository.
+
+6. **Fix Applied**: Added `Order.order_source` to eager loading in `shipment_repository.py`.
+
+Key files modified:
+- `api/alembic/versions/migrate_order_source_fk.py` (NEW)
+- `api/app/models/order.py`
+- `api/app/schemas/order.py`
+- `api/app/dependencies.py`
+- `api/app/services/order_service.py`
+- `api/app/services/shipment_service.py`
+- `api/app/routers/orders.py`
+- `api/app/repositories/order_repository.py`
+- `api/app/repositories/shipment_repository.py`
+- `api/scripts/seed_orders.py`
+- `api/scripts/seed_test_shipment.py`
+- `api/app/config.py`
+- `api/docs/order-api.md`
+
+Summary:
+1. Primary Request and Intent:
+   The user requested implementation of an Order-OrderSource FK Migration plan that:
+   - Changes `Order.source` (string code) to `Order.order_source_id` (foreign key UUID)
+   - Abolishes environment variable fallback for API keys (DB management only)
+   - Deletes the `source` column completely, migrating to `order_source_id`
+   - Creates LEGACY/TEST OrderSource records for existing orders
+   - After implementation, user requested test data creation for verification, then reported a CSV export error that needed fixing.
+
+2. Key Technical Concepts:
+   - SQLAlchemy FK relationships with `ondelete="SET NULL"`
+   - Alembic migrations with data migration
+   - Eager loading with `selectinload()` for async SQLAlchemy
+   - FastAPI dependency injection changes
+   - API key authentication via database lookup (removing env fallback)
+   - MissingGreenlet error in async SQLAlchemy (lazy loading in async context)
+
+3. Files and Code Sections:
+
+   - **`api/alembic/versions/migrate_order_source_fk.py`** (NEW FILE)
+     - Migration that creates LEGACY/TEST OrderSources, adds FK column, migrates data, removes source column
+     ```python
+     def upgrade() -> None:
+         # 1. Create LEGACY/TEST OrderSource records
+         op.execute("""
+             INSERT INTO order_sources (id, code, api_key, name, phone, postal_code,
+                 address_prefecture, address_city, is_active, created_at, updated_at)
+             VALUES
+                 (gen_random_uuid(), 'LEGACY', 'legacy-disabled-key', 'レガシー注文',
+                  '000-0000-0000', '000-0000', '東京都', 'レガシー', false, now(), now()),
+                 (gen_random_uuid(), 'TEST', 'test-api-key', 'テスト配送元',
+                  '03-0000-0000', '000-0000', '東京都', 'テスト市1-1-1', true, now(), now())
+             ON CONFLICT (code) DO NOTHING
+         """)
+         # 2. Add order_source_id FK column
+         op.add_column("orders", sa.Column("order_source_id", sa.UUID(as_uuid=False), nullable=True))
+         op.create_foreign_key("fk_orders_order_source_id", "orders", "order_sources", ["order_source_id"], ["id"], ondelete="SET NULL")
+         op.create_index("ix_orders_order_source_id", "orders", ["order_source_id"])
+         # 3. Migrate existing data
+         op.execute("""UPDATE orders o SET order_source_id = os.id FROM order_sources os WHERE o.source = os.code""")
+         # 4. Remove source column
+         op.drop_index("ix_orders_source", table_name="orders")
+         op.drop_column("orders", "source")
+     ```
+
+   - **`api/app/models/order.py`**
+     - Changed `source` to `order_source_id` FK and added relationship
+     ```python
+     if TYPE_CHECKING:
+         from app.models.order_source import OrderSource
+         from app.models.product import Product
+     
+     # Changed from: source: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+     order_source_id: Mapped[str | None] = mapped_column(
+         ForeignKey("order_sources.id", ondelete="SET NULL"), nullable=True, index=True
+     )
+     order_source: Mapped["OrderSource | None"] = relationship()
+     ```
+
+   - **`api/app/schemas/order.py`**
+     - Added `order_source_id` field to OrderResponse
+     ```python
+     source: str | None = None  # Derived from order_source.code
+     order_source_id: str | None = None
+     ```
+
+   - **`api/app/dependencies.py`**
+     - Changed `verify_api_key` to return `order_source_id` instead of `source` code, removed env fallback
+     ```python
+     async def verify_api_key(...) -> tuple[str, str]:
+         """Verify API key from header and return (api_key, order_source_id)."""
+         if not x_api_key:
+             raise UnauthorizedError("API key required")
+         order_source = await order_source_repo.find_by_api_key(x_api_key)
+         if order_source:
+             if not order_source.is_active:
+                 raise UnauthorizedError("API key is disabled")
+             return x_api_key, order_source.id
+         raise UnauthorizedError("Invalid API key")
+     ```
+
+   - **`api/app/services/order_service.py`**
+     - Changed `create()` to accept `order_source_id` instead of `source`
+     - Changed `_to_response()` to derive `source` from relationship
+     ```python
+     async def create(self, data: OrderCreate, order_source_id: str | None = None) -> OrderResponse:
+         order = Order(order_number=data.order_number, order_source_id=order_source_id, ...)
+     
+     # In _to_response:
+     source=order.order_source.code if order.order_source else None,
+     order_source_id=order.order_source_id,
+     ```
+
+   - **`api/app/services/shipment_service.py`**
+     - Changed CSV export to use relationship directly instead of cache lookup
+     ```python
+     # Changed from caching with find_by_code to:
+     order_source = order.order_source
+     ```
+
+   - **`api/app/routers/orders.py`**
+     - Changed to use `order_source_id`
+     ```python
+     _, order_source_id = api_key_info
+     return await service.create(data, order_source_id=order_source_id)
+     ```
+
+   - **`api/app/repositories/order_repository.py`**
+     - Added `order_source` to eager loading
+     ```python
+     select(Order).options(
+         selectinload(Order.items),
+         selectinload(Order.order_source),
+     )
+     ```
+
+   - **`api/app/repositories/shipment_repository.py`**
+     - Added `Order.order_source` to eager loading (fix for CSV export error)
+     ```python
+     async def find_by_id(self, shipment_id: str) -> Shipment | None:
+         result = await self._db.execute(
+             select(Shipment)
+             .options(
+                 selectinload(Shipment.items)
+                 .selectinload(ShipmentItem.order)
+                 .selectinload(Order.items),
+                 selectinload(Shipment.items)
+                 .selectinload(ShipmentItem.order)
+                 .selectinload(Order.order_source),
+             )
+             .where(Shipment.id == shipment_id)
+         )
+     ```
+
+   - **`api/scripts/seed_orders.py`** and **`api/scripts/seed_test_shipment.py`**
+     - Added `get_or_create_test_order_source()` function
+     - Changed `source="TEST"` to `order_source_id=test_order_source.id`
+
+   - **`api/app/config.py`**
+     - Removed `API_KEY_SOURCES` dict and `API_KEYS` property
+
+   - **`api/docs/order-api.md`**
+     - Added `source` and `order_source_id` to response documentation and examples
+     - Updated changelog with version 3.1.0
+
+4. Errors and fixes:
+   - **MissingGreenlet error during CSV export**:
+     - Error: `sqlalchemy.exc.MissingGreenlet: greenlet_spawn has not been called; can't call await_only() here`
+     - Cause: `order.order_source` was accessed in `shipment_service.py` but `Order.order_source` was not eager loaded in `shipment_repository.py`
+     - Fix: Added `selectinload(Order.order_source)` to `find_by_id` and `find_by_tracking_number` methods in shipment_repository.py
+
+5. Problem Solving:
+   - Successfully implemented the complete FK migration plan
+   - Created test data with seed_test_shipment.py script
+   - Fixed lazy loading error by adding proper eager loading for the new relationship
+
+6. All user messages:
+   - Initial plan: "Implement the following plan: # Order-OrderSource FK Migration Plan [detailed plan]"
+   - "動作確認用に、配送準備中ステータスの注文データを1件作成してください。" (Create one order with pending shipment status for verification)
+   - Error report with full stack trace showing 500 Internal Server Error for CSV export
+
+7. Pending Tasks:
+   - None explicitly stated. User needs to re-test CSV export after the fix.
+
+8. Current Work:
+   Fixed the CSV export error by adding `Order.order_source` eager loading to `shipment_repository.py`. The API container was restarted to apply changes.
+   
+   Most recent assistant message: "修正完了しました。`shipment_repository.py`の`find_by_id`と`find_by_tracking_number`に`Order.order_source`のEager loadingを追加しました。再度CSV出力をお試しください。"
+
+9. Optional Next Step:
+   Wait for user to verify that CSV export now works correctly after the eager loading fix was applied and API was restarted.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/r_setoyama/.REDACTED.jsonl
+
+---
+
+配送CSVダウンロードのUI/UXを以下に沿って変更してください。
+
+＃ 変更点
+- 配送一覧において、発送一覧の資料ダウンロードと同じUXとなるように、配送アイテムが指定されていなくても disabled 状態で出力ボタンが表示されるようにする。
+- 配送詳細において、配送資料カードを無くす。
+
+---
+
+最後に、今回の実装(コミットされていない差分)を把握して、既存コードベースへの影響を整理してください。追加で破壊的変更も特定してください。
+
+---
+
+`/api/app/routers/order_sources.py`で定義されているAPIは、フロントエンドから呼び出されていますか？もし呼び出されていない場合は不要なので、このAPIと関連コードを削除してください。
+
+---
+
+`npm run build`が成功するようにしてください。
