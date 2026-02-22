@@ -1,0 +1,77 @@
+# テスト用オーバーライド設定
+# 使用方法: docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm e2e
+
+services:
+  # テスト用DB（本番DBを汚さない）
+  db-test:
+    image: postgres:16-alpine
+    container_name: pod-admin-db-test
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=pod_admin_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pod_admin_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    # tmpfs使用で高速化（永続化不要）
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  # テスト用API
+  api-test:
+    build:
+      context: ./api
+      target: development
+    container_name: pod-admin-api-test
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db-test:5432/pod_admin_test
+      - SECRET_KEY=test-secret-key
+      - DEBUG=true
+      - CORS_ORIGINS=["http://localhost:3000","http://web-test:3000"]
+    depends_on:
+      db-test:
+        condition: service_healthy
+    # ヘルスチェック追加
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # テスト用Web
+  web-test:
+    build:
+      context: ./web
+      target: development
+    container_name: pod-admin-web-test
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api-test:8000
+    depends_on:
+      - api-test
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # E2Eテストランナー
+  e2e:
+    build:
+      context: ./e2e
+      dockerfile: Dockerfile
+    container_name: pod-admin-e2e
+    volumes:
+      - ./e2e:/app
+      - /app/node_modules
+    environment:
+      - BASE_URL=http://web-test:3000
+      - API_URL=http://api-test:8000
+    depends_on:
+      web-test:
+        condition: service_healthy
+      api-test:
+        condition: service_healthy

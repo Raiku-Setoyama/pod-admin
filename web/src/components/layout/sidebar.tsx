@@ -13,6 +13,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useCurrentUser } from "@/features/auth/hooks/use-current-user";
 
 const navigation = [
   { name: "受注", href: "/orders", icon: ShoppingCart },
@@ -25,6 +26,7 @@ const navigation = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { user, isLoading } = useCurrentUser();
 
   const handleLogout = () => {
     localStorage.removeItem("access_token");
@@ -67,7 +69,7 @@ export function Sidebar() {
       {/* Footer */}
       <div className="border-t border-border p-2">
         <div className="px-3 py-2 text-xs text-muted-foreground">
-          raiku6019@gmail.com
+          {isLoading ? "" : user?.email ?? ""}
         </div>
         <Link
           href="/settings"

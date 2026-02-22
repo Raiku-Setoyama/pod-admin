@@ -1,0 +1,85 @@
+id: FEAT-0001
+summary: 管理ページのサイドバーにログインユーザーのメールアドレスが動的に表示される
+
+background:
+  why: 現在サイドバーに固定のメールアドレス（raiku6019@gmail.com）がハードコードされており、実際にログインしているユーザーと異なる表示になっている。ユーザー体験の向上と正確な情報表示のため、ログインユーザーのメールアドレスを動的に取得して表示する必要がある。
+  who: 管理画面を使用する全ての管理者・スタッフ
+  when: 管理画面にログインしてサイドバーを表示したとき
+
+scope:
+  includes:
+    - サイドバーにログインユーザーのメールアドレスを動的表示
+    - /auth/me エンドポイントからユーザー情報を取得するカスタムフック作成
+    - ローディング中の表示対応
+  excludes:
+    - ユーザー編集機能（別機能として実装する場合）
+    - バックエンドAPIの変更（既存の /auth/me エンドポイントを使用）
+  prerequisites:
+    - /auth/me エンドポイントが正常に動作していること
+    - ユーザーがログイン済みでaccess_tokenがlocalStorageに保存されていること
+
+input_output:
+  inputs:
+    - name: access_token
+      type: string
+      required: true
+      validation: localStorageから取得されたJWTトークン
+  outputs:
+    - name: user.email
+      type: string
+      description: サイドバーに表示するログインユーザーのメールアドレス
+  state_changes:
+    - なし（表示のみの機能）
+
+acceptance_criteria:
+  - id: AC-001
+    description: サイドバーにログインユーザーのメールアドレスが表示される
+    test_type: e2e
+    given: ユーザーが管理画面にログインしている
+    when: 管理画面のサイドバーを表示する
+    then: サイドバー下部にログインユーザーのメールアドレスが表示される
+
+  - id: AC-002
+    description: useCurrentUserフックが/auth/meエンドポイントからユーザー情報を取得する
+    test_type: unit
+    given: ユーザーが認証済みでaccess_tokenが存在する
+    when: useCurrentUserフックを呼び出す
+    then: /auth/meエンドポイントからユーザー情報（email, name, role等）が取得される
+
+  - id: AC-003
+    description: ユーザー情報取得中はローディング状態が表示される
+    test_type: unit
+    given: useCurrentUserフックが呼び出されている
+    when: API呼び出しが完了する前
+    then: isLoading=trueの状態が返される
+
+  - id: AC-004
+    description: ユーザー情報取得に失敗した場合のエラーハンドリング
+    test_type: unit
+    given: access_tokenが無効または期限切れ
+    when: useCurrentUserフックが/auth/meを呼び出す
+    then: エラー状態が返され、フォールバック表示（空文字またはスケルトン）が行われる
+
+  - id: AC-005
+    description: 固定メールアドレス「raiku6019@gmail.com」が削除されている
+    test_type: unit
+    given: サイドバーコンポーネントのソースコード
+    when: コードを検査する
+    then: ハードコードされたメールアドレスが存在しない
+
+constraints:
+  performance:
+    - ユーザー情報取得は初回マウント時のみ実行（SWRによるキャッシュを活用）
+  security:
+    - access_tokenを使用してAPIを呼び出す（既存の認証機構を使用）
+  compatibility:
+    - 既存のAuthGuardと連携して動作する
+
+assumptions:
+  - /auth/me エンドポイントは既に実装済みで正常に動作する
+  - SWRを使用してユーザー情報をキャッシュする（既存のhooksパターンに従う）
+  - エラー時はメールアドレス部分を空またはスケルトン表示とする（ページ全体のエラーにはしない）
+
+success_metrics:
+  - 全てのログインユーザーに対して正しいメールアドレスがサイドバーに表示される
+  - ハードコードされたメールアドレスがコードベースから削除される
