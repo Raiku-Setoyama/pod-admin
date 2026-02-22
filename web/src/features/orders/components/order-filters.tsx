@@ -41,7 +41,7 @@ export function OrderFilters({
       <div className="relative flex-1 max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          placeholder="受注ID、購入者名で検索..."
+          placeholder="注文番号、購入者名で検索..."
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
           className="pl-10"
