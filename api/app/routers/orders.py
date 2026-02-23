@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from app.dependencies import (
@@ -16,13 +16,15 @@ from app.models.order import OrderStatus
 from app.models.product import ProductType
 from app.models.user import User
 from app.schemas.order import (
+    OrderBulkStatusUpdate,
+    OrderBulkStatusUpdateResponse,
     OrderCreate,
     OrderListResponse,
     OrderResponse,
     OrderStatusUpdate,
 )
 from app.services.order_service import OrderService
-from app.utils.exceptions import OrderNotFoundError
+from app.utils.exceptions import OrderNotFoundError, ValidationError
 from app.utils.file_storage import FileStorage
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -89,6 +91,20 @@ async def list_orders(
         ordered_to=ordered_to,
         search=search,
     )
+
+
+@router.patch("/bulk-status", response_model=OrderBulkStatusUpdateResponse)
+async def bulk_update_order_status(
+    data: OrderBulkStatusUpdate,
+    service: Annotated[OrderService, Depends(get_order_service)],
+    current_user: Annotated[User, Depends(get_current_admin)],
+) -> OrderBulkStatusUpdateResponse:
+    """受注ステータスを一括更新"""
+    try:
+        return await service.bulk_update_status(data.order_ids, data.status)
+    except ValidationError as e:
+        # shipped への直接遷移は 422 として返す
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.get("/{order_id}", response_model=OrderResponse)

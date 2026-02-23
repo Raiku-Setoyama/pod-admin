@@ -2,11 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { PageContainer } from "@/components/layout/page-container";
 import { Pagination } from "@/components/common/pagination";
 import { PageLoading } from "@/components/common/loading-spinner";
 import { OrderFilters } from "@/features/orders/components/order-filters";
 import { OrderList } from "@/features/orders/components/order-list";
+import { OrderBulkStatusUpdateDialog } from "@/features/orders/components/order-bulk-status-update-dialog";
 import { useOrders } from "@/features/orders/hooks/use-orders";
 import type { Order, OrderStatus, ShipmentStatus } from "@/types/api";
 
@@ -20,7 +23,11 @@ export default function OrdersPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<DisplayStatus | null>(null);
 
-  const { orders, total, isLoading } = useOrders({
+  // 一括更新用state
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isBulkStatusDialogOpen, setIsBulkStatusDialogOpen] = useState(false);
+
+  const { orders, total, isLoading, mutate } = useOrders({
     page,
     limit,
     search,
@@ -40,10 +47,23 @@ export default function OrdersPage() {
     router.push(`/orders/${order.id}`);
   };
 
+  const handleBulkUpdateSuccess = () => {
+    setSelectedIds([]);
+    mutate();
+  };
+
   return (
     <PageContainer
       title="受注一覧"
       description="外部販売サイトからの受注情報"
+      actions={
+        selectedIds.length > 0 ? (
+          <Button onClick={() => setIsBulkStatusDialogOpen(true)}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            選択した{selectedIds.length}件を更新
+          </Button>
+        ) : undefined
+      }
     >
       <div className="space-y-4">
         <OrderFilters
@@ -57,7 +77,12 @@ export default function OrdersPage() {
           <PageLoading />
         ) : (
           <>
-            <OrderList orders={orders} onRowClick={handleRowClick} />
+            <OrderList
+              orders={orders}
+              onRowClick={handleRowClick}
+              selectedIds={selectedIds}
+              onSelectChange={setSelectedIds}
+            />
             <Pagination
               page={page}
               limit={limit}
@@ -68,6 +93,13 @@ export default function OrdersPage() {
           </>
         )}
       </div>
+
+      <OrderBulkStatusUpdateDialog
+        selectedIds={selectedIds}
+        open={isBulkStatusDialogOpen}
+        onClose={() => setIsBulkStatusDialogOpen(false)}
+        onSuccess={handleBulkUpdateSuccess}
+      />
     </PageContainer>
   );
 }
