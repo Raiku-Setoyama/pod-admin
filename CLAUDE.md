@@ -1,169 +1,106 @@
-# POD Admin
+# プロジェクト規約（ADD方式）
 
-POD（プリント・オン・デマンド）商品の受注・製造管理システム。外部販売サイトから受注データを受け取り、複数の製造業者に発注・追跡するB2B管理プラットフォーム。
+## 開発哲学
 
-## テック・スタック
+このプロジェクトはADD思想に基づく。
+**コードの行ではなく、意図・制約・成果で品質を担保する。**
 
-### バックエンド（`api/`）
-- **フレームワーク**: FastAPI 0.115 + Python 3.12
-- **データベース**: PostgreSQL 16 + SQLAlchemy 2.0（async）
-- **マイグレーション**: Alembic
-- **認証**: JWT + API Key
-
-### フロントエンド（`web/`）
-- **フレームワーク**: Next.js 16 + React 19 + TypeScript
-- **UI**: Radix UI + Tailwind CSS
-- **データフェッチング**: SWR
-
-### インフラ
-- **コンテナ**: Docker + Docker Compose
-- **デプロイ**: Railway
-
-## ディレクトリ構成
-
-```
-pod-admin/
-├── api/                    # バックエンドAPI
-│   ├── app/
-│   │   ├── models/         # SQLAlchemyモデル
-│   │   ├── repositories/   # データアクセス層
-│   │   ├── routers/        # APIエンドポイント
-│   │   ├── schemas/        # Pydanticスキーマ
-│   │   ├── services/       # ビジネスロジック
-│   │   └── utils/          # ユーティリティ
-│   ├── alembic/            # DBマイグレーション
-│   ├── scripts/seed.py     # 初期データ投入
-│   └── tests/              # テスト
-├── web/                    # フロントエンド
-│   └── src/
-│       ├── app/            # Next.js App Router
-│       ├── features/       # 機能別コンポーネント
-│       ├── components/     # 共有コンポーネント
-│       └── lib/            # ユーティリティ
-└── openapi/                # OpenAPI仕様
-```
-
-## 開発コマンド
-
-```bash
-# コンテナ起動
-make up              # APIとDBを起動
-make build           # イメージをビルド
-make rebuild         # クリーンビルドして起動
-
-# データベース
-make migrate         # マイグレーション実行
-make seed            # シードデータ挿入
-make seed-reset      # データリセット後シード
-
-# ログ・デバッグ
-make logs            # 全コンテナのログ
-make logs-api        # APIログのみ
-make api-shell       # APIコンテナにbash
-make db-shell        # DBにpsql接続
-
-# テスト
-make test            # pytest実行
-
-# クリーンアップ
-make down            # コンテナ停止
-make clean           # コンテナ・ボリューム削除
-```
-
-## URL
-
-- **フロントエンド**: http://localhost:3000
-- **API**: http://localhost:8000
-- **Swagger UI**: http://localhost:8000/api/v1/docs
-
-## 主要機能
-
-### 商品種類
-| 商品 | 説明 |
-|-----|------|
-| `tshirt` | Tシャツ（S/M/L/XL、白） |
-| `acrylic_keychain` | アクリルキーホルダー |
-| `acrylic_stand` | アクリルスタンド |
-| `sticker` | ステッカー |
-| `tote_bag` | トートバッグ |
-| `mug` | マグカップ |
-
-### 受注ステータス
-1. `ordered` - 発注済み（初期状態）
-2. `manufacturing` - 製造中
-3. `delivered` - 納入済み
-4. `shipped` - 発送完了
-
-### 認証
-- **外部API**: `X-API-Key` ヘッダー
-- **管理画面**: JWT トークン
-
-## 環境変数
-
-| 変数 | 説明 |
-|------|------|
-| `DATABASE_URL` | PostgreSQL接続文字列 |
-| `SECRET_KEY` | JWT署名用シークレット |
-| `DEBUG` | デバッグモード |
-| `CORS_ORIGINS` | CORS許可オリジン |
-| `API_KEYS` | 外部API用キー |
-
-## ドキュメント更新ルール
-
-### 外部公開API
-外部販売サイト向けAPI（`/api/v1/external/*` および `/api/v1/orders`）に変更を加えた場合は、**必ず** `api/docs/order-api.md` を更新すること。
-
-更新対象：
-- 新規エンドポイントの追加
-- リクエスト/レスポンス形式の変更
-- パラメータの追加・削除・変更
-- エラーコードの追加・変更
-- 変更履歴の追記
+原則:
+- Intent-First: すべての実装は構造化された意図仕様から始める
+- Test-Proven: 正しさはテストで証明する（人間のコード読解に依存しない）
+- Docker-First: 開発・テスト環境はDockerコンテナで完結させ、ローカルを汚さない
+- Full-Auto Default: 仕様→設計→実装→テスト→PR作成は原則AIが全自動で行う
 
 ---
 
-# AI-DLC and Spec-Driven Development
+## 自動化パイプライン
 
-Kiro-style Spec Driven Development implementation on AI-DLC (AI Development Life Cycle)
+`/ship` 実行時、以下のサブエージェントを順に呼び出して全自動で処理する:
 
-## Project Context
+| Phase | サブエージェント | 役割 |
+|---|---|---|
+| 1 | spec-writer | 自然言語→Intent Spec（YAML）に変換、`.claude/specs/` に保存 |
+| 2 | architect | 変更対象の特定、アーキテクチャ判断、実装順序の決定 |
+| 3 | tdd-writer | ユニットテスト（`tests/unit/`）+ 統合テスト（`tests/integration/`）を生成。E2Eは明示依頼時のみ |
+| 4 | implementer | テストをパスするコードを実装 |
+| 5 | quality-gate | 6層検証（静的→Unit→Integration→E2E（オプション）→仕様適合→AI意味レビュー） |
+| 6 | /ship 自身 | 品質ゲートPASS時にコミット・プッシュ・PR作成 |
 
-### Paths
-- Steering: `.kiro/steering/`
-- Specs: `.kiro/specs/`
+FAIL時: implementer に戻して修正（最大3回）→ それでもFAILなら人間に報告
 
-### Steering vs Specification
+---
 
-**Steering** (`.kiro/steering/`) - Guide AI with project-wide rules and context
-**Specs** (`.kiro/specs/`) - Formalize development process for individual features
+## テスト戦略
 
-### Active Specifications
-- Check `.kiro/specs/` for active specifications
-- Use `/kiro:spec-status [feature-name]` to check progress
+### 必須テスト（常に実行）
 
-## Development Guidelines
-- Think in English, generate responses in Japanese. All Markdown content written to project files (e.g., requirements.md, design.md, tasks.md, research.md, validation reports) MUST be written in the target language configured for this specification (see spec.json.language).
+**バックエンド（pytest）:**
+- **ユニットテスト**（`api/tests/unit/`、カバレッジ80%以上）
+  - 単一モジュール・関数の振る舞いを検証
+  - 外部依存はモック・スタブで分離
+- **統合テスト**（`api/tests/integration/`）
+  - 複数モジュール間の連携・DB接続・API呼び出しを検証
+  - Docker環境で実DBを使用（テスト用コンテナ）
 
-## Minimal Workflow
-- Phase 0 (optional): `/kiro:steering`, `/kiro:steering-custom`
-- Phase 1 (Specification):
-  - `/kiro:spec-init "description"`
-  - `/kiro:spec-requirements {feature}`
-  - `/kiro:validate-gap {feature}` (optional: for existing codebase)
-  - `/kiro:spec-design {feature} [-y]`
-  - `/kiro:validate-design {feature}` (optional: design review)
-  - `/kiro:spec-tasks {feature} [-y]`
-- Phase 2 (Implementation): `/kiro:spec-impl {feature} [tasks]`
-  - `/kiro:validate-impl {feature}` (optional: after implementation)
-- Progress check: `/kiro:spec-status {feature}` (use anytime)
+**フロントエンド（vitest）:**
+- **ユニットテスト**（`web/tests/unit/`、カバレッジ80%以上）
+  - コンポーネント・フック・ユーティリティの振る舞いを検証
+  - API呼び出しはモック
 
-## Development Rules
-- 3-phase approval workflow: Requirements → Design → Tasks → Implementation
-- Human review required each phase; use `-y` only for intentional fast-track
-- Keep steering current and verify alignment with `/kiro:spec-status`
-- Follow the user's instructions precisely, and within that scope act autonomously: gather the necessary context and complete the requested work end-to-end in this run, asking questions only when essential information is missing or the instructions are critically ambiguous.
+### オプションテスト（明示的に依頼された場合のみ）
+- **Playwright E2E**（`e2e/`、ブラウザからの統合検証）
+  - ユーザーが「E2Eテスト」「ブラウザテスト」等を明示的に依頼した場合のみ生成・実行
+  - デフォルトでは実行しない
 
-## Steering Configuration
-- Load entire `.kiro/steering/` as project memory
-- Default files: `product.md`, `tech.md`, `structure.md`
-- Custom files are supported (managed via `/kiro:steering-custom`)
+### テスト完遂ルール
+**すべてのテスト（ユニット・統合、E2Eがある場合はE2Eも）がパスするまで実装を続ける。**
+テストが失敗している状態でのコミット・PR作成は禁止。
+
+## Docker環境
+
+```bash
+# 開発環境（ルートから実行）
+docker compose up -d                                          # 全サービス起動（api + web + db）
+docker compose logs -f                                        # 全ログ表示
+
+# バックエンドテスト（pytest）
+docker compose exec api uv run pytest                         # 全テスト
+docker compose exec api uv run pytest tests/unit              # ユニットテスト
+docker compose exec api uv run pytest tests/integration       # 統合テスト
+docker compose exec api uv run pytest --cov=app --cov-report=term  # カバレッジ
+
+# フロントエンドテスト（vitest）
+docker compose exec web npm test                              # 全テスト（watch mode）
+docker compose exec web npm run test:run                      # 全テスト（single run）
+docker compose exec web npm run test:coverage                 # カバレッジ
+
+# E2E テスト（Playwright、明示依頼時のみ）
+docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm e2e
+```
+
+## コマンド
+
+- `/spec <要望>` — 対話型で仕様を詰め、確定後そのまま全自動実装へ
+- `/ship <要望>` — 全自動パイプライン（サブエージェントを順に呼び出す）
+- `/ship --spec <id>` — 過去の仕様ファイルから再実装
+
+## アーキテクチャガイド
+
+以下のスキルを参照:
+
+- **プロジェクト初期設定**: `.claude/skills/project-init/` — 技術スタック検出、Docker環境構築、テスト設定
+- **バックエンド**: `.claude/skills/fastapi-architecture/` — FastAPI レイヤードアーキテクチャ
+- **フロントエンド**: `.claude/skills/nextjs-architecture/` — Next.js App Router アーキテクチャ
+- **統合テスト環境**: `.claude/skills/integration-test-setup/` — Docker + 実DBを使った統合テスト環境（`tests/integration/` 未存在時に参照）
+- **E2E環境構築**: `.claude/skills/e2e-setup/` — Playwright E2E環境の初期セットアップ（`e2e/` 未存在時に参照）
+
+既存プロジェクトの場合は、そのプロジェクトの技術スタック・アーキテクチャに合わせる。
+
+## 技術スタック
+
+- **フロントエンド**: Next.js 16 / React 19 / TypeScript 5 / Tailwind CSS 4 / shadcn/ui
+- **バックエンド**: FastAPI / Python 3.12 / SQLAlchemy 2.0 (asyncpg) / Alembic
+- **データベース**: PostgreSQL 16
+- **テスト**: pytest（バックエンド）, vitest（フロントエンド）, Playwright（E2E、オプション）
+- **コンテナ**: Docker Compose
+- **パッケージ管理**: npm（web）, uv（api）

@@ -1,84 +1,50 @@
 {
   "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "entire hooks claude-code post-task"
-          }
-        ]
-      },
-      {
-        "matcher": "TodoWrite",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "entire hooks claude-code post-todo"
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
-        "matcher": "Task",
+        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": "entire hooks claude-code pre-task"
+            "command": "[ \"$(git branch --show-current)\" != \"main\" ] || { echo '{\"block\": true, \"message\": \"mainブランチへの直接編集は禁止です。feature/ブランチで作業してください。\"}' >&2; exit 2; }",
+            "timeout": 5
           }
         ]
       }
     ],
-    "SessionEnd": [
+    "PostToolUse": [
       {
-        "matcher": "",
+        "matcher": "Write(*.ts)|Edit(*.ts)|Write(*.tsx)|Edit(*.tsx)",
         "hooks": [
           {
             "type": "command",
-            "command": "entire hooks claude-code session-end"
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "entire hooks claude-code session-start"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "entire hooks claude-code stop"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "entire hooks claude-code user-prompt-submit"
+            "command": "docker compose exec -T app npx tsc --noEmit --pretty 2>&1 | tail -20 || true",
+            "timeout": 60
           }
         ]
       }
     ]
   },
   "permissions": {
-    "deny": [
-      "Read(./.entire/metadata/**)"
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "Task",
+      "Bash(docker compose *)",
+      "Bash(docker *)",
+      "Bash(git *)",
+      "Bash(gh pr *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(mkdir *)",
+      "Bash(cat *)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(make *)"
     ]
   }
 }

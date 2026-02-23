@@ -1,0 +1,42 @@
+services:
+  e2e:
+    build:
+      context: ./e2e
+      dockerfile: Dockerfile
+    container_name: pod-admin-e2e
+    volumes:
+      - ./e2e:/app
+      - /app/node_modules
+      - ./e2e/test-results:/app/test-results
+      - ./e2e/playwright-report:/app/playwright-report
+    environment:
+      - BASE_URL=http://web:3000
+      - API_URL=http://api:8000
+      - CI=true
+    depends_on:
+      - web
+      - api
+      - db
+    networks:
+      - default
+
+  # Override web service to wait for api to be ready
+  web:
+    depends_on:
+      api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # Override api service to wait for db to be ready
+  api:
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
