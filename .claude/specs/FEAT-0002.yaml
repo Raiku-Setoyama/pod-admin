@@ -1,0 +1,50 @@
+id: FEAT-0002
+title: 商品種別を5種類に限定（マグカップ削除）
+created_at: 2026-02-23
+status: confirmed
+
+summary: |
+  システムで扱う商品種別を5種類（キーホルダー・ステッカー・トートバッグ・Tシャツ・スタンド）に限定し、
+  マグカップ（MUG）を完全に削除する。
+
+scope:
+  include:
+    - ProductType Enum から MUG を削除（Python）
+    - ProductType 型から "mug" を削除（TypeScript）
+    - フロントエンドの商品種別ラベルマッピングから「マグカップ」を削除（3箇所）
+    - Zodバリデーションスキーマから "mug" を削除
+  exclude:
+    - DBマイグレーション（データなし、VARCHAR型のため不要）
+    - 既存データの移行処理
+
+acceptance_criteria:
+  - given: 商品登録フォームを開いたとき
+    when: 商品種別のセレクトボックスを確認する
+    then: 5種類（キーホルダー・ステッカー・トートバッグ・Tシャツ・スタンド）のみ表示される
+
+  - given: APIに商品を登録するとき
+    when: product_type に "mug" を指定する
+    then: バリデーションエラーが返される
+
+  - given: 商品種別の型定義を確認するとき
+    when: ProductType の値を列挙する
+    then: 5種類のみ定義されている
+
+affected_files:
+  - path: api/app/models/product.py
+    change: MUG = "mug" を削除
+  - path: web/src/types/api/index.ts
+    change: '"mug" を削除'
+  - path: web/src/features/products/components/product-form.tsx
+    change: ラベルマッピング・Zodスキーマから削除
+  - path: web/src/features/products/components/product-list.tsx
+    change: ラベルマッピングから削除
+  - path: web/src/app/(dashboard)/products/[id]/page.tsx
+    change: ラベルマッピングから削除
+
+assumptions:
+  - マグカップの商品データは未登録のため、データ移行は不要
+  - DBスキーマはVARCHAR型のため、マイグレーション不要
+
+constraints:
+  - 許可された5種類以外の商品種別はAPI・フロントエンド両方で拒否する

@@ -190,7 +190,6 @@ export type ProductType =
   | "acrylic_stand"
   | "sticker"
   | "tote_bag"
-  | "mug"
   | "tshirt";
 
 export interface Product {
