@@ -136,6 +136,34 @@ async def upload_packing_photo(
     return await service.upload_packing_photo(shipment_id, photo)
 
 
+@router.get("/{shipment_id}/packing-photo")
+async def get_packing_photo(
+    shipment_id: str,
+    service: Annotated[ShipmentService, Depends(get_shipment_service)],
+    current_user: Annotated[User, Depends(get_current_admin)],
+) -> StreamingResponse:
+    """Get packing photo for a shipment.
+
+    Returns the packing photo image as a binary stream with appropriate Content-Type.
+    Requires authentication.
+
+    Args:
+        shipment_id: The shipment ID (UUID).
+
+    Returns:
+        StreamingResponse with image binary data.
+
+    Raises:
+        404: If shipment not found or has no packing photo.
+        401: If not authenticated.
+    """
+    content, content_type = await service.get_packing_photo(shipment_id)
+    return StreamingResponse(
+        iter([content]),
+        media_type=content_type,
+    )
+
+
 @router.post("/import-tracking", response_model=list[ShipmentResponse])
 async def import_tracking_numbers(
     data: TrackingImportRequest,

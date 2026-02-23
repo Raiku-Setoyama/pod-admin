@@ -1,5 +1,9 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
+export function getApiBaseUrl(): string {
+  return API_BASE_URL;
+}
+
 type RequestOptions = {
   method?: string;
   body?: unknown;

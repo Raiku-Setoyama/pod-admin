@@ -161,6 +161,37 @@ class ShipmentService:
         await self._shipment_repo.update(shipment)
         return self._to_response(shipment)
 
+    async def get_packing_photo(self, shipment_id: str) -> tuple[bytes, str]:
+        """Get packing photo for a shipment.
+
+        Args:
+            shipment_id: The shipment ID.
+
+        Returns:
+            Tuple of (file content bytes, content type).
+
+        Raises:
+            NotFoundError: If shipment not found or has no packing photo.
+        """
+        shipment = await self._shipment_repo.find_by_id(shipment_id)
+        if not shipment:
+            raise NotFoundError("Shipment", shipment_id)
+
+        if not shipment.packing_photo_path:
+            raise NotFoundError("Packing photo", shipment_id)
+
+        content = await self._file_storage.get(shipment.packing_photo_path)
+        if content is None:
+            raise NotFoundError("Packing photo file", shipment_id)
+
+        # Determine content type from file extension
+        import mimetypes
+        content_type, _ = mimetypes.guess_type(shipment.packing_photo_path)
+        if not content_type or not content_type.startswith("image/"):
+            content_type = "image/jpeg"  # Default to JPEG
+
+        return content, content_type
+
     async def import_tracking_numbers(
         self, data: TrackingImportRequest
     ) -> list[ShipmentResponse]:
