@@ -84,7 +84,6 @@ class StickerSize(str, Enum):
 class StickerColor(str, Enum):
     """ステッカーカラー."""
 
-    CLEAR = "クリア"
     WHITE = "ホワイト"
 
 

@@ -1,0 +1,122 @@
+id: FEAT-0007
+summary: |
+  ステッカー商品タイプから「クリア」カラーを削除し、
+  「ホワイト」のみの単一カラー体制にする。
+
+background:
+  why: |
+    ビジネス要件の変更により、ステッカー商品の「クリア」タイプが不要となった。
+    システム全体から「クリア」カラーを削除し、「ホワイト」のみをサポートする。
+  who: 管理者（商品マスタ管理者）
+  when: |
+    ステッカー商品の登録・受注・価格計算時に、
+    「ホワイト」カラーのみが選択肢として提供される。
+
+scope:
+  includes:
+    - バックエンド StickerColor Enum から CLEAR を削除（Python: api/app/models/order.py）
+    - バックエンド STICKER_PRICES 辞書から CLEAR の価格エントリを削除（api/app/services/external_service.py）
+    - シードデータからステッカー「クリア」の商品データを削除（api/scripts/seed.py）
+    - APIドキュメントからステッカー「クリア」の記述を削除（api/docs/order-api.md）
+    - 既存データ対応方針の明示
+  excludes:
+    - DBマイグレーション（color列はVARCHAR型のためENUM制約なし、マイグレーション不要）
+    - フロントエンドの商品フォーム変更（color はフリーテキスト入力のため、Enum に依存していない）
+    - TypeScript型定義の変更（StickerColor 型はフロントエンドに存在しない）
+  prerequisites:
+    - ステッカー商品タイプのカラーが StickerColor Enum で定義されている
+    - DBの products.color はVARCHAR(50) 型であり、DB側にENUM制約がない
+
+input_output:
+  inputs:
+    - name: ステッカーの color 属性
+      type: string
+      required: true
+      validation: "ホワイト" のみ許可（"クリア" は拒否）
+  outputs:
+    - name: ステッカー商品オプション
+      type: ProductOptionsResponse
+      description: color リストに「ホワイト」のみが含まれる
+    - name: ステッカー価格計算
+      type: PriceCalculationResponse
+      description: color="ホワイト" の場合のみ価格計算が成功する
+  state_changes:
+    - StickerColor Enum から CLEAR メンバーが削除される
+    - STICKER_PRICES 辞書から CLEAR の価格が削除される
+    - シードデータからステッカー「クリア」が削除される（ステッカーは1種類に）
+
+acceptance_criteria:
+  - id: AC-001
+    description: StickerColor Enum に「クリア」が存在しないこと
+    test_type: unit
+    given: StickerColor Enum の定義
+    when: StickerColor のメンバーを列挙する
+    then: WHITE のみが存在し、CLEAR は存在しない
+
+  - id: AC-002
+    description: ステッカーの受注バリデーションで「クリア」が拒否されること
+    test_type: unit
+    given: ステッカー商品の受注データ
+    when: color に「クリア」を指定して受注バリデーションを実行する
+    then: ValidationError が発生し、有効な色は「ホワイト」のみと示される
+
+  - id: AC-003
+    description: ステッカーの受注バリデーションで「ホワイト」が受け付けられること
+    test_type: unit
+    given: ステッカー商品の受注データ
+    when: color に「ホワイト」を指定して受注バリデーションを実行する
+    then: バリデーションが成功する
+
+  - id: AC-004
+    description: ステッカーの商品オプション取得で「ホワイト」のみ返ること
+    test_type: unit
+    given: ExternalService の get_product_options
+    when: product_type に STICKER を指定する
+    then: color リストに「ホワイト」のみが含まれ、「クリア」は含まれない
+
+  - id: AC-005
+    description: ステッカーの価格計算で「クリア」が拒否されること
+    test_type: unit
+    given: ExternalService の calculate_price
+    when: product_type=sticker, color=クリア で価格計算を実行する
+    then: ValidationError が発生する
+
+  - id: AC-006
+    description: ステッカーの価格計算で「ホワイト」が成功すること
+    test_type: unit
+    given: ExternalService の calculate_price
+    when: product_type=sticker, color=ホワイト で価格計算を実行する
+    then: 単価79円で価格計算が成功する
+
+  - id: AC-007
+    description: STICKER_PRICES に「クリア」の価格が存在しないこと
+    test_type: unit
+    given: STICKER_PRICES 辞書
+    when: 辞書のキーを確認する
+    then: 「ホワイト」のみが存在し、「クリア」は存在しない
+
+constraints:
+  performance: []
+  security:
+    - 管理者のみ商品マスタの編集が可能（既存制約、変更なし）
+  compatibility:
+    - 既存の「クリア」カラーが設定されたステッカー商品マスタ（products テーブル）は、
+      シードデータのリセット時に削除される。本番環境では手動で is_active=false に設定するか、
+      color を「ホワイト」に更新する運用対応とする。
+    - 既存の受注データ（order_items テーブル）の color="クリア" は過去データとしてそのまま保持する。
+      Enum バリデーションは新規受注時のみ適用されるため、既存データに影響しない。
+
+assumptions:
+  - 「クリア」カラーのステッカー商品が本番環境に登録されている可能性があるが、
+    シードデータの削除のみで対応し、マイグレーションでのデータ更新は行わない。
+    本番運用上の対応は運用チームに委ねる。
+  - フロントエンドの商品フォームは color をフリーテキスト入力としているため、
+    Enum の変更はフロントエンドに直接影響しない。
+  - DB の color カラムは VARCHAR 型であり、DB レベルでの制約変更は不要。
+  - ステッカーの価格体系は「ホワイト」= 79円のみとなる。
+
+success_metrics:
+  - StickerColor Enum から CLEAR が削除されている
+  - ステッカー受注時に「クリア」を指定するとバリデーションエラーになる
+  - ステッカーの商品オプション API が「ホワイト」のみを返す
+  - 全テスト（ユニット・統合）がパスする

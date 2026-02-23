@@ -272,19 +272,7 @@ async def seed_products(session: AsyncSession, manufacturers: dict[str, Manufact
             "order_limit": None,
             "is_active": True,
         },
-        # ステッカー (2種類)
-        {
-            "id": generate_uuid(),
-            "product_type": ProductType.STICKER.value,
-            "size": "100x100mm",
-            "position": None,
-            "color": "クリア",
-            "manufacturer_id": seedot_id,
-            "cost": 105,
-            "lead_time_days": 10,
-            "order_limit": None,
-            "is_active": True,
-        },
+        # ステッカー (1種類)
         {
             "id": generate_uuid(),
             "product_type": ProductType.STICKER.value,
