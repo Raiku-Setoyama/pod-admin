@@ -149,3 +149,18 @@ class OrderStatusUpdate(BaseModel):
     """Order status update schema."""
 
     status: OrderStatus
+
+
+class OrderBulkStatusUpdate(BaseModel):
+    """受注ステータス一括更新スキーマ"""
+
+    order_ids: list[str] = Field(..., min_length=1)
+    status: OrderStatus
+
+
+class OrderBulkStatusUpdateResponse(BaseModel):
+    """受注ステータス一括更新レスポンス"""
+
+    updated_count: int
+    failed_count: int
+    failed_ids: list[str]

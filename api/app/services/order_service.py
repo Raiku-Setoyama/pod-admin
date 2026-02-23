@@ -1,5 +1,7 @@
 """Order service."""
 
+from __future__ import annotations
+
 from datetime import date
 
 from app.models.order import (
@@ -24,6 +26,7 @@ from app.repositories.shipment_repository import ShipmentRepository
 from app.models.shipment import Shipment
 from app.schemas.order import (
     ManufacturingDataInfo,
+    OrderBulkStatusUpdateResponse,
     OrderCreate,
     OrderItemCreate,
     OrderItemResponse,
@@ -471,3 +474,83 @@ class OrderService:
             raise ValidationError(
                 f"Invalid position '{item_data.position}'. Valid: {valid_positions} (uid: {item_data.uid})"
             )
+
+    async def bulk_update_status(
+        self,
+        order_ids: list[str],
+        status: OrderStatus,
+    ) -> OrderBulkStatusUpdateResponse:
+        """Bulk update order status.
+
+        Args:
+            order_ids: List of order IDs to update.
+            status: Target status to update to.
+
+        Returns:
+            OrderBulkStatusUpdateResponse with updated_count, failed_count, failed_ids.
+
+        Raises:
+            ValidationError: If order_ids is empty or status is shipped.
+        """
+        # Validate empty order_ids
+        if not order_ids:
+            raise ValidationError("order_ids cannot be empty")
+
+        # Reject direct transition to shipped
+        if status == OrderStatus.SHIPPED:
+            raise ValidationError(
+                "Cannot bulk update to shipped status. Use shipment workflow instead."
+            )
+
+        updated_count = 0
+        failed_count = 0
+        failed_ids: list[str] = []
+
+        # Pre-fetch all shipments for efficiency
+        shipment_map = await self._shipment_repo.find_by_order_ids(order_ids)
+
+        for order_id in order_ids:
+            order = await self._order_repo.find_by_id(order_id)
+            if not order:
+                failed_ids.append(order_id)
+                failed_count += 1
+                continue
+
+            current_status = OrderStatus(order.status)
+
+            # Reject transition from shipped status
+            if current_status == OrderStatus.SHIPPED:
+                failed_ids.append(order_id)
+                failed_count += 1
+                continue
+
+            # Handle delivered -> ordered/manufacturing transition
+            if current_status == OrderStatus.DELIVERED and status in (
+                OrderStatus.ORDERED,
+                OrderStatus.MANUFACTURING,
+            ):
+                shipment = shipment_map.get(order_id)
+                if shipment:
+                    # If shipment is shipped, reject the transition
+                    if shipment.status == ShipmentStatus.SHIPPED.value:
+                        failed_ids.append(order_id)
+                        failed_count += 1
+                        continue
+                    # Delete the shipment
+                    await self._shipment_repo.delete_by_order_id(order_id)
+
+            # Update order status
+            order.status = status.value
+            await self._order_repo.update(order)
+
+            # Create shipment if transitioning to delivered
+            if status == OrderStatus.DELIVERED:
+                await self._create_shipment_for_order(order)
+
+            updated_count += 1
+
+        return OrderBulkStatusUpdateResponse(
+            updated_count=updated_count,
+            failed_count=failed_count,
+            failed_ids=failed_ids,
+        )

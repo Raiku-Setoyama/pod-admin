@@ -8,12 +8,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import { StatusBadge } from "@/components/common/status-badge";
 import type { Order, OrderStatus, ShipmentStatus } from "@/types/api";
 
 interface OrderListProps {
   orders: Order[];
   onRowClick?: (order: Order) => void;
+  selectedIds?: string[];
+  onSelectChange?: (ids: string[]) => void;
 }
 
 function getDisplayStatus(order: Order): OrderStatus | ShipmentStatus {
@@ -55,12 +58,47 @@ function getOrderSummary(order: Order): { productCount: number; totalQuantity: n
   };
 }
 
-export function OrderList({ orders, onRowClick }: OrderListProps) {
+export function OrderList({ orders, onRowClick, selectedIds = [], onSelectChange }: OrderListProps) {
+  const selectedSet = new Set(selectedIds);
+  const isAllSelected = orders.length > 0 && selectedIds.length === orders.length;
+  const isSomeSelected = selectedIds.length > 0 && !isAllSelected;
+
+  const handleSelectAll = (checked: boolean) => {
+    if (!onSelectChange) return;
+    if (checked) {
+      onSelectChange(orders.map((o) => o.id));
+    } else {
+      onSelectChange([]);
+    }
+  };
+
+  const handleItemSelect = (id: string, checked: boolean) => {
+    if (!onSelectChange) return;
+    if (checked) {
+      onSelectChange([...selectedIds, id]);
+    } else {
+      onSelectChange(selectedIds.filter((selectedId) => selectedId !== id));
+    }
+  };
+
   return (
     <div className="rounded-lg border border-border bg-white">
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-[50px]">
+              <Checkbox
+                checked={isAllSelected}
+                data-state={isSomeSelected ? "indeterminate" : isAllSelected ? "checked" : "unchecked"}
+                ref={(el) => {
+                  if (el) {
+                    (el as HTMLButtonElement & { indeterminate: boolean }).indeterminate = isSomeSelected;
+                  }
+                }}
+                onCheckedChange={handleSelectAll}
+                aria-label="全選択"
+              />
+            </TableHead>
             <TableHead>注文番号</TableHead>
             <TableHead>受注元</TableHead>
             <TableHead>購入者</TableHead>
@@ -73,7 +111,7 @@ export function OrderList({ orders, onRowClick }: OrderListProps) {
         <TableBody>
           {orders.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+              <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                 該当する受注がありません
               </TableCell>
             </TableRow>
@@ -86,6 +124,14 @@ export function OrderList({ orders, onRowClick }: OrderListProps) {
                   className="cursor-pointer hover:bg-accent/50"
                   onClick={() => onRowClick?.(order)}
                 >
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedSet.has(order.id)}
+                      onCheckedChange={(checked) =>
+                        handleItemSelect(order.id, !!checked)
+                      }
+                    />
+                  </TableCell>
                   <TableCell>
                     <div>
                       <div className="font-medium">{order.order_number}</div>
