@@ -56,6 +56,8 @@ class TestOrderDocumentsDownloadStatusUpdate:
     async def test_product(self, db_session: AsyncSession, test_manufacturer: dict):
         """テスト用商品（メーカーに紐づく）"""
         product_id = str(uuid4())
+        # ユニークなサイズを使用して既存データとの衝突を避ける
+        unique_size = f"DOC-{product_id[:8]}"
 
         await db_session.execute(
             text("""
@@ -65,7 +67,7 @@ class TestOrderDocumentsDownloadStatusUpdate:
             {
                 "id": product_id,
                 "product_type": "tshirt",
-                "size": "M",
+                "size": unique_size,
                 "position": "正面",
                 "color": "白",
                 "manufacturer_id": test_manufacturer["id"],

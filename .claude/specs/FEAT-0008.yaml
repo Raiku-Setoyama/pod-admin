@@ -1,0 +1,167 @@
+id: FEAT-0008
+summary: |
+  商品マスタ（productsテーブル）に product_type / size / position / color の
+  4カラム複合ユニーク制約を追加し、同一仕様の商品が重複登録されることを防止する。
+
+background:
+  why: |
+    現在の商品マスタには product_type, size, position, color の組み合わせに対する
+    ユニーク制約がなく、同一仕様の商品が複数登録できてしまう。
+    これにより、受注時にどの商品マスタを使うか曖昧になり、
+    コスト計算やリードタイム取得で不整合が発生するリスクがある。
+  who: 管理者（商品マスタ管理者）
+  when: |
+    商品マスタの新規登録・更新時に、同一仕様（product_type + size + position + color）の
+    商品が既に存在する場合はエラーとして登録を拒否する。
+
+scope:
+  includes:
+    - DBマイグレーション（Alembic）で products テーブルに4カラム複合ユニーク制約を追加
+    - マイグレーション内で既存の重複データを検出・解消するロジックを含む
+    - SQLAlchemy モデル（Product）に UniqueConstraint を追加
+    - ProductService の create / update メソッドにアプリケーションレベルの重複チェックを追加
+    - 重複時に適切なエラーレスポンス（409 Conflict）を返す
+    - ProductRepository に重複チェック用のクエリメソッドを追加
+  excludes:
+    - フロントエンドの変更（バックエンドAPIのエラーレスポンスは既存のエラーハンドリングで表示される）
+    - position / color が NULL の場合の扱い変更（NULLはNULLとして扱い、NULL同士は重複とみなす）
+  prerequisites:
+    - products テーブルに product_type, size, position, color カラムが存在する
+    - position と color は nullable（NULL許容）
+
+input_output:
+  inputs:
+    - name: product_type
+      type: string (ProductType enum)
+      required: true
+      validation: ProductType enum の値のいずれか
+    - name: size
+      type: string
+      required: true
+      validation: 1-50文字
+    - name: position
+      type: string | null
+      required: false
+      validation: 最大50文字、NULL許容
+    - name: color
+      type: string | null
+      required: false
+      validation: 最大50文字、NULL許容
+  outputs:
+    - name: ProductResponse（成功時）
+      type: ProductResponse
+      description: 作成・更新された商品情報
+    - name: DuplicateProductError（重複時）
+      type: エラーレスポンス (409)
+      description: |
+        同一の product_type + size + position + color の組み合わせが
+        既に存在する場合に返されるエラー
+  state_changes:
+    - products テーブルに uq_products_type_size_position_color ユニーク制約が追加される
+    - 既存の重複データがある場合、マイグレーション内で古い方を is_active=false に更新して解消する
+
+acceptance_criteria:
+  - id: AC-001
+    description: Product モデルに UniqueConstraint が定義されていること
+    test_type: unit
+    given: Product モデルの定義
+    when: __table_args__ を確認する
+    then: (product_type, size, position, color) の UniqueConstraint が存在する
+
+  - id: AC-002
+    description: 同一仕様の商品を新規作成しようとすると重複エラー（409）が返ること
+    test_type: unit
+    given: product_type=tshirt, size=M, position=正面, color=白 の商品が既に存在する
+    when: 同じ product_type, size, position, color で新規作成を試みる
+    then: DuplicateProductError（409 Conflict）が発生する
+
+  - id: AC-003
+    description: 異なる仕様の商品は正常に作成できること
+    test_type: unit
+    given: product_type=tshirt, size=M, position=正面, color=白 の商品が存在する
+    when: product_type=tshirt, size=L, position=正面, color=白 で新規作成する
+    then: 正常に商品が作成される
+
+  - id: AC-004
+    description: position と color が NULL の場合も重複チェックが機能すること
+    test_type: unit
+    given: product_type=acrylic_keychain, size=50x50mm, position=NULL, color=NULL の商品が存在する
+    when: 同じ仕様（position=NULL, color=NULL）で新規作成を試みる
+    then: DuplicateProductError（409 Conflict）が発生する
+
+  - id: AC-005
+    description: 商品更新時に他の商品と重複する場合はエラーになること
+    test_type: unit
+    given: |
+      商品A: product_type=tshirt, size=M, position=正面, color=白
+      商品B: product_type=tshirt, size=L, position=正面, color=白
+    when: 商品Bの size を M に更新しようとする
+    then: DuplicateProductError（409 Conflict）が発生する
+
+  - id: AC-006
+    description: 自分自身との重複は許容されること（更新時）
+    test_type: unit
+    given: 商品A: product_type=tshirt, size=M, position=正面, color=白
+    when: 商品Aの cost のみを変更する（仕様は同一のまま）
+    then: 正常に更新される（自分自身との重複はエラーにならない）
+
+  - id: AC-007
+    description: API経由で重複作成すると409エラーレスポンスが返ること
+    test_type: integration
+    given: 商品マスタに product_type=sticker, size=100x100mm, position=NULL, color=ホワイト が存在する
+    when: 同じ仕様で POST /api/v1/products を実行する
+    then: 409 Conflict レスポンスが返り、エラーメッセージに重複を示す内容が含まれる
+
+  - id: AC-008
+    description: API経由で重複更新すると409エラーレスポンスが返ること
+    test_type: integration
+    given: |
+      商品A: product_type=tshirt, size=M, position=正面, color=白
+      商品B: product_type=tshirt, size=L, position=正面, color=白
+    when: 商品Bを PATCH /api/v1/products/{id} で size=M に更新する
+    then: 409 Conflict レスポンスが返る
+
+  - id: AC-009
+    description: Alembicマイグレーションファイルが正しく生成されていること
+    test_type: unit
+    given: マイグレーションファイル
+    when: upgrade() を確認する
+    then: |
+      既存の重複データを解消する処理と、
+      products テーブルへの UniqueConstraint 追加が含まれている
+
+  - id: AC-010
+    description: ProductRepository に重複チェックメソッドが存在すること
+    test_type: unit
+    given: ProductRepository クラス
+    when: find_duplicate メソッドを呼び出す
+    then: 指定した product_type, size, position, color の組み合わせで既存商品を検索できる
+
+constraints:
+  performance:
+    - ユニーク制約のインデックスにより、重複チェックのパフォーマンスに悪影響がないこと
+  security:
+    - 管理者のみ商品マスタの作成・更新が可能（既存制約、変更なし）
+  compatibility:
+    - 既存の重複データはマイグレーション内で自動解消する。
+      同一仕様の重複がある場合、created_at が最も新しいものを残し、
+      古い方を is_active=false に設定する。
+    - position / color が NULL のレコード同士も重複とみなす。
+      PostgreSQL 16 の NULLS NOT DISTINCT を使用する。
+
+assumptions:
+  - PostgreSQL 16 を使用しているため、NULLS NOT DISTINCT が利用可能。
+    CREATE UNIQUE INDEX で NULLS NOT DISTINCT を指定し、
+    NULL 同士も重複とみなすようにする。
+  - 現在のシードデータには重複は存在しないが、
+    本番環境には重複データが存在する可能性があるため、
+    マイグレーション内で重複解消処理を行う。
+  - 重複解消時は is_active=false に設定する方式を採用する。
+    物理削除は order_items 等の外部キー参照があるため避ける。
+  - フロントエンドは既存のエラーハンドリングで 409 レスポンスを適切に表示できると想定。
+
+success_metrics:
+  - products テーブルに4カラム複合ユニーク制約が追加されている
+  - 同一仕様の商品登録時に 409 エラーが返される
+  - 既存の重複データがマイグレーションで自動解消される
+  - 全テスト（ユニット・統合）がパスする
