@@ -7,7 +7,7 @@ from datetime import datetime
 # Product type to Japanese name mapping
 PRODUCT_TYPE_NAMES: dict[str, str] = {
     "acrylic_keychain": "アクリルキーホルダー",
-    "acrylic_stand": "アクリルスタンド",
+    "acrylic_stand": "アクリルフィギュア",
     "sticker": "ステッカー",
     "tote_bag": "トートバッグ",
     "mug": "マグカップ",
