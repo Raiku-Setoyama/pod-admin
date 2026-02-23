@@ -171,16 +171,29 @@ async def get_manufacturer_order_items(
     ordered_from: date | None = None,
     ordered_to: date | None = None,
     product_type: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
 ) -> ManufacturerOrderItemListResponse:
     """メーカー別受注明細一覧を取得
 
-    指定されたメーカーに紐づく発注中（ORDERED）ステータスの受注明細一覧を返します。
+    指定されたメーカーに紐づく受注明細一覧を返します。
+    デフォルトでは shipped 以外の全ステータスを返します。
+
+    Args:
+        manufacturer_id: メーカーID
+        ordered_from: 発注日From
+        ordered_to: 発注日To
+        product_type: 商品タイプフィルター
+        status: ステータスフィルター（ordered, manufacturing, delivered）
+        search: キーワード検索（注文番号、製品番号、商品名）
     """
     return await service.get_order_items_by_manufacturer(
         manufacturer_id,
         ordered_from=ordered_from,
         ordered_to=ordered_to,
         product_type=product_type,
+        status=status,
+        search=search,
     )
 
 

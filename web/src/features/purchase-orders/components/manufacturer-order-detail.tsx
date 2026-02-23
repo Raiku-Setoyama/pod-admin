@@ -31,7 +31,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Download, Factory, Loader2, Package, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
-import type { ManufacturerOrderItemListResponse, ProductType } from "@/types/api";
+import type { ManufacturerOrderItemListResponse, OrderStatus } from "@/types/api";
 import { ManufacturerOrderFilters } from "./manufacturer-order-filters";
 import { InvoiceDialog } from "@/features/invoice";
 
@@ -39,17 +39,15 @@ interface ManufacturerOrderDetailProps {
   data: ManufacturerOrderItemListResponse;
   isLoading?: boolean;
   onStatusUpdate?: () => void;
-  // フィルター
-  orderedFrom: string;
-  orderedTo: string;
-  productType: ProductType | null;
-  onOrderedFromChange: (value: string) => void;
-  onOrderedToChange: (value: string) => void;
-  onProductTypeChange: (value: ProductType | null) => void;
+  // フィルター（新しい形式）
+  search: string;
+  status: OrderStatus | null;
+  onSearchChange: (value: string) => void;
+  onStatusChange: (value: OrderStatus | null) => void;
   onFilterReset: () => void;
 }
 
-const statusOptions = [
+const statusUpdateOptions = [
   { value: "manufacturing", label: "製造中" },
   { value: "delivered", label: "納入済" },
 ];
@@ -59,8 +57,21 @@ const productTypeLabels: Record<string, string> = {
   acrylic_stand: "アクリルスタンド",
   sticker: "ステッカー",
   tote_bag: "トートバッグ",
-  mug: "マグカップ",
   tshirt: "Tシャツ",
+};
+
+const statusLabels: Record<string, string> = {
+  ordered: "発注済み",
+  manufacturing: "製造中",
+  delivered: "納入済",
+  shipped: "配送完了",
+};
+
+const statusVariants: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
+  ordered: "default",
+  manufacturing: "secondary",
+  delivered: "outline",
+  shipped: "outline",
 };
 
 function formatDate(dateString: string): string {
@@ -78,12 +89,10 @@ export function ManufacturerOrderDetail({
   data,
   isLoading = false,
   onStatusUpdate,
-  orderedFrom,
-  orderedTo,
-  productType,
-  onOrderedFromChange,
-  onOrderedToChange,
-  onProductTypeChange,
+  search,
+  status,
+  onSearchChange,
+  onStatusChange,
   onFilterReset,
 }: ManufacturerOrderDetailProps) {
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
@@ -139,9 +148,6 @@ export function ManufacturerOrderDetail({
         process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
       const params = new URLSearchParams();
-      if (orderedFrom) params.set("ordered_from", orderedFrom);
-      if (orderedTo) params.set("ordered_to", orderedTo);
-      if (productType) params.set("product_type", productType);
       if (selectedIds.size > 0) {
         params.set("order_item_ids", Array.from(selectedIds).join(","));
       }
@@ -264,12 +270,10 @@ export function ManufacturerOrderDetail({
         <CardContent>
           {/* フィルター */}
           <ManufacturerOrderFilters
-            orderedFrom={orderedFrom}
-            orderedTo={orderedTo}
-            productType={productType}
-            onOrderedFromChange={onOrderedFromChange}
-            onOrderedToChange={onOrderedToChange}
-            onProductTypeChange={onProductTypeChange}
+            search={search}
+            status={status}
+            onSearchChange={onSearchChange}
+            onStatusChange={onStatusChange}
             onReset={onFilterReset}
           />
 
@@ -292,6 +296,7 @@ export function ManufacturerOrderDetail({
                   <TableHead>製品番号</TableHead>
                   <TableHead>商品名</TableHead>
                   <TableHead>商品タイプ</TableHead>
+                  <TableHead>ステータス</TableHead>
                   <TableHead className="text-center">数量</TableHead>
                   <TableHead className="text-right">金額</TableHead>
                   <TableHead>顧客名</TableHead>
@@ -302,7 +307,7 @@ export function ManufacturerOrderDetail({
                 {isLoading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={9}
+                      colSpan={10}
                       className="h-24 text-center text-muted-foreground"
                     >
                       <div className="flex items-center justify-center gap-2">
@@ -314,7 +319,7 @@ export function ManufacturerOrderDetail({
                 ) : data.items.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={9}
+                      colSpan={10}
                       className="h-24 text-center text-muted-foreground"
                     >
                       発注中の明細がありません
@@ -340,6 +345,11 @@ export function ManufacturerOrderDetail({
                         <Badge variant="secondary">
                           {productTypeLabels[item.product_type] ||
                             item.product_type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={statusVariants[item.status] || "default"}>
+                          {statusLabels[item.status] || item.status}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
@@ -381,7 +391,7 @@ export function ManufacturerOrderDetail({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {statusOptions.map((opt) => (
+                {statusUpdateOptions.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>
                     {opt.label}
                   </SelectItem>

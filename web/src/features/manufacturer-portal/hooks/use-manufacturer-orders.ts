@@ -20,6 +20,7 @@ export interface ManufacturerOrderItem {
   thumbnail_image_url: string | null;
   ordered_at: string;
   customer_name: string;
+  status: string;
 }
 
 // 発注アイテム一覧レスポンス
@@ -33,9 +34,8 @@ export interface ManufacturerOrderItemsResponse {
 }
 
 export interface ManufacturerOrderFilters {
-  orderedFrom?: string;
-  orderedTo?: string;
-  productType?: string | null;
+  search?: string;
+  status?: string | null;
 }
 
 const fetcher = async (url: string) => {
@@ -62,9 +62,8 @@ export function useManufacturerOrderItems(filters?: ManufacturerOrderFilters) {
 
   // クエリパラメータ構築
   const queryParams = new URLSearchParams();
-  if (filters?.orderedFrom) queryParams.set("ordered_from", filters.orderedFrom);
-  if (filters?.orderedTo) queryParams.set("ordered_to", filters.orderedTo);
-  if (filters?.productType) queryParams.set("product_type", filters.productType);
+  if (filters?.search) queryParams.set("search", filters.search);
+  if (filters?.status) queryParams.set("status", filters.status);
 
   const queryString = queryParams.toString();
   const url = token
@@ -105,9 +104,8 @@ export async function downloadAllOrderDocuments(
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
   const params = new URLSearchParams();
-  if (filters?.orderedFrom) params.set("ordered_from", filters.orderedFrom);
-  if (filters?.orderedTo) params.set("ordered_to", filters.orderedTo);
-  if (filters?.productType) params.set("product_type", filters.productType);
+  if (filters?.search) params.set("search", filters.search);
+  if (filters?.status) params.set("status", filters.status);
   if (orderItemIds?.length) params.set("order_item_ids", orderItemIds.join(","));
 
   const queryString = params.toString();

@@ -11,6 +11,7 @@ FEAT-0004: 発注資料ダウンロード時のステータス自動切り替え
 3. 発注中の明細が0件の場合は400エラー
 """
 
+import json
 import pytest
 import zipfile
 import io
@@ -41,7 +42,7 @@ class TestOrderDocumentsDownloadStatusUpdate:
                 "email": "test@manufacturer.com",
                 "phone": "03-1234-5678",
                 "supported_products": ["tshirt"],
-                "unit_prices": "{}",
+                "unit_prices": json.dumps({}),
                 "lead_time_days": 7,
                 "daily_order_limit": 100,
                 "sharing_method": "portal",

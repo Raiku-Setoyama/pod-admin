@@ -77,8 +77,19 @@ class ManufacturerOrderService:
         ordered_from: date | None = None,
         ordered_to: date | None = None,
         product_type: str | None = None,
+        status: str | None = None,
+        search: str | None = None,
     ) -> ManufacturerOrderItemListResponse:
-        """メーカー別受注明細一覧を取得"""
+        """メーカー別受注明細一覧を取得
+
+        Args:
+            manufacturer_id: メーカーID
+            ordered_from: 発注日From
+            ordered_to: 発注日To
+            product_type: 商品タイプ
+            status: ステータスフィルター（None の場合は shipped 以外の全て）
+            search: キーワード検索（注文番号・製品番号・商品名）
+        """
         manufacturer = await self._manufacturer_repo.find_by_id(manufacturer_id)
         if not manufacturer:
             raise NotFoundError("Manufacturer", manufacturer_id)
@@ -88,13 +99,15 @@ class ManufacturerOrderService:
             ordered_from=ordered_from,
             ordered_to=ordered_to,
             product_type=product_type,
+            status=status,
+            search=search,
         )
 
         items = []
         total_quantity = 0
         total_amount = 0
 
-        for order_item, order_number, ordered_at, customer_name, cost in rows:
+        for order_item, order_number, ordered_at, customer_name, cost, order_status in rows:
             items.append(
                 ManufacturerOrderItemResponse(
                     id=order_item.id,
@@ -113,6 +126,7 @@ class ManufacturerOrderService:
                     thumbnail_image_url=order_item.thumbnail_image_url,
                     ordered_at=ordered_at,
                     customer_name=customer_name,
+                    status=order_status,
                 )
             )
             total_quantity += order_item.quantity
@@ -220,12 +234,13 @@ class ManufacturerOrderService:
         if not manufacturer:
             raise NotFoundError("Manufacturer", manufacturer_id)
 
-        # 「発注中」ステータスの明細のみを取得（デフォルトでstatus=ORDERED）
+        # 「発注中」ステータスの明細のみを取得
         rows = await self._order_repo.find_ordered_items_by_manufacturer_detail(
             manufacturer_id,
             ordered_from=ordered_from,
             ordered_to=ordered_to,
             product_type=product_type,
+            status=OrderStatus.ORDERED.value,
         )
 
         # order_item_idsが指定された場合、そのIDのみにフィルタリング
@@ -242,7 +257,7 @@ class ManufacturerOrderService:
         # グループキー別にアイテムを整理
         # Tシャツは (product_type, position) でグループ、他は (product_type,) でグループ
         items_by_group: dict[tuple, list[dict]] = {}
-        for order_item, order_number, ordered_at, customer_name, cost in rows:
+        for order_item, order_number, ordered_at, customer_name, cost, order_status in rows:
             item_product_type = order_item.product_type
             if item_product_type == "tshirt":
                 group_key = (item_product_type, order_item.position or "")

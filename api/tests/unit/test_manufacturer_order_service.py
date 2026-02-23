@@ -68,6 +68,7 @@ def _make_order_item(
         ordered_at or datetime(2026, 2, 24, 10, 0, 0),
         "顧客名",
         cost,
+        status.value,
     )
 
 

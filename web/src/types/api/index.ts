@@ -107,6 +107,7 @@ export interface ManufacturerOrderItem {
   thumbnail_image_url: string | null;
   ordered_at: string;
   customer_name: string;
+  status: OrderStatus;
 }
 
 export interface ManufacturerOrderItemListResponse {

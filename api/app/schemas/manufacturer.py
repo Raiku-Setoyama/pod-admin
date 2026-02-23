@@ -129,6 +129,7 @@ class ManufacturerOrderItemResponse(BaseModel):
     thumbnail_image_url: str | None
     ordered_at: datetime
     customer_name: str
+    status: str  # Order.status (ordered, manufacturing, delivered)
 
 
 class ManufacturerOrderItemListResponse(BaseModel):
