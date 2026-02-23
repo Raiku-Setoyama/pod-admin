@@ -192,7 +192,7 @@ POST /api/v1/orders
 
 - **ステッカー** (`product_type: sticker`)
   - `size`: `100x100mm`
-  - `color`: `クリア`, `ホワイト`
+  - `color`: `ホワイト`
 
 - **トートバッグ** (`product_type: tote_bag`)
   - `size`: `M`
@@ -540,7 +540,6 @@ Tシャツ（`product_type: tshirt`）の場合、以下の値のみ許可され
 
 | 値 | 説明 | 原価 |
 |----|------|------|
-| クリア | 透明 | 105円 |
 | ホワイト | 白 | 79円 |
 
 ### トートバッグ属性値
@@ -629,7 +628,7 @@ GET /api/v1/external/product-options/{product_type}
 {
   "product_type": "sticker",
   "size": ["100x100mm"],
-  "color": ["クリア", "ホワイト"],
+  "color": ["ホワイト"],
   "position": []
 }
 ```
@@ -735,7 +734,7 @@ POST /api/v1/external/price-calculation
 - `tshirt`: size=S/M/L/XL, color=白, position=正面
 - `acrylic_keychain`: size=50x50mm/70x70mm/100x100mm
 - `acrylic_stand`: size=50x50mm/70x70mm/100x100mm
-- `sticker`: size=100x100mm, color=クリア/ホワイト
+- `sticker`: size=100x100mm, color=ホワイト
 - `tote_bag`: size=M, color=ナチュラル, position=正面
 
 ### レスポンス例
@@ -820,7 +819,7 @@ curl -X POST "https://api.example.com/api/v1/external/price-calculation" \
   -d '{
     "product_type": "sticker",
     "size": "100x100mm",
-    "color": "クリア",
+    "color": "ホワイト",
     "quantity": 10
   }'
 ```
@@ -1042,6 +1041,7 @@ if ($statusCode === 201) {
 
 | バージョン | 日付 | 内容 |
 |-----------|------|------|
+| 3.2.0 | 2026-02-23 | ステッカーのカラーから「クリア」を削除。「ホワイト」のみの単一カラー体制に変更。(FEAT-0007) |
 | 3.1.0 | 2026-02-14 | レスポンスに `source` および `order_source_id` フィールド追加。受注元管理がDB管理に完全移行。 |
 | 3.0.0 | 2026-02-14 | **破壊的変更**: 住所フィールド正規化。`address` を削除し、`address_prefecture` + `address_city` を必須に。レスポンスの `customer_address` を `customer_full_address` に変更（自動生成）。 |
 | 2.3.0 | 2026-02-14 | 住所分割フィールド追加（address_prefecture, address_city, address_building）。配送CSVエクスポート対応。 |
