@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Send, Paperclip, User, Factory, X } from "lucide-react";
-import { apiClient } from "@/lib/api/client";
+import { Send, Paperclip, User, Factory, X, Download } from "lucide-react";
+import { apiClient, downloadFile } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
 interface ChatAttachment {
@@ -15,6 +15,7 @@ interface ChatAttachment {
   filename: string;
   file_size: number;
   content_type: string;
+  download_url: string | null;
 }
 
 interface ChatMessage {
@@ -172,13 +173,19 @@ export function ManufacturerChat({ manufacturerId, manufacturerName }: Manufactu
                       {msg.attachments.length > 0 && (
                         <div className="mt-2 space-y-1">
                           {msg.attachments.map((att) => (
-                            <div
+                            <button
                               key={att.id}
-                              className="text-xs opacity-75 flex items-center gap-1"
+                              type="button"
+                              onClick={() => {
+                                if (att.download_url) {
+                                  downloadFile(att.download_url, att.filename);
+                                }
+                              }}
+                              className="text-xs opacity-75 flex items-center gap-1 underline cursor-pointer hover:opacity-100"
                             >
-                              <Paperclip className="h-3 w-3" />
+                              <Download className="h-3 w-3" />
                               {att.filename}
-                            </div>
+                            </button>
                           ))}
                         </div>
                       )}

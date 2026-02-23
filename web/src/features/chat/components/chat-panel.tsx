@@ -1,16 +1,17 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, Paperclip } from "lucide-react";
+import { Send, Paperclip, X, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { downloadFile } from "@/lib/api/client";
 import type { ChatMessage } from "@/types/api";
 
 interface ChatPanelProps {
   messages: ChatMessage[];
-  onSendMessage: (content: string) => void;
+  onSendMessage: (content: string, files?: File[]) => void;
   manufacturerName: string;
   currentUserType?: "admin" | "manufacturer";
 }
@@ -25,8 +26,22 @@ function formatTime(dateString: string): string {
   });
 }
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+const ALLOWED_EXTENSIONS = [
+  ".jpg", ".jpeg", ".png", ".gif", ".webp",
+  ".pdf",
+  ".doc", ".docx",
+  ".xls", ".xlsx",
+  ".txt", ".csv",
+  ".zip",
+];
+
 export function ChatPanel({ messages, onSendMessage, manufacturerName, currentUserType = "admin" }: ChatPanelProps) {
   const [input, setInput] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isSending, setIsSending] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -35,11 +50,53 @@ export function ChatPanel({ messages, onSendMessage, manufacturerName, currentUs
     }
   }, [messages]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (input.trim()) {
-      onSendMessage(input.trim());
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!input.trim() && selectedFiles.length === 0) return;
+
+    setIsSending(true);
+    try {
+      onSendMessage(input.trim(), selectedFiles.length > 0 ? selectedFiles : undefined);
       setInput("");
+      setSelectedFiles([]);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files) return;
+
+    const validFiles: File[] = [];
+    for (const file of Array.from(files)) {
+      if (file.size > MAX_FILE_SIZE) {
+        alert(`${file.name} は10MBを超えています`);
+        continue;
+      }
+      const ext = "." + file.name.split(".").pop()?.toLowerCase();
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        alert(`${file.name} は対応していないファイル形式です`);
+        continue;
+      }
+      validFiles.push(file);
+    }
+    setSelectedFiles((prev) => [...prev, ...validFiles]);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleDownload = async (downloadUrl: string, filename: string) => {
+    try {
+      await downloadFile(downloadUrl, filename);
+    } catch {
+      console.error("Download failed");
     }
   };
 
@@ -76,20 +133,23 @@ export function ChatPanel({ messages, onSendMessage, manufacturerName, currentUs
                       : "bg-muted"
                   )}
                 >
-                  <p className="text-sm">{message.content}</p>
+                  <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                   {message.attachments.length > 0 && (
                     <div className="mt-2 space-y-1">
                       {message.attachments.map((attachment) => (
-                        <a
+                        <button
                           key={attachment.id}
-                          href={attachment.file_path}
-                          className="flex items-center gap-1 text-xs underline"
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          type="button"
+                          onClick={() => {
+                            if (attachment.download_url) {
+                              handleDownload(attachment.download_url, attachment.filename);
+                            }
+                          }}
+                          className="flex items-center gap-1 text-xs underline cursor-pointer hover:opacity-80"
                         >
-                          <Paperclip className="h-3 w-3" />
+                          <Download className="h-3 w-3" />
                           {attachment.filename}
-                        </a>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -105,25 +165,65 @@ export function ChatPanel({ messages, onSendMessage, manufacturerName, currentUs
       </ScrollArea>
 
       {/* Input */}
-      <form
-        onSubmit={handleSubmit}
-        className="border-t border-border bg-white p-4"
-      >
+      <div className="border-t border-border bg-white p-4 space-y-3">
+        {selectedFiles.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {selectedFiles.map((file, index) => (
+              <div
+                key={index}
+                className="flex items-center gap-1 bg-muted px-2 py-1 rounded text-sm"
+              >
+                <Paperclip className="h-3 w-3" />
+                <span className="max-w-[150px] truncate">{file.name}</span>
+                <button
+                  type="button"
+                  onClick={() => removeFile(index)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="flex gap-2">
-          <Button type="button" variant="outline" size="icon">
+          <input
+            ref={fileInputRef}
+            type="file"
+            onChange={handleFileSelect}
+            className="hidden"
+            multiple
+            accept={ALLOWED_EXTENSIONS.join(",")}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={() => fileInputRef.current?.click()}
+          >
             <Paperclip className="h-4 w-4" />
           </Button>
-          <Input
+          <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="メッセージを入力..."
-            className="flex-1"
+            className="min-h-[40px] max-h-[120px] resize-none flex-1"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmit();
+              }
+            }}
           />
-          <Button type="submit" disabled={!input.trim()}>
+          <Button
+            onClick={() => handleSubmit()}
+            disabled={isSending || (!input.trim() && selectedFiles.length === 0)}
+          >
             <Send className="h-4 w-4" />
           </Button>
         </div>
-      </form>
+      </div>
     </div>
   );
 }

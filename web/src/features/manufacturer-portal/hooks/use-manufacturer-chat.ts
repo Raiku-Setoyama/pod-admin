@@ -33,7 +33,7 @@ export function useManufacturerChat() {
     }
   );
 
-  const sendMessage = useCallback(async (content: string) => {
+  const sendMessage = useCallback(async (content: string, files?: File[]) => {
     const storedToken = localStorage.getItem("manufacturer_token");
     if (!storedToken) {
       throw new Error("No authentication token");
@@ -41,6 +41,11 @@ export function useManufacturerChat() {
 
     const formData = new FormData();
     formData.append("content", content);
+    if (files) {
+      files.forEach((file) => {
+        formData.append("attachments", file);
+      });
+    }
 
     const response = await fetch(`${API_URL}/manufacturer-portal/chat`, {
       method: "POST",

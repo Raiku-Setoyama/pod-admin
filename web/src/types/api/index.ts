@@ -219,19 +219,17 @@ export interface ProductListResponse {
 export interface ChatAttachment {
   id: string;
   filename: string;
-  file_path: string;
+  download_url: string | null;
   content_type: string;
   file_size: number;
 }
 
 export interface ChatMessage {
   id: string;
-  manufacturer_id: string;
   sender_type: "admin" | "manufacturer";
   sender_name: string;
   content: string;
   attachments: ChatAttachment[];
-  is_read: boolean;
   created_at: string;
 }
 

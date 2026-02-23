@@ -73,6 +73,13 @@ class ChatRepository:
         await self._db.refresh(message)
         return message
 
+    async def find_attachment_by_id(self, attachment_id: str) -> ChatAttachment | None:
+        """Find an attachment by ID."""
+        result = await self._db.execute(
+            select(ChatAttachment).where(ChatAttachment.id == attachment_id)
+        )
+        return result.scalar_one_or_none()
+
     async def add_attachment(
         self,
         message_id: str,

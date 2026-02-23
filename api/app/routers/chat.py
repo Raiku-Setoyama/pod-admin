@@ -1,11 +1,13 @@
 """Chat router."""
 
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.dependencies import (
+    get_chat_repository,
     get_chat_service,
     get_current_admin,
     get_file_storage,
@@ -62,10 +64,25 @@ async def send_chat_message(
 @router.get("/attachments/{attachment_id}")
 async def download_attachment(
     attachment_id: str,
+    chat_repo: Annotated[ChatRepository, Depends(get_chat_repository)],
     file_storage: Annotated[FileStorage, Depends(get_file_storage)],
     current_user: Annotated[User, Depends(get_current_admin)],
 ) -> StreamingResponse:
     """Download a chat attachment."""
-    # In a full implementation, we'd look up the attachment in the database
-    # For now, return a placeholder error
-    raise NotFoundError("Attachment", attachment_id)
+    attachment = await chat_repo.find_attachment_by_id(attachment_id)
+    if not attachment:
+        raise NotFoundError("Attachment", attachment_id)
+
+    file_content = await file_storage.get(attachment.file_path)
+    if file_content is None:
+        raise NotFoundError("Attachment file", attachment_id)
+
+    encoded_filename = quote(attachment.filename)
+
+    return StreamingResponse(
+        iter([file_content]),
+        media_type=attachment.content_type,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+        },
+    )

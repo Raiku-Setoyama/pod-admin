@@ -4,16 +4,21 @@ from datetime import date
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Form, Header, Query
+from fastapi import APIRouter, Depends, File, Form, Header, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.dependencies import (
+    get_chat_repository,
     get_chat_service,
     get_current_manufacturer,
+    get_file_storage,
     get_invoice_service,
     get_manufacturer_order_service,
     get_manufacturer_portal_service,
 )
+from app.repositories.chat_repository import ChatRepository
+from app.utils.exceptions import NotFoundError
+from app.utils.file_storage import FileStorage
 from app.models.chat_message import MessageSender
 from app.models.manufacturer import Manufacturer
 from app.schemas.chat import (
@@ -228,15 +233,44 @@ async def send_chat_message(
     content: Annotated[str, Form()],
     manufacturer: Annotated[Manufacturer, Depends(get_current_manufacturer)],
     service: Annotated[ChatService, Depends(get_chat_service)],
+    attachments: list[UploadFile] | None = File(None),
 ) -> ChatMessageResponse:
     """メーカー向けチャットメッセージ送信
 
     ログイン中のメーカーとしてメッセージを送信します。
+    ファイル添付も可能です。
     """
     return await service.send_message(
         manufacturer_id=str(manufacturer.id),
         data=ChatMessageCreate(content=content),
         sender_type=MessageSender.MANUFACTURER,
         sender_name=manufacturer.name,
-        attachments=None,
+        attachments=attachments,
+    )
+
+
+@router.get("/chat/attachments/{attachment_id}")
+async def download_chat_attachment(
+    attachment_id: str,
+    manufacturer: Annotated[Manufacturer, Depends(get_current_manufacturer)],
+    chat_repo: Annotated[ChatRepository, Depends(get_chat_repository)],
+    file_storage: Annotated[FileStorage, Depends(get_file_storage)],
+) -> StreamingResponse:
+    """メーカー向けチャット添付ファイルダウンロード"""
+    attachment = await chat_repo.find_attachment_by_id(attachment_id)
+    if not attachment:
+        raise NotFoundError("Attachment", attachment_id)
+
+    file_content = await file_storage.get(attachment.file_path)
+    if file_content is None:
+        raise NotFoundError("Attachment file", attachment_id)
+
+    encoded_filename = quote(attachment.filename)
+
+    return StreamingResponse(
+        iter([file_content]),
+        media_type=attachment.content_type,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+        },
     )

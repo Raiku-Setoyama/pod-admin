@@ -16,9 +16,9 @@ export default function ManufacturerChatPage() {
     setManufacturerName(name);
   }, []);
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (content: string, files?: File[]) => {
     try {
-      await sendMessage(content);
+      await sendMessage(content, files);
     } catch (error) {
       console.error("Failed to send message:", error);
     }
