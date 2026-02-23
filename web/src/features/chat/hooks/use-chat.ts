@@ -17,7 +17,7 @@ export function useChat(params: UseChatParams) {
 
   const { data, error, isLoading, mutate } = useSWR<ChatMessageListResponse>(
     manufacturerId
-      ? `/manufacturers/${manufacturerId}/chat?${queryParams.toString()}`
+      ? `/chat/manufacturers/${manufacturerId}?${queryParams.toString()}`
       : null,
     apiClient
   );

@@ -32,13 +32,21 @@ function ChatContent() {
     (m) => m.id === selectedManufacturerId
   );
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (content: string, files?: File[]) => {
     if (!selectedManufacturerId) return;
 
     try {
-      await apiClient(`/manufacturers/${selectedManufacturerId}/chat`, {
+      const formData = new FormData();
+      formData.append("content", content);
+      if (files) {
+        files.forEach((file) => {
+          formData.append("attachments", file);
+        });
+      }
+
+      await apiClient(`/chat/manufacturers/${selectedManufacturerId}`, {
         method: "POST",
-        body: { content },
+        body: formData,
       });
       mutate();
     } catch (error) {

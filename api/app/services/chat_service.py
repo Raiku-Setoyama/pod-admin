@@ -11,8 +11,32 @@ from app.schemas.chat import (
     ChatMessageListResponse,
     ChatMessageResponse,
 )
-from app.utils.exceptions import ManufacturerNotFoundError
+from app.utils.exceptions import ManufacturerNotFoundError, ValidationError
 from app.utils.file_storage import FileStorage
+
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+ALLOWED_CONTENT_TYPES = {
+    # Images
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    # PDF
+    "application/pdf",
+    # Word
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    # Excel
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    # Text
+    "text/plain",
+    "text/csv",
+    # ZIP
+    "application/zip",
+    "application/x-zip-compressed",
+}
 
 
 class ChatService:
@@ -78,8 +102,22 @@ class ChatService:
         # Handle attachments
         if attachments:
             for file in attachments:
+                # Validate content type
+                content_type = file.content_type or "application/octet-stream"
+                if content_type not in ALLOWED_CONTENT_TYPES:
+                    raise ValidationError(
+                        f"ファイル形式 '{content_type}' は許可されていません"
+                    )
+
                 content = await file.read()
                 file_size = len(content)
+
+                # Validate file size
+                if file_size > MAX_FILE_SIZE:
+                    raise ValidationError(
+                        f"ファイルサイズが上限(10MB)を超えています: {file.filename}"
+                    )
+
                 await file.seek(0)
 
                 file_path = await self._file_storage.save(
@@ -91,7 +129,7 @@ class ChatService:
                     filename=file.filename or "attachment",
                     file_path=file_path,
                     file_size=file_size,
-                    content_type=file.content_type or "application/octet-stream",
+                    content_type=content_type,
                 )
 
         # Reload message with attachments
