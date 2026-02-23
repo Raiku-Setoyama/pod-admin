@@ -9,7 +9,11 @@ from app.schemas.product import (
     ProductResponse,
     ProductUpdate,
 )
-from app.utils.exceptions import ManufacturerNotFoundError, ProductNotFoundError
+from app.utils.exceptions import (
+    DuplicateProductError,
+    ManufacturerNotFoundError,
+    ProductNotFoundError,
+)
 
 
 class ProductService:
@@ -23,12 +27,44 @@ class ProductService:
         self._product_repo = product_repo
         self._manufacturer_repo = manufacturer_repo
 
+    async def _check_duplicate(
+        self,
+        product_type: str,
+        size: str,
+        position: str | None,
+        color: str | None,
+        exclude_id: str | None = None,
+    ) -> None:
+        """Check for duplicate product specification and raise error if found."""
+        duplicate = await self._product_repo.find_duplicate(
+            product_type=product_type,
+            size=size,
+            position=position,
+            color=color,
+            exclude_id=exclude_id,
+        )
+        if duplicate:
+            raise DuplicateProductError(
+                product_type=product_type,
+                size=size,
+                position=position,
+                color=color,
+            )
+
     async def create(self, data: ProductCreate) -> ProductResponse:
         """Create a new product."""
         # Verify manufacturer exists
         manufacturer = await self._manufacturer_repo.find_by_id(data.manufacturer_id)
         if not manufacturer:
             raise ManufacturerNotFoundError(data.manufacturer_id)
+
+        # Check for duplicate product specification
+        await self._check_duplicate(
+            product_type=data.product_type.value,
+            size=data.size,
+            position=data.position,
+            color=data.color,
+        )
 
         product = Product(
             product_type=data.product_type.value,
@@ -89,8 +125,36 @@ class ProductService:
             if not manufacturer:
                 raise ManufacturerNotFoundError(data.manufacturer_id)
 
-        # Update fields
+        # Determine the final values after update for duplicate check
         update_data = data.model_dump(exclude_unset=True)
+
+        final_product_type = (
+            update_data["product_type"].value
+            if "product_type" in update_data and update_data["product_type"]
+            else product.product_type
+        )
+        final_size = update_data.get("size", product.size)
+        final_position = (
+            update_data["position"]
+            if "position" in update_data
+            else product.position
+        )
+        final_color = (
+            update_data["color"]
+            if "color" in update_data
+            else product.color
+        )
+
+        # Check for duplicate product specification (excluding self)
+        await self._check_duplicate(
+            product_type=final_product_type,
+            size=final_size,
+            position=final_position,
+            color=final_color,
+            exclude_id=product_id,
+        )
+
+        # Update fields
         for field, value in update_data.items():
             if field == "product_type" and value:
                 setattr(product, field, value.value)

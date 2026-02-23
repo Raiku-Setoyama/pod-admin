@@ -1,0 +1,129 @@
+id: FEAT-0009
+summary: チャットページのファイルアップロード・ダウンロード機能を修正・実装する
+
+background:
+  why: 現在、管理者側チャットのダウンロードAPIが未実装（raise NotFoundError）、フロントエンドのダウンロードリンクがサーバーローカルパスを直参照しており動作しない。製造者側はファイル添付自体が未対応。双方向でファイルを送受信できるよう修正・実装する。
+  who: 管理者ユーザー（admin/staff）および製造者ユーザー（manufacturer）
+  when: チャットページでファイルを添付・送信・ダウンロードするとき
+
+scope:
+  includes:
+    - バックエンド：GET /api/v1/chat/attachments/{id} ダウンロードAPIの実装
+    - バックエンド：ChatRepositoryにfind_attachment_by_idメソッドを追加
+    - バックエンド：製造者側チャット（manufacturer_portal.py）のファイルアップロード対応（現在attachments=Noneがハードコード）
+    - フロントエンド：chat-panel.tsxのダウンロードリンクをfile_pathからAPIエンドポイントURLに修正
+    - フロントエンド：types/api/index.tsのChatAttachment型をバックエンドレスポンス（download_url）に合わせて修正
+    - フロントエンド：chat-panel.tsxのファイル添付UIの実際の選択・送信処理を実装（manufacturer-chat.tsxを参考に）
+    - ファイルバリデーション：10MBサイズ上限、許可MIMEタイプチェック
+  excludes:
+    - ファイルのプレビュー機能
+    - ファイルの削除機能
+    - ファイルの一覧表示機能（チャット内添付ファイルとして表示する範囲のみ）
+  prerequisites:
+    - Docker環境が起動していること
+    - 既存のFileStorageインフラが利用可能であること
+
+input_output:
+  inputs:
+    - name: file
+      type: binary (multipart/form-data)
+      required: true
+      validation: 最大10MB、許可MIME型（画像/PDF/Word/Excel/テキストなど一般的なチャットツール対応形式）
+    - name: attachment_id
+      type: integer
+      required: true
+      description: ダウンロード時に使用する添付ファイルID
+  outputs:
+    - name: download_url
+      type: string
+      description: 添付ファイルのダウンロードURL（/api/v1/chat/attachments/{id}）
+    - name: file_binary
+      type: binary
+      description: ダウンロードAPIからのファイルバイナリ（StreamingResponse）
+  state_changes:
+    - 添付ファイルのアップロード時：DBにChatAttachmentレコードが作成され、ファイルがFileStorageに保存される
+    - ダウンロード時：状態変化なし（読み取りのみ）
+
+acceptance_criteria:
+  - id: AC-001
+    description: 管理者がチャットでファイルを添付して送信できる
+    test_type: integration
+    given: 管理者がログイン済みで、チャットページを開いている
+    when: ファイルを選択してメッセージと一緒に送信する
+    then: ファイルがアップロードされ、チャットに添付ファイルとして表示される
+
+  - id: AC-002
+    description: 製造者がチャットでファイルを添付して送信できる
+    test_type: integration
+    given: 製造者がログイン済みで、チャットページを開いている
+    when: ファイルを選択してメッセージと一緒に送信する
+    then: ファイルがアップロードされ、チャットに添付ファイルとして表示される
+
+  - id: AC-003
+    description: 管理者が製造者のアップロードしたファイルをダウンロードできる
+    test_type: integration
+    given: 製造者がファイルをアップロード済みのチャット
+    when: 管理者がダウンロードリンクをクリックする
+    then: ファイルが正常にダウンロードされる
+
+  - id: AC-004
+    description: 製造者が管理者のアップロードしたファイルをダウンロードできる
+    test_type: integration
+    given: 管理者がファイルをアップロード済みのチャット
+    when: 製造者がダウンロードリンクをクリックする
+    then: ファイルが正常にダウンロードされる
+
+  - id: AC-005
+    description: 10MB超過ファイルはアップロードを拒否する
+    test_type: unit
+    given: 10MBを超えるファイル
+    when: アップロードを試みる
+    then: エラーレスポンス（400 Bad Request）が返り、アップロードされない
+
+  - id: AC-006
+    description: 許可されていないMIMEタイプのファイルはアップロードを拒否する
+    test_type: unit
+    given: 許可されていないMIMEタイプのファイル（例：.exe）
+    when: アップロードを試みる
+    then: エラーレスポンス（400 Bad Request）が返り、アップロードされない
+
+  - id: AC-007
+    description: find_attachment_by_idでDBから添付ファイルを取得できる
+    test_type: unit
+    given: DBにChatAttachmentレコードが存在する
+    when: attachment_idでfind_attachment_by_idを呼び出す
+    then: 対応するChatAttachmentオブジェクトが返る
+
+  - id: AC-008
+    description: 存在しないattachment_idはNotFoundErrorを返す
+    test_type: unit
+    given: 存在しないattachment_id
+    when: ダウンロードAPIを呼び出す
+    then: 404 NotFoundエラーが返る
+
+constraints:
+  performance:
+    - ファイルはStreamingResponseで返す（大容量ファイルのメモリ問題を回避）
+  security:
+    - ダウンロードAPIは認証済みユーザーのみアクセス可能（管理者・製造者両方）
+    - ファイルのMIMEタイプとサイズはサーバーサイドで検証する
+  compatibility:
+    - 既存のFileStorageインフラを活用する
+    - manufacturer-chat.tsxの既存実装パターンをchat-panel.tsxにも適用する
+
+allowed_mime_types:
+  images: [image/jpeg, image/png, image/gif, image/webp, image/svg+xml]
+  documents: [application/pdf, application/msword, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]
+  spreadsheets: ["application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]
+  text: [text/plain, text/csv]
+  archives: [application/zip, application/x-zip-compressed]
+
+assumptions:
+  - 既存のFileStorageクラスがbytes読み取りメソッドを持つ（または相当するAPIがある）
+  - manufacturer-chat.tsxの実装パターンはchat-panel.tsxで再利用可能
+  - 認証ミドルウェアは管理者・製造者両方のトークンを検証できる
+
+success_metrics:
+  - 管理者・製造者双方がチャットでファイルを添付・送受信・ダウンロードできる
+  - 10MB超過・不正MIMEタイプのファイルが適切に拒否される
+  - すべてのユニット・統合テストがパスする

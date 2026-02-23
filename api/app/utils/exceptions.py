@@ -96,6 +96,27 @@ class DuplicateError(AppException):
         )
 
 
+class DuplicateProductError(AppException):
+    """Duplicate product error for unique constraint violation."""
+
+    def __init__(
+        self,
+        product_type: str,
+        size: str,
+        position: str | None,
+        color: str | None,
+    ):
+        combo = (
+            f"product_type='{product_type}', size='{size}', "
+            f"position='{position}', color='{color}'"
+        )
+        super().__init__(
+            409,
+            "DUPLICATE_PRODUCT",
+            f"Product with the same specification already exists: {combo}",
+        )
+
+
 class InvalidStatusTransitionError(AppException):
     """Invalid status transition error."""
 

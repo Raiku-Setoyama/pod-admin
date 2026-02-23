@@ -212,3 +212,43 @@ class ShipmentRepository:
         result = await self._db.execute(query)
         count = result.scalar() or 0
         return count > 0
+
+    async def delete_by_order_id(self, order_id: str) -> None:
+        """Delete shipment and shipment items for a given order.
+
+        This removes the ShipmentItem for the order, and if the Shipment
+        has no more items, deletes the Shipment as well.
+
+        Args:
+            order_id: The order ID whose shipment should be deleted.
+        """
+        # Find the shipment item for this order
+        query = select(ShipmentItem).where(ShipmentItem.order_id == order_id)
+        result = await self._db.execute(query)
+        shipment_item = result.scalar_one_or_none()
+
+        if not shipment_item:
+            return
+
+        shipment_id = shipment_item.shipment_id
+
+        # Delete the shipment item
+        await self._db.delete(shipment_item)
+        await self._db.flush()
+
+        # Check if shipment has any remaining items
+        remaining_query = (
+            select(func.count(ShipmentItem.id))
+            .where(ShipmentItem.shipment_id == shipment_id)
+        )
+        remaining_result = await self._db.execute(remaining_query)
+        remaining_count = remaining_result.scalar() or 0
+
+        # If no items remain, delete the shipment
+        if remaining_count == 0:
+            shipment_query = select(Shipment).where(Shipment.id == shipment_id)
+            shipment_result = await self._db.execute(shipment_query)
+            shipment = shipment_result.scalar_one_or_none()
+            if shipment:
+                await self._db.delete(shipment)
+                await self._db.flush()

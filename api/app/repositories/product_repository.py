@@ -1,6 +1,6 @@
 """Product repository for database operations."""
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.product import Product, ProductType
@@ -85,5 +85,49 @@ class ProductRepository:
             Product.product_type == product_type.value,
             Product.is_active == True,  # noqa: E712
         )
+        result = await self._db.execute(query)
+        return result.scalars().first()
+
+    async def find_duplicate(
+        self,
+        product_type: str,
+        size: str,
+        position: str | None,
+        color: str | None,
+        exclude_id: str | None = None,
+    ) -> Product | None:
+        """Find a product with the same (product_type, size, position, color) combination.
+
+        Args:
+            product_type: The product type value.
+            size: The size value.
+            position: The position value (can be None).
+            color: The color value (can be None).
+            exclude_id: Product ID to exclude from the check (for updates).
+
+        Returns:
+            The duplicate Product if found, None otherwise.
+        """
+        conditions = [
+            Product.product_type == product_type,
+            Product.size == size,
+            Product.is_active == True,  # noqa: E712 - only active products
+        ]
+
+        # Handle NULL comparison: NULL == NULL should be True
+        if position is None:
+            conditions.append(Product.position.is_(None))
+        else:
+            conditions.append(Product.position == position)
+
+        if color is None:
+            conditions.append(Product.color.is_(None))
+        else:
+            conditions.append(Product.color == color)
+
+        if exclude_id is not None:
+            conditions.append(Product.id != exclude_id)
+
+        query = select(Product).where(and_(*conditions))
         result = await self._db.execute(query)
         return result.scalars().first()

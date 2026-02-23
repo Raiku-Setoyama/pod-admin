@@ -31,8 +31,10 @@ from app.schemas.order import (
     OrderResponse,
     OrderShipmentInfo,
 )
+from app.models.shipment import ShipmentStatus
 from app.utils.exceptions import (
     DuplicateError,
+    InvalidStatusTransitionError,
     OrderNotFoundError,
     ProductNotFoundError,
     ValidationError,
@@ -176,10 +178,46 @@ class OrderService:
         )
 
     async def update_status(self, order_id: str, status: OrderStatus) -> OrderResponse:
-        """Update order status."""
+        """Update order status.
+
+        Implements manual status switching with the following rules:
+        - shipped への直接遷移は拒否（Shipment経由でのみshippedになる）
+        - shipped ステータスからの遷移は拒否（Shipment経由で戻す必要がある）
+        - delivered -> ordered/manufacturing: 関連Shipmentがshippedなら拒否、そうでなければShipment削除
+        - ordered/manufacturing -> delivered: Shipment自動作成
+        """
         order = await self._order_repo.find_by_id(order_id)
         if not order:
             raise OrderNotFoundError(order_id)
+
+        current_status = OrderStatus(order.status)
+
+        # shipped への直接遷移は拒否
+        if status == OrderStatus.SHIPPED:
+            raise InvalidStatusTransitionError(current_status.value, status.value)
+
+        # shipped ステータスからの遷移は拒否
+        if current_status == OrderStatus.SHIPPED:
+            raise InvalidStatusTransitionError(current_status.value, status.value)
+
+        # delivered -> ordered/manufacturing の遷移時の処理
+        if current_status == OrderStatus.DELIVERED and status in (
+            OrderStatus.ORDERED,
+            OrderStatus.MANUFACTURING,
+        ):
+            # 関連Shipmentを確認
+            shipment_map = await self._shipment_repo.find_by_order_ids([order_id])
+            shipment = shipment_map.get(order_id)
+
+            if shipment:
+                # Shipmentがshippedなら拒否
+                if shipment.status == ShipmentStatus.SHIPPED.value:
+                    raise ValidationError(
+                        "Cannot revert order status: related shipment is already shipped. "
+                        "Please revert the shipment status first."
+                    )
+                # そうでなければShipment削除
+                await self._shipment_repo.delete_by_order_id(order_id)
 
         order.status = status.value
         order = await self._order_repo.update(order)

@@ -22,6 +22,10 @@ class Product(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """Product model for product master."""
 
     __tablename__ = "products"
+    # Unique index: uq_products_type_size_position_color
+    # Partial unique index on (product_type, size, position, color) for active products.
+    # Created via Alembic migration (add_product_uq_001) with NULLS NOT DISTINCT.
+    # Application-level duplicate check is enforced in ProductService.
 
     product_type: Mapped[str] = mapped_column(String(50), index=True)
     size: Mapped[str] = mapped_column(String(50))

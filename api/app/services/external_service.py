@@ -40,7 +40,6 @@ ACRYLIC_STAND_PRICES = {
 }
 
 STICKER_PRICES = {
-    StickerColor.CLEAR.value: 105,
     StickerColor.WHITE.value: 79,
 }
 
