@@ -969,6 +969,17 @@ dev = [
     { name = "types-passlib" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "httpx" },
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+    { name = "types-passlib" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "aiofiles", specifier = ">=24.1.0" },
@@ -996,6 +1007,17 @@ requires-dist = [
     { name = "weasyprint", specifier = ">=62.0" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "mypy", specifier = ">=1.13.0" },
+    { name = "pytest", specifier = ">=8.3.0" },
+    { name = "pytest-asyncio", specifier = ">=0.24.0" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+    { name = "ruff", specifier = ">=0.8.0" },
+    { name = "types-passlib", specifier = ">=1.7.0" },
+]
 
 [[package]]
 name = "pyasn1"
