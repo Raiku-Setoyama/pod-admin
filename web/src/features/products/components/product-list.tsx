@@ -21,7 +21,6 @@ const productTypeLabels: Record<ProductType, string> = {
   acrylic_stand: "アクリルスタンド",
   sticker: "ステッカー",
   tote_bag: "トートバッグ",
-  mug: "マグカップ",
   tshirt: "Tシャツ",
 };
 

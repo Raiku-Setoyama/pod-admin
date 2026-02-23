@@ -15,7 +15,6 @@ class ProductType(str, Enum):
     ACRYLIC_STAND = "acrylic_stand"  # アクリルスタンド
     STICKER = "sticker"  # ステッカー
     TOTE_BAG = "tote_bag"  # トートバッグ
-    MUG = "mug"  # マグカップ
     TSHIRT = "tshirt"  # Tシャツ
 
 

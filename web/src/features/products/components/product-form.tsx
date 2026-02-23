@@ -33,7 +33,6 @@ const productTypes: { value: ProductType; label: string }[] = [
   { value: "acrylic_stand", label: "アクリルスタンド" },
   { value: "sticker", label: "ステッカー" },
   { value: "tote_bag", label: "トートバッグ" },
-  { value: "mug", label: "マグカップ" },
   { value: "tshirt", label: "Tシャツ" },
 ];
 
@@ -43,7 +42,6 @@ const productSchema = z.object({
     "acrylic_stand",
     "sticker",
     "tote_bag",
-    "mug",
     "tshirt",
   ]),
   size: z.string().optional(),
