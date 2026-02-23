@@ -124,13 +124,19 @@ class ShipmentService:
         if not self._is_valid_transition(current_status, data.status):
             raise InvalidStatusTransitionError(current_status.value, data.status.value)
 
+        # Handle reverting from shipped to pending/ready
+        is_reverting_from_shipped = (
+            current_status == ShipmentStatus.SHIPPED and
+            data.status in (ShipmentStatus.PENDING, ShipmentStatus.READY)
+        )
+
         shipment.status = data.status.value
 
-        if data.tracking_number:
+        if data.tracking_number is not None:
             shipment.tracking_number = data.tracking_number
-        if data.carrier:
+        if data.carrier is not None:
             shipment.carrier = data.carrier
-        if data.note:
+        if data.note is not None:
             shipment.note = data.note
 
         # Set timestamps
@@ -143,8 +149,17 @@ class ShipmentService:
             for item in shipment.items:
                 await self._order_repo.update_status(item.order_id, OrderStatus.SHIPPED)
 
+        # When reverting from shipped, clear shipped_at and revert orders to delivered
+        if is_reverting_from_shipped:
+            shipment.shipped_at = None
+            for item in shipment.items:
+                await self._order_repo.update_status(item.order_id, OrderStatus.DELIVERED)
+
         await self._shipment_repo.update(shipment)
-        return self._to_response(shipment)
+
+        # Refresh shipment to get updated relationships
+        refreshed_shipment = await self._shipment_repo.find_by_id(shipment_id)
+        return self._to_response(refreshed_shipment)
 
     async def upload_packing_photo(
         self, shipment_id: str, photo: UploadFile
@@ -251,11 +266,18 @@ class ShipmentService:
     def _is_valid_transition(
         self, current: ShipmentStatus, target: ShipmentStatus
     ) -> bool:
-        """Check if status transition is valid."""
+        """Check if status transition is valid.
+
+        Supports bidirectional transitions for manual status switching.
+        """
+        # Allow same status (idempotent)
+        if current == target:
+            return True
+
         valid_transitions = {
-            ShipmentStatus.PENDING: [ShipmentStatus.READY],
-            ShipmentStatus.READY: [ShipmentStatus.SHIPPED],
-            ShipmentStatus.SHIPPED: [],  # 最終ステータス
+            ShipmentStatus.PENDING: [ShipmentStatus.READY, ShipmentStatus.SHIPPED],
+            ShipmentStatus.READY: [ShipmentStatus.PENDING, ShipmentStatus.SHIPPED],
+            ShipmentStatus.SHIPPED: [ShipmentStatus.PENDING, ShipmentStatus.READY],
         }
         return target in valid_transitions.get(current, [])
 

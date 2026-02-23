@@ -1,0 +1,138 @@
+id: FEAT-0006
+title: 発注・配送ステータスの手動切り替え機能
+created_at: 2026-02-23
+status: approved
+
+summary: |
+  発注ステータス（発注中・製造中・納入済）と配送ステータス（配送準備待ち・配送準備完了・発送完了）を
+  手動で自由に切り替え可能にする。
+
+requirements:
+  order_status:
+    description: 発注ステータスの手動切り替え
+    statuses:
+      - ordered: 発注中
+      - manufacturing: 製造中
+      - delivered: 納入済
+    transitions:
+      ordered: [manufacturing, delivered]
+      manufacturing: [ordered, delivered]
+      delivered: [ordered, manufacturing]
+    side_effects:
+      to_delivered: 配送レコード（Shipment）を自動作成（既存動作維持）
+      from_delivered: 関連する配送レコードを削除
+    notes:
+      - shipped は配送側で制御されるため発注ステータスとしては直接操作不可
+
+  shipment_status:
+    description: 配送ステータスの手動切り替え
+    statuses:
+      - pending: 配送準備待ち
+      - ready: 配送準備完了
+      - shipped: 発送完了
+    transitions:
+      pending: [ready, shipped]
+      ready: [pending, shipped]
+      shipped: [pending, ready]
+    side_effects:
+      to_shipped:
+        - 関連する受注ステータスを shipped に更新
+        - shipped_at を現在時刻に設定
+      from_shipped:
+        - 関連する受注ステータスを delivered に戻す
+        - shipped_at をクリア
+
+acceptance_criteria:
+  - scenario: 発注中から製造中に変更
+    given: 発注ステータスが「発注中」の受注がある
+    when: ステータスを「製造中」に変更する
+    then: ステータスが「製造中」に更新される
+
+  - scenario: 製造中から発注中に戻す
+    given: 発注ステータスが「製造中」の受注がある
+    when: ステータスを「発注中」に変更する
+    then: ステータスが「発注中」に更新される
+
+  - scenario: 発注中から納入済に変更
+    given: 発注ステータスが「発注中」の受注がある
+    when: ステータスを「納入済」に変更する
+    then:
+      - ステータスが「納入済」に更新される
+      - 配送レコードが自動作成される
+
+  - scenario: 納入済から発注中に戻す
+    given: 発注ステータスが「納入済」の受注がある
+    and: 配送レコードが存在する
+    when: ステータスを「発注中」に変更する
+    then:
+      - ステータスが「発注中」に更新される
+      - 関連する配送レコードが削除される
+
+  - scenario: 納入済から製造中に戻す
+    given: 発注ステータスが「納入済」の受注がある
+    and: 配送レコードが存在する
+    when: ステータスを「製造中」に変更する
+    then:
+      - ステータスが「製造中」に更新される
+      - 関連する配送レコードが削除される
+
+  - scenario: 配送準備待ちから準備完了に変更
+    given: 配送ステータスが「配送準備待ち」の配送がある
+    when: ステータスを「準備完了」に変更する
+    then: ステータスが「準備完了」に更新される
+
+  - scenario: 準備完了から配送準備待ちに戻す
+    given: 配送ステータスが「準備完了」の配送がある
+    when: ステータスを「配送準備待ち」に変更する
+    then: ステータスが「配送準備待ち」に更新される
+
+  - scenario: 配送準備待ちから発送完了に変更
+    given: 配送ステータスが「配送準備待ち」の配送がある
+    when: ステータスを「発送完了」に変更する
+    then:
+      - ステータスが「発送完了」に更新される
+      - shipped_at が現在時刻に設定される
+      - 関連する受注ステータスが「発送完了」に更新される
+
+  - scenario: 準備完了から発送完了に変更
+    given: 配送ステータスが「準備完了」の配送がある
+    when: ステータスを「発送完了」に変更する
+    then:
+      - ステータスが「発送完了」に更新される
+      - shipped_at が現在時刻に設定される
+      - 関連する受注ステータスが「発送完了」に更新される
+
+  - scenario: 発送完了から配送準備待ちに戻す
+    given: 配送ステータスが「発送完了」の配送がある
+    and: 関連する受注ステータスが「発送完了」である
+    when: ステータスを「配送準備待ち」に変更する
+    then:
+      - ステータスが「配送準備待ち」に更新される
+      - shipped_at がクリアされる
+      - 関連する受注ステータスが「納入済」に戻る
+
+  - scenario: 発送完了から準備完了に戻す
+    given: 配送ステータスが「発送完了」の配送がある
+    and: 関連する受注ステータスが「発送完了」である
+    when: ステータスを「準備完了」に変更する
+    then:
+      - ステータスが「準備完了」に更新される
+      - shipped_at がクリアされる
+      - 関連する受注ステータスが「納入済」に戻る
+
+scope:
+  includes:
+    - バックエンド: ステータス遷移バリデーションの変更
+    - バックエンド: 配送削除ロジックの追加
+    - バックエンド: shipped からの戻し時の受注ステータス連動
+    - フロントエンド: 受注詳細画面にステータス変更UIを追加
+  excludes:
+    - 一括ステータス更新の変更（既存のまま）
+    - ステータス変更履歴の記録（別機能として要検討）
+
+assumptions:
+  - 配送削除時、配送に含まれる ShipmentItem もカスケード削除される
+  - 受注詳細画面のステータス変更UIは、配送詳細画面と同様のダイアログ形式
+
+test_priority:
+  - 通常のステータス切り替えの正常動作テストを入念に行う

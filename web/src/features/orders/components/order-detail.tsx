@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/common/status-badge";
@@ -13,10 +14,12 @@ import {
 } from "@/components/ui/table";
 import { Download, Package, User, FileText, ShoppingBag, ExternalLink } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
+import { OrderStatusUpdateDialog } from "./order-status-update-dialog";
 import type { Order, OrderItem } from "@/types/api";
 
 interface OrderDetailProps {
   order: Order;
+  onUpdate?: () => void;
 }
 
 function formatDate(dateString: string): string {
@@ -45,7 +48,9 @@ function formatProductType(type: string): string {
   return typeMap[type] || type;
 }
 
-export function OrderDetail({ order }: OrderDetailProps) {
+export function OrderDetail({ order, onUpdate }: OrderDetailProps) {
+  const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
+
   const handleDownloadManufacturingData = async () => {
     try {
       const data = await apiClient<Blob>(`/orders/${order.id}/manufacturing-data`);
@@ -77,7 +82,16 @@ export function OrderDetail({ order }: OrderDetailProps) {
               <Package className="h-5 w-5" />
               受注情報
             </CardTitle>
-            <StatusBadge status={order.status} />
+            <div className="flex items-center gap-3">
+              <StatusBadge status={order.status} />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsStatusDialogOpen(true)}
+              >
+                ステータス変更
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -280,6 +294,17 @@ export function OrderDetail({ order }: OrderDetailProps) {
           </dl>
         </CardContent>
       </Card>
+
+      {/* ステータス変更ダイアログ */}
+      <OrderStatusUpdateDialog
+        order={order}
+        open={isStatusDialogOpen}
+        onClose={() => setIsStatusDialogOpen(false)}
+        onSuccess={() => {
+          setIsStatusDialogOpen(false);
+          onUpdate?.();
+        }}
+      />
     </div>
   );
 }
