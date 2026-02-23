@@ -1,181 +1,135 @@
 id: FEAT-0012
-summary: 管理者が発注詳細画面でアイテムのステータス表示・フィルター、およびキーワード検索ができる
+title: 発注資料ダウンロードの命名規則変更
+status: approved
+created_at: "2026-02-24"
+priority: medium
 
-background:
-  why: |
-    現在の発注詳細画面（/purchase-orders/{id}）では、発注中（ORDERED）ステータスの明細のみが表示されており、
-    製造中（MANUFACTURING）や納入済（DELIVERED）のアイテムを確認できない。
-    また、大量の明細から特定のアイテムを素早く見つける手段がない。
-    配送一覧と同様の検索・フィルター機能を追加することで、業務効率を向上させる。
-  who: 管理者（admin/staff）
-  when: |
-    - 特定のメーカーへの発注状況を確認するとき
-    - 製造中や納入済のアイテムを探すとき
-    - 注文番号・製品番号・商品名で特定のアイテムを検索するとき
+summary: |
+  メーカー向け発注資料ZIPのフォルダ・ファイル命名規則を刷新する。
+  現状はメーカー名を含む命名だが、新仕様では商品種類＋日付を基軸とした
+  統一フォーマットに変更する。
+
+background: |
+  現状の命名規則はメーカー名ベースで管理しづらい。
+  外部メーカーに送付する発注資料として、商品種類・サイズ・カラー・数量が
+  ファイル名から一目でわかる命名規則に統一する。
 
 scope:
-  includes:
-    - 発注詳細画面（/purchase-orders/{id}）にステータスフィルターを追加
-    - 発注詳細画面にキーワード検索欄を追加（注文番号・製品番号・商品名で検索）
-    - 発注詳細画面の各アイテムにステータスバッジを表示
-    - 受注日時フィルターと商品タイプフィルターを削除
-    - バックエンドAPIの拡張（statusフィルター、searchパラメータ追加、デフォルトで全ステータスを返す）
-  excludes:
-    - 発注一覧画面（/purchase-orders）の変更（対象外）
-    - ステータス更新機能の変更（既存機能はそのまま維持）
-    - ページネーション追加（現状のまま全件表示）
-  prerequisites:
-    - 発注詳細画面（ManufacturerOrderDetail）が存在すること
-    - バックエンドのメーカー別明細API（GET /manufacturers/{id}/order-items）が存在すること
+  in:
+    - ZIP ファイル名の変更
+    - タイプフォルダ名の変更（メーカー名除去）
+    - 発注リストCSVファイル名の変更
+    - イメージ画像ファイル名の変更
+    - 製造データ①ファイル名の変更（商品フルネーム＋数量＋MMDD形式）
+    - 製造データ②（アクリルフィギュアスタンド）の追加
+    - 注文別サブフォルダの廃止（タイプフォルダ直下にフラット配置）
+  out:
+    - 発注リストのフォーマット変更（CSVのまま、XLSXへの変換なし）
+    - フロントエンドUI変更
+    - 既存データのマイグレーション
 
-input_output:
-  inputs:
-    - name: search
-      type: string
-      required: false
-      validation: 空文字列または任意の文字列
-    - name: status
-      type: string
-      required: false
-      validation: "ordered | manufacturing | delivered | null (全て)"
-  outputs:
-    - name: フィルタリングされた明細一覧
-      type: ManufacturerOrderItemListResponse
-      description: 検索・フィルター条件に一致する明細一覧
-  state_changes:
-    - なし（検索・フィルターは表示のみで状態変更しない）
+naming_rules:
+  overview: |
+    ダウンロードされるZIPは「タイプフォルダ名.zip」。
+    ZIP内はタイプフォルダ直下に全ファイルをフラット配置（注文別サブフォルダなし）。
+
+  zip_name:
+    format: "{type_folder_name}.zip"
+    note: "タイプフォルダ名と完全一致"
+
+  type_folder_name:
+    default: "{商品種類カテゴリ}_{YYYYMMDD}"
+    examples:
+      - "アクリルキーホルダー_20260224"
+      - "アクリルフィギュア_20260224"
+      - "ステッカー_20260224"
+      - "トートバッグ_20260224"
+    tshirt_special:
+      format: "Tシャツ- {印刷位置} -_{YYYYMMDD}"
+      note: "Tシャツのみ印刷位置（position フィールド）ごとにフォルダを分割"
+      examples:
+        - "Tシャツ- 正面 -_20260224"
+        - "Tシャツ- 背面 -_20260224"
+
+  order_list_csv:
+    format: "{フォルダ名prefix}発注リスト_{YYYYMMDD}.csv"
+    note: "フォルダ名から '_YYYYMMDD' を除いたprefixに「発注リスト_YYYYMMDD.csv」を付加"
+    examples:
+      - "アクリルキーホルダー発注リスト_20260224.csv"
+      - "アクリルフィギュア発注リスト_20260224.csv"
+      - "ステッカー発注リスト_20260224.csv"
+      - "トートバッグ発注リスト_20260224.csv"
+      - "Tシャツ- 正面 -発注リスト_20260224.csv"
+
+  image_file:
+    format: "{注文番号}_{製造番号}.png"
+    note: "thumbnail_image_url からダウンロード。現状の thumbnail_{filename} から変更。"
+    examples:
+      - "POD-20260101-0001_abc123.png"
+
+  manufacturing_data_1:
+    format: "{商品フルネーム}【{数量}個】_{注文番号}_{製造番号}_{MMDD}.{ext}"
+    note: |
+      - {商品フルネーム} = 商品種類 - サイズ - カラー（product_name フィールド）
+      - {数量} = quantity フィールドの値
+      - {MMDD} = ダウンロード時刻の月日2桁ずつ
+      - 拡張子は商品種類によって異なる
+    extensions_by_product:
+      Tシャツ: "_front.pdf （_front サフィックスを付加）"
+      トートバッグ: ".pdf"
+      アクリルキーホルダー: ".ai"
+      アクリルフィギュア: ".ai"
+      ステッカー: ".ai"
+    examples:
+      - "Tシャツ - M - 正面 - 白【1個】_POD-20260101-0001_abc123_0224_front.pdf"
+      - "アクリルキーホルダー - 50x50 (mm) - アクリル【2個】_POD-20260101-0002_def456_0224.ai"
+      - "アクリルフィギュア - 70x70mm - アクリル【1個】_POD-20260101-0003_ghi789_0224.ai"
+      - "ステッカー - 100x100mm - ホワイト【3個】_POD-20260101-0004_jkl012_0224.ai"
+      - "トートバッグ - M - ナチュラル【1個】_POD-20260101-0005_mno345_0224.pdf"
+
+  manufacturing_data_2:
+    target: "アクリルフィギュアのみ"
+    format: "{商品フルネーム}【{数量}個】_{注文番号}_{製造番号}_{MMDD}_stand.ai"
+    source: "静的サンプルファイル（DB/設定から取得）"
+    current_sample: "【サンプル】アクリルフィギュアスタンド_70mm_台座.ai"
+    extensibility: |
+      現時点では全サイズで同一のサンプルファイルを使用するが、
+      将来的にサイズ（50x50mm, 70x70mm, 100x100mm, 160x160mm 等）ごとに
+      異なるAIファイルを指定できるよう、設定ベースの拡張性を持たせること。
+      例：DBテーブル or YAML設定で size → stand_file_path のマッピングを管理。
+    examples:
+      - "アクリルフィギュア - 70x70mm - アクリル【1個】_POD-20260101-0003_ghi789_0224_stand.ai"
+
+current_implementation:
+  file: "api/app/services/manufacturer_order_service.py"
+  zip_name: "{manufacturer.name}_{date}.zip"
+  type_folder: "{manufacturer}/{product_type_name}_{YYYYMMDD}"
+  csv_name: "{product_type_name}-発注リスト_{YYYYMMDD}.csv"
+  design_file_ai: "{order_number}_{uid}_{product_type_name}.ai"
+  thumbnail: "thumbnail_{original_filename}"
+  sub_folder: "{type_folder}/{order_number}/"
+
+changes_required:
+  - "ZipBuilder.create_directory_name() の見直し or 廃止"
+  - "generate_order_documents() のフォルダ生成ロジック変更"
+  - "Tシャツは position フィールドでタイプフォルダをさらに分割"
+  - "CSV ファイル名のフォーマット変更"
+  - "イメージ画像のファイル名を {order_number}_{uid}.png に変更"
+  - "製造データのファイル名を新フォーマットに変更（商品フルネーム・数量・MMDD含む）"
+  - "アクリルフィギュアのスタンドファイル追加ロジック実装"
+  - "注文別サブフォルダを廃止（フラット配置に変更）"
+  - "stand ファイルのサイズ別マッピング設定（拡張性）"
 
 acceptance_criteria:
-  - id: AC-001
-    description: 発注詳細画面にキーワード検索欄が表示される
-    test_type: unit
-    given: 発注詳細画面を開いている
-    when: 画面を確認する
-    then: 「注文番号、製品番号、商品名で検索...」というプレースホルダーを持つ検索欄が表示される
-
-  - id: AC-002
-    description: キーワード検索で注文番号に一致するアイテムのみが表示される
-    test_type: integration
-    given: 複数の明細が存在するメーカーの発注詳細画面を開いている
-    when: 検索欄に注文番号の一部を入力する
-    then: その注文番号を含むアイテムのみが一覧に表示される
-
-  - id: AC-003
-    description: キーワード検索で製品番号（uid）に一致するアイテムのみが表示される
-    test_type: integration
-    given: 複数の明細が存在するメーカーの発注詳細画面を開いている
-    when: 検索欄に製品番号の一部を入力する
-    then: その製品番号を含むアイテムのみが一覧に表示される
-
-  - id: AC-004
-    description: キーワード検索で商品名に一致するアイテムのみが表示される
-    test_type: integration
-    given: 複数の明細が存在するメーカーの発注詳細画面を開いている
-    when: 検索欄に商品名の一部を入力する
-    then: その商品名を含むアイテムのみが一覧に表示される
-
-  - id: AC-005
-    description: 発注詳細画面にステータスフィルターが表示される
-    test_type: unit
-    given: 発注詳細画面を開いている
-    when: 画面を確認する
-    then: 「全てのステータス」「発注済み」「製造中」「納入済」を選択できるセレクトボックスが表示される
-
-  - id: AC-006
-    description: ステータスフィルターで特定のステータスのアイテムのみが表示される
-    test_type: integration
-    given: 複数のステータスの明細が存在するメーカーの発注詳細画面を開いている
-    when: ステータスフィルターで「製造中」を選択する
-    then: ステータスが「製造中」のアイテムのみが一覧に表示される
-
-  - id: AC-007
-    description: デフォルトでは全ステータスのアイテムが表示される
-    test_type: integration
-    given: メーカーに複数のステータスの明細が存在する
-    when: 発注詳細画面を開く（フィルター未設定）
-    then: 全てのステータス（ordered, manufacturing, delivered）のアイテムが表示される
-
-  - id: AC-008
-    description: 各アイテムにステータスバッジが表示される
-    test_type: unit
-    given: 発注詳細画面を開いている
-    when: 明細一覧を確認する
-    then: 各アイテムの行にステータスを示すバッジ（発注済み/製造中/納入済）が表示される
-
-  - id: AC-009
-    description: 受注日時フィルターが削除されている
-    test_type: unit
-    given: 発注詳細画面を開いている
-    when: フィルター領域を確認する
-    then: 受注日時（日付範囲）フィルターは表示されない
-
-  - id: AC-010
-    description: 商品タイプフィルターが削除されている
-    test_type: unit
-    given: 発注詳細画面を開いている
-    when: フィルター領域を確認する
-    then: 商品タイプフィルターは表示されない
-
-  - id: AC-011
-    description: 検索とステータスフィルターを組み合わせて使用できる
-    test_type: integration
-    given: 複数のステータスと商品名の明細が存在するメーカーの発注詳細画面を開いている
-    when: 検索欄に「キーホルダー」と入力し、ステータスフィルターで「製造中」を選択する
-    then: 商品名に「キーホルダー」を含み、かつステータスが「製造中」のアイテムのみが表示される
-
-  - id: AC-012
-    description: フィルタをリセットするボタンが動作する
-    test_type: unit
-    given: 検索欄とステータスフィルターに値が設定されている
-    when: 「フィルタをリセット」ボタンをクリックする
-    then: 検索欄とステータスフィルターがクリアされ、全てのアイテムが表示される
-
-  - id: AC-013
-    description: バックエンドAPIがsearchパラメータに対応する
-    test_type: integration
-    given: メーカーに複数の明細が存在する
-    when: GET /manufacturers/{id}/order-items?search=ABC を呼び出す
-    then: order_number, uid, product_nameのいずれかに「ABC」を含む明細のみが返される
-
-  - id: AC-014
-    description: バックエンドAPIがstatusパラメータに対応する
-    test_type: integration
-    given: メーカーに複数のステータスの明細が存在する
-    when: GET /manufacturers/{id}/order-items?status=manufacturing を呼び出す
-    then: ステータスがmanufacturingの明細のみが返される
-
-  - id: AC-015
-    description: バックエンドAPIのデフォルト挙動が全ステータス返却に変更される
-    test_type: integration
-    given: メーカーに複数のステータスの明細が存在する
-    when: GET /manufacturers/{id}/order-items をパラメータなしで呼び出す
-    then: 全てのステータス（ordered, manufacturing, delivered）の明細が返される
-
-  - id: AC-016
-    description: APIレスポンスにステータスフィールドが含まれる
-    test_type: integration
-    given: メーカーに明細が存在する
-    when: GET /manufacturers/{id}/order-items を呼び出す
-    then: 各アイテムのレスポンスにstatusフィールドが含まれる
-
-constraints:
-  performance:
-    - 検索・フィルター操作のレスポンスは500ms以内
-    - デバウンス処理を入れ、検索入力時は300ms待ってからAPI呼び出し
-  security:
-    - 管理者（admin/staff）のみアクセス可能（既存の認証・認可を維持）
-  compatibility:
-    - 既存のステータス更新機能との互換性を維持
-    - 既存のダウンロード・請求書発行機能との互換性を維持
-
-assumptions:
-  - ステータスの日本語表示は「発注済み」「製造中」「納入済」とする
-  - 配送完了（shipped）ステータスのアイテムは発注詳細画面には表示しない（配送一覧で管理）
-  - 検索は大文字小文字を区別しない（case-insensitive）
-  - 検索は部分一致とする
-  - フィルター変更時はページをリロードせず、SWRのmutateで再取得する
-
-success_metrics:
-  - 発注詳細画面で検索・フィルター機能が正常に動作する
-  - 既存の一括更新・ダウンロード機能が引き続き正常に動作する
-  - APIのレスポンスに全ステータスのアイテムとステータス情報が含まれる
+  - "生成されるZIPファイル名が {タイプフォルダ名}.zip 形式になっている"
+  - "ZIPを展開した直下が {タイプフォルダ名}/ フォルダである"
+  - "タイプフォルダ内に注文別サブフォルダが存在しない（フラット配置）"
+  - "発注リストCSVのファイル名が {prefix}発注リスト_{YYYYMMDD}.csv 形式になっている"
+  - "イメージ画像が {注文番号}_{製造番号}.png で保存されている"
+  - "製造データ①が {商品フルネーム}【{N}個】_{注文番号}_{製造番号}_{MMDD}.{ext} 形式になっている"
+  - "Tシャツの製造データ①に _front.pdf が使われている"
+  - "トートバッグの製造データ①が .pdf になっている"
+  - "アクリルフィギュアに製造データ②（_stand.ai）が追加されている"
+  - "Tシャツのタイプフォルダが印刷位置ごとに分かれている"
+  - "既存のユニットテストおよび新規テストが全てパスする"
+  - "アクリルフィギュアのスタンドファイルがサイズ別設定を持つ構造になっている"

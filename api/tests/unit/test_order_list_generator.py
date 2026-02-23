@@ -193,7 +193,7 @@ class TestGetProductTypeName:
 
     def test_get_product_type_name_acrylic_stand(self):
         """Test acrylic_stand product type name."""
-        assert get_product_type_name("acrylic_stand") == "アクリルスタンド"
+        assert get_product_type_name("acrylic_stand") == "アクリルフィギュア"
 
     def test_get_product_type_name_sticker(self):
         """Test sticker product type name."""
