@@ -17,7 +17,7 @@ from app.schemas.manufacturer import (
     ManufacturerOrderItemListResponse,
     ManufacturerOrderStatusUpdate,
 )
-from app.utils.exceptions import NotFoundError
+from app.utils.exceptions import NotFoundError, NoOrderedItemsError
 from app.utils.order_list_generator import OrderListGenerator, get_product_type_name
 from app.utils.zip_builder import ZipBuilder
 
@@ -177,11 +177,30 @@ class ManufacturerOrderService:
         product_type: str | None = None,
         order_item_ids: list[str] | None = None,
     ) -> tuple[bytes, str]:
-        """発注資料ZIPを生成"""
+        """発注資料ZIPを生成
+
+        ダウンロード対象は「発注中（ORDERED）」ステータスの明細のみ。
+        ZIP生成成功後、対象明細のステータスを「製造中（MANUFACTURING）」に更新する。
+
+        Args:
+            manufacturer_id: メーカーID
+            ordered_from: 発注日From（オプション）
+            ordered_to: 発注日To（オプション）
+            product_type: 商品種類フィルタ（オプション）
+            order_item_ids: 対象のOrderItem ID（オプション、指定がなければ全て）
+
+        Returns:
+            tuple[bytes, str]: (ZIPファイルのバイト列, ファイル名)
+
+        Raises:
+            NotFoundError: メーカーが存在しない場合
+            NoOrderedItemsError: 発注中の明細が0件の場合
+        """
         manufacturer = await self._manufacturer_repo.find_by_id(manufacturer_id)
         if not manufacturer:
             raise NotFoundError("Manufacturer", manufacturer_id)
 
+        # 「発注中」ステータスの明細のみを取得（デフォルトでstatus=ORDERED）
         rows = await self._order_repo.find_ordered_items_by_manufacturer_detail(
             manufacturer_id,
             ordered_from=ordered_from,
@@ -193,14 +212,21 @@ class ManufacturerOrderService:
         if order_item_ids:
             rows = [row for row in rows if row[0].id in order_item_ids]
 
+        # 発注中の明細が0件の場合はエラー
+        if not rows:
+            raise NoOrderedItemsError()
+
+        # ZIP生成対象のorder_item_idsを記録
+        target_order_item_ids = [row[0].id for row in rows]
+
         # 商品タイプ別にグループ化
         items_by_type: dict[str, list[dict]] = {}
         for order_item, order_number, ordered_at, customer_name, cost in rows:
-            product_type = order_item.product_type
-            if product_type not in items_by_type:
-                items_by_type[product_type] = []
+            item_product_type = order_item.product_type
+            if item_product_type not in items_by_type:
+                items_by_type[item_product_type] = []
 
-            items_by_type[product_type].append(
+            items_by_type[item_product_type].append(
                 {
                     "ordered_date": ordered_at,
                     "order_number": order_number,
@@ -222,14 +248,14 @@ class ManufacturerOrderService:
         dir_name = ZipBuilder.create_directory_name(manufacturer.name, now)
         date_str = now.strftime("%Y%m%d")
 
-        for product_type, type_items in items_by_type.items():
-            product_type_name = get_product_type_name(product_type)
+        for item_product_type, type_items in items_by_type.items():
+            product_type_name = get_product_type_name(item_product_type)
             type_folder = f"{dir_name}/{product_type_name}_{date_str}"
 
             # CSV追加
             csv_filename = f"{product_type_name}-発注リスト_{date_str}.csv"
             csv_content = self._order_list_gen.generate_order_list_csv(
-                type_items, product_type=product_type
+                type_items, product_type=item_product_type
             )
             zip_builder.add_csv(f"{type_folder}/{csv_filename}", csv_content)
 
@@ -262,7 +288,17 @@ class ManufacturerOrderService:
                             f"{order_folder}/thumbnail_{filename}", content
                         )
 
-        return zip_builder.build(), f"{dir_name}.zip"
+        # ZIP生成
+        zip_bytes = zip_builder.build()
+
+        # ZIP生成成功後、対象明細のステータスを「製造中」に更新
+        await self._order_repo.update_status_by_manufacturer(
+            manufacturer_id=manufacturer_id,
+            new_status=OrderStatus.MANUFACTURING,
+            order_item_ids=target_order_item_ids,
+        )
+
+        return zip_bytes, f"{dir_name}.zip"
 
     async def _download_file(self, url: str) -> tuple[bytes | None, str]:
         """URLからファイルをダウンロード"""

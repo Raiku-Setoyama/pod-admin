@@ -105,3 +105,14 @@ class InvalidStatusTransitionError(AppException):
             "INVALID_STATUS_TRANSITION",
             f"Cannot transition from '{current_status}' to '{target_status}'",
         )
+
+
+class NoOrderedItemsError(AppException):
+    """No ordered items available for download error."""
+
+    def __init__(self):
+        super().__init__(
+            400,
+            "NO_ORDERED_ITEMS",
+            "ダウンロード対象の発注中明細がありません",
+        )
