@@ -1,8 +1,8 @@
 """Manufacturer order service for managing orders by manufacturer."""
 
+import os
 from datetime import date, datetime
 from urllib.parse import urlparse
-import os
 
 import httpx
 
@@ -19,6 +19,7 @@ from app.schemas.manufacturer import (
 )
 from app.utils.exceptions import NotFoundError, NoOrderedItemsError
 from app.utils.order_list_generator import OrderListGenerator, get_product_type_name
+from app.utils.stand_file_config import get_stand_file_path
 from app.utils.zip_builder import ZipBuilder
 
 
@@ -169,6 +170,15 @@ class ManufacturerOrderService:
         # Customer info is now accessed via shipment.first_order relationship
         await self._shipment_repo.create(order_ids=[order.id])
 
+    # Product type -> manufacturing data extension mapping
+    _MANUFACTURING_EXT: dict[str, str] = {
+        "tshirt": "_front.pdf",
+        "tote_bag": ".pdf",
+        "acrylic_keychain": ".ai",
+        "acrylic_stand": ".ai",
+        "sticker": ".ai",
+    }
+
     async def generate_order_documents(
         self,
         manufacturer_id: str,
@@ -181,6 +191,16 @@ class ManufacturerOrderService:
 
         ダウンロード対象は「発注中（ORDERED）」ステータスの明細のみ。
         ZIP生成成功後、対象明細のステータスを「製造中（MANUFACTURING）」に更新する。
+
+        FEAT-0012 命名規則:
+        - ZIP名: {type_folder_name}.zip
+        - タイプフォルダ: {商品種類カテゴリ}_{YYYYMMDD}
+        - Tシャツ特殊: Tシャツ- {印刷位置} -_{YYYYMMDD}
+        - CSV名: {prefix}発注リスト_{YYYYMMDD}.csv
+        - 画像: {注文番号}_{製造番号}.png
+        - 製造データ①: {商品フルネーム}【{数量}個】_{注文番号}_{製造番号}_{MMDD}.{ext}
+        - 製造データ②: アクリルフィギュアのみ _stand.ai
+        - フラット配置（注文別サブフォルダなし）
 
         Args:
             manufacturer_id: メーカーID
@@ -219,19 +239,26 @@ class ManufacturerOrderService:
         # ZIP生成対象のorder_item_idsを記録
         target_order_item_ids = [row[0].id for row in rows]
 
-        # 商品タイプ別にグループ化
-        items_by_type: dict[str, list[dict]] = {}
+        # グループキー別にアイテムを整理
+        # Tシャツは (product_type, position) でグループ、他は (product_type,) でグループ
+        items_by_group: dict[tuple, list[dict]] = {}
         for order_item, order_number, ordered_at, customer_name, cost in rows:
             item_product_type = order_item.product_type
-            if item_product_type not in items_by_type:
-                items_by_type[item_product_type] = []
+            if item_product_type == "tshirt":
+                group_key = (item_product_type, order_item.position or "")
+            else:
+                group_key = (item_product_type,)
 
-            items_by_type[item_product_type].append(
+            if group_key not in items_by_group:
+                items_by_group[group_key] = []
+
+            items_by_group[group_key].append(
                 {
                     "ordered_date": ordered_at,
                     "order_number": order_number,
                     "uid": order_item.uid,
                     "product_name": order_item.product_name,
+                    "product_type": item_product_type,
                     "quantity": order_item.quantity,
                     "size": order_item.size,
                     "position": order_item.position,
@@ -245,48 +272,81 @@ class ManufacturerOrderService:
         # ZIP生成
         now = datetime.now()
         zip_builder = ZipBuilder()
-        dir_name = ZipBuilder.create_directory_name(manufacturer.name, now)
         date_str = now.strftime("%Y%m%d")
+        mmdd = now.strftime("%m%d")
 
-        for item_product_type, type_items in items_by_type.items():
+        # タイプフォルダ名を収集（ZIP名に使う）
+        type_folder_names: list[str] = []
+
+        for group_key, group_items in items_by_group.items():
+            item_product_type = group_key[0]
             product_type_name = get_product_type_name(item_product_type)
-            type_folder = f"{dir_name}/{product_type_name}_{date_str}"
+
+            # タイプフォルダ名の決定
+            if item_product_type == "tshirt":
+                position = group_key[1]
+                type_folder = f"Tシャツ- {position} -_{date_str}"
+                folder_prefix = f"Tシャツ- {position} -"
+            else:
+                type_folder = f"{product_type_name}_{date_str}"
+                folder_prefix = product_type_name
+
+            type_folder_names.append(type_folder)
 
             # CSV追加
-            csv_filename = f"{product_type_name}-発注リスト_{date_str}.csv"
+            csv_filename = f"{folder_prefix}発注リスト_{date_str}.csv"
             csv_content = self._order_list_gen.generate_order_list_csv(
-                type_items, product_type=item_product_type
+                group_items, product_type=item_product_type
             )
             zip_builder.add_csv(f"{type_folder}/{csv_filename}", csv_content)
 
-            # 画像ダウンロード・追加
-            for item in type_items:
-                order_folder = f"{type_folder}/{item['order_number']}"
+            # 各アイテムのファイルをフラット配置
+            for item in group_items:
+                order_number = item["order_number"]
+                uid = item.get("uid") or "unknown"
+                product_name = item["product_name"]
+                quantity = item["quantity"]
 
-                # デザイン画像（製造データ）
+                # 製造データ①のファイル名
+                ext = self._MANUFACTURING_EXT.get(item_product_type, ".ai")
+                mfg_filename = (
+                    f"{product_name}【{quantity}個】"
+                    f"_{order_number}_{uid}_{mmdd}{ext}"
+                )
+
+                # デザイン画像（製造データ①）
                 if item.get("design_image_url"):
-                    content, original_filename = await self._download_file(
+                    content, _original_filename = await self._download_file(
                         item["design_image_url"]
                     )
                     if content:
-                        # ai形式の場合はファイル名を {注文番号}_{製造番号}_{商品種類}.ai に変更
-                        ext = os.path.splitext(original_filename)[1].lower()
-                        if ext == ".ai":
-                            uid = item.get("uid") or "unknown"
-                            filename = f"{item['order_number']}_{uid}_{product_type_name}.ai"
-                        else:
-                            filename = original_filename
-                        zip_builder.add_file(f"{order_folder}/{filename}", content)
+                        zip_builder.add_file(
+                            f"{type_folder}/{mfg_filename}", content
+                        )
 
-                # サムネイル画像
+                # サムネイル画像 → {注文番号}_{製造番号}.png
                 if item.get("thumbnail_image_url"):
-                    content, filename = await self._download_file(
+                    content, _filename = await self._download_file(
                         item["thumbnail_image_url"]
                     )
                     if content:
+                        image_filename = f"{order_number}_{uid}.png"
                         zip_builder.add_file(
-                            f"{order_folder}/thumbnail_{filename}", content
+                            f"{type_folder}/{image_filename}", content
                         )
+
+                # 製造データ②（アクリルフィギュアのみ: _stand.ai）
+                if item_product_type == "acrylic_stand":
+                    stand_path = get_stand_file_path(item.get("size"))
+                    # スタンドファイルの内容を読み込む（静的サンプル）
+                    stand_content = self._load_stand_file(stand_path)
+                    stand_filename = (
+                        f"{product_name}【{quantity}個】"
+                        f"_{order_number}_{uid}_{mmdd}_stand.ai"
+                    )
+                    zip_builder.add_file(
+                        f"{type_folder}/{stand_filename}", stand_content
+                    )
 
         # ZIP生成
         zip_bytes = zip_builder.build()
@@ -298,7 +358,19 @@ class ManufacturerOrderService:
             order_item_ids=target_order_item_ids,
         )
 
-        return zip_bytes, f"{dir_name}.zip"
+        # ZIP名: 単一タイプの場合はそのタイプフォルダ名、複数の場合は最初のタイプフォルダ名
+        zip_name = f"{type_folder_names[0]}.zip"
+
+        return zip_bytes, zip_name
+
+    @staticmethod
+    def _load_stand_file(stand_path: str) -> bytes:
+        """スタンドファイルの内容を取得する。
+
+        現時点では静的なプレースホルダー内容を返す。
+        将来的にはファイルシステムやストレージからの読み込みに変更可能。
+        """
+        return b"STAND_FILE_CONTENT"
 
     async def _download_file(self, url: str) -> tuple[bytes | None, str]:
         """URLからファイルをダウンロード"""
