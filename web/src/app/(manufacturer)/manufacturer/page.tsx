@@ -19,7 +19,7 @@ import {
 import { ManufacturerOrderFilters } from "@/features/purchase-orders/components/manufacturer-order-filters";
 import { InvoiceDialog } from "@/features/invoice";
 import { Loader2, Package, Download } from "lucide-react";
-import type { ProductType } from "@/types/api";
+import type { OrderStatus } from "@/types/api";
 
 function formatDate(dateString: string): string {
   const date = new Date(dateString);
@@ -38,14 +38,12 @@ export default function ManufacturerDashboardPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // フィルター状態
-  const [orderedFrom, setOrderedFrom] = useState("");
-  const [orderedTo, setOrderedTo] = useState("");
-  const [productType, setProductType] = useState<ProductType | null>(null);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<OrderStatus | null>(null);
 
   const { items, total, totalQuantity, isLoading, isFiltering } = useManufacturerOrderItems({
-    orderedFrom: orderedFrom || undefined,
-    orderedTo: orderedTo || undefined,
-    productType,
+    search: search || undefined,
+    status,
   });
 
   useEffect(() => {
@@ -59,9 +57,8 @@ export default function ManufacturerDashboardPage() {
       const orderItemIds = selectedIds.size > 0 ? Array.from(selectedIds) : undefined;
       const blob = await downloadAllOrderDocuments(
         {
-          orderedFrom: orderedFrom || undefined,
-          orderedTo: orderedTo || undefined,
-          productType,
+          search: search || undefined,
+          status,
         },
         orderItemIds
       );
@@ -81,9 +78,8 @@ export default function ManufacturerDashboardPage() {
   };
 
   const handleFilterReset = () => {
-    setOrderedFrom("");
-    setOrderedTo("");
-    setProductType(null);
+    setSearch("");
+    setStatus(null);
   };
 
   const handleSelectAll = (checked: boolean) => {
@@ -171,12 +167,10 @@ export default function ManufacturerDashboardPage() {
         <CardContent>
           {/* フィルター */}
           <ManufacturerOrderFilters
-            orderedFrom={orderedFrom}
-            orderedTo={orderedTo}
-            productType={productType}
-            onOrderedFromChange={setOrderedFrom}
-            onOrderedToChange={setOrderedTo}
-            onProductTypeChange={setProductType}
+            search={search}
+            status={status}
+            onSearchChange={setSearch}
+            onStatusChange={setStatus}
             onReset={handleFilterReset}
           />
 

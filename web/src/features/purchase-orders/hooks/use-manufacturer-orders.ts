@@ -3,13 +3,12 @@ import { apiClient } from "@/lib/api/client";
 import type {
   ManufacturerOrderSummaryListResponse,
   ManufacturerOrderItemListResponse,
-  ProductType,
+  OrderStatus,
 } from "@/types/api";
 
 export interface ManufacturerOrderFilters {
-  orderedFrom?: string;
-  orderedTo?: string;
-  productType?: ProductType | null;
+  status?: OrderStatus | null;
+  search?: string;
 }
 
 export function useManufacturerOrderSummary(page = 1, limit = 20) {
@@ -36,9 +35,8 @@ export function useManufacturerOrderItems(
 ) {
   // クエリパラメータ構築
   const queryParams = new URLSearchParams();
-  if (filters?.orderedFrom) queryParams.set("ordered_from", filters.orderedFrom);
-  if (filters?.orderedTo) queryParams.set("ordered_to", filters.orderedTo);
-  if (filters?.productType) queryParams.set("product_type", filters.productType);
+  if (filters?.status) queryParams.set("status", filters.status);
+  if (filters?.search) queryParams.set("search", filters.search);
 
   const queryString = queryParams.toString();
   const url = manufacturerId

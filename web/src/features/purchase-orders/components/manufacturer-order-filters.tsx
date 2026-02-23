@@ -10,75 +10,58 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import type { ProductType } from "@/types/api";
+import type { OrderStatus } from "@/types/api";
 
-const productTypeOptions: { value: ProductType | "all"; label: string }[] = [
-  { value: "all", label: "全ての商品タイプ" },
-  { value: "acrylic_keychain", label: "アクリルキーホルダー" },
-  { value: "acrylic_stand", label: "アクリルスタンド" },
-  { value: "sticker", label: "ステッカー" },
-  { value: "tote_bag", label: "トートバッグ" },
-  { value: "mug", label: "マグカップ" },
-  { value: "tshirt", label: "Tシャツ" },
+const statusOptions: { value: OrderStatus | "all"; label: string }[] = [
+  { value: "all", label: "全てのステータス" },
+  { value: "ordered", label: "発注済み" },
+  { value: "manufacturing", label: "製造中" },
+  { value: "delivered", label: "納入済" },
 ];
 
 interface ManufacturerOrderFiltersProps {
-  orderedFrom: string;
-  orderedTo: string;
-  productType: ProductType | null;
-  onOrderedFromChange: (value: string) => void;
-  onOrderedToChange: (value: string) => void;
-  onProductTypeChange: (value: ProductType | null) => void;
+  search: string;
+  status: OrderStatus | null;
+  onSearchChange: (value: string) => void;
+  onStatusChange: (value: OrderStatus | null) => void;
   onReset: () => void;
 }
 
 export function ManufacturerOrderFilters({
-  orderedFrom,
-  orderedTo,
-  productType,
-  onOrderedFromChange,
-  onOrderedToChange,
-  onProductTypeChange,
+  search,
+  status,
+  onSearchChange,
+  onStatusChange,
   onReset,
 }: ManufacturerOrderFiltersProps) {
-  const hasActiveFilters = orderedFrom || orderedTo || productType;
+  const hasActiveFilters = search || status;
 
   return (
     <div className="flex flex-wrap items-end gap-4 mb-4">
-      {/* 受注日時範囲 */}
+      {/* キーワード検索 */}
       <div className="space-y-1">
-        <label className="text-sm text-muted-foreground">受注日時</label>
-        <div className="flex items-center gap-2">
-          <Input
-            type="date"
-            value={orderedFrom}
-            onChange={(e) => onOrderedFromChange(e.target.value)}
-            className="w-[140px]"
-          />
-          <span className="text-muted-foreground">~</span>
-          <Input
-            type="date"
-            value={orderedTo}
-            onChange={(e) => onOrderedToChange(e.target.value)}
-            className="w-[140px]"
-          />
-        </div>
+        <Input
+          type="text"
+          placeholder="注文番号、製品番号、商品名で検索..."
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          className="w-[280px]"
+        />
       </div>
 
-      {/* 商品タイプ */}
+      {/* ステータスフィルター */}
       <div className="space-y-1">
-        <label className="text-sm text-muted-foreground">商品タイプ</label>
         <Select
-          value={productType ?? "all"}
+          value={status ?? "all"}
           onValueChange={(value) =>
-            onProductTypeChange(value === "all" ? null : (value as ProductType))
+            onStatusChange(value === "all" ? null : (value as OrderStatus))
           }
         >
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="商品タイプ" />
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="全てのステータス" />
           </SelectTrigger>
           <SelectContent>
-            {productTypeOptions.map((option) => (
+            {statusOptions.map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}
               </SelectItem>

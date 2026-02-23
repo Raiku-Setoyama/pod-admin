@@ -1,0 +1,181 @@
+id: FEAT-0012
+summary: 管理者が発注詳細画面でアイテムのステータス表示・フィルター、およびキーワード検索ができる
+
+background:
+  why: |
+    現在の発注詳細画面（/purchase-orders/{id}）では、発注中（ORDERED）ステータスの明細のみが表示されており、
+    製造中（MANUFACTURING）や納入済（DELIVERED）のアイテムを確認できない。
+    また、大量の明細から特定のアイテムを素早く見つける手段がない。
+    配送一覧と同様の検索・フィルター機能を追加することで、業務効率を向上させる。
+  who: 管理者（admin/staff）
+  when: |
+    - 特定のメーカーへの発注状況を確認するとき
+    - 製造中や納入済のアイテムを探すとき
+    - 注文番号・製品番号・商品名で特定のアイテムを検索するとき
+
+scope:
+  includes:
+    - 発注詳細画面（/purchase-orders/{id}）にステータスフィルターを追加
+    - 発注詳細画面にキーワード検索欄を追加（注文番号・製品番号・商品名で検索）
+    - 発注詳細画面の各アイテムにステータスバッジを表示
+    - 受注日時フィルターと商品タイプフィルターを削除
+    - バックエンドAPIの拡張（statusフィルター、searchパラメータ追加、デフォルトで全ステータスを返す）
+  excludes:
+    - 発注一覧画面（/purchase-orders）の変更（対象外）
+    - ステータス更新機能の変更（既存機能はそのまま維持）
+    - ページネーション追加（現状のまま全件表示）
+  prerequisites:
+    - 発注詳細画面（ManufacturerOrderDetail）が存在すること
+    - バックエンドのメーカー別明細API（GET /manufacturers/{id}/order-items）が存在すること
+
+input_output:
+  inputs:
+    - name: search
+      type: string
+      required: false
+      validation: 空文字列または任意の文字列
+    - name: status
+      type: string
+      required: false
+      validation: "ordered | manufacturing | delivered | null (全て)"
+  outputs:
+    - name: フィルタリングされた明細一覧
+      type: ManufacturerOrderItemListResponse
+      description: 検索・フィルター条件に一致する明細一覧
+  state_changes:
+    - なし（検索・フィルターは表示のみで状態変更しない）
+
+acceptance_criteria:
+  - id: AC-001
+    description: 発注詳細画面にキーワード検索欄が表示される
+    test_type: unit
+    given: 発注詳細画面を開いている
+    when: 画面を確認する
+    then: 「注文番号、製品番号、商品名で検索...」というプレースホルダーを持つ検索欄が表示される
+
+  - id: AC-002
+    description: キーワード検索で注文番号に一致するアイテムのみが表示される
+    test_type: integration
+    given: 複数の明細が存在するメーカーの発注詳細画面を開いている
+    when: 検索欄に注文番号の一部を入力する
+    then: その注文番号を含むアイテムのみが一覧に表示される
+
+  - id: AC-003
+    description: キーワード検索で製品番号（uid）に一致するアイテムのみが表示される
+    test_type: integration
+    given: 複数の明細が存在するメーカーの発注詳細画面を開いている
+    when: 検索欄に製品番号の一部を入力する
+    then: その製品番号を含むアイテムのみが一覧に表示される
+
+  - id: AC-004
+    description: キーワード検索で商品名に一致するアイテムのみが表示される
+    test_type: integration
+    given: 複数の明細が存在するメーカーの発注詳細画面を開いている
+    when: 検索欄に商品名の一部を入力する
+    then: その商品名を含むアイテムのみが一覧に表示される
+
+  - id: AC-005
+    description: 発注詳細画面にステータスフィルターが表示される
+    test_type: unit
+    given: 発注詳細画面を開いている
+    when: 画面を確認する
+    then: 「全てのステータス」「発注済み」「製造中」「納入済」を選択できるセレクトボックスが表示される
+
+  - id: AC-006
+    description: ステータスフィルターで特定のステータスのアイテムのみが表示される
+    test_type: integration
+    given: 複数のステータスの明細が存在するメーカーの発注詳細画面を開いている
+    when: ステータスフィルターで「製造中」を選択する
+    then: ステータスが「製造中」のアイテムのみが一覧に表示される
+
+  - id: AC-007
+    description: デフォルトでは全ステータスのアイテムが表示される
+    test_type: integration
+    given: メーカーに複数のステータスの明細が存在する
+    when: 発注詳細画面を開く（フィルター未設定）
+    then: 全てのステータス（ordered, manufacturing, delivered）のアイテムが表示される
+
+  - id: AC-008
+    description: 各アイテムにステータスバッジが表示される
+    test_type: unit
+    given: 発注詳細画面を開いている
+    when: 明細一覧を確認する
+    then: 各アイテムの行にステータスを示すバッジ（発注済み/製造中/納入済）が表示される
+
+  - id: AC-009
+    description: 受注日時フィルターが削除されている
+    test_type: unit
+    given: 発注詳細画面を開いている
+    when: フィルター領域を確認する
+    then: 受注日時（日付範囲）フィルターは表示されない
+
+  - id: AC-010
+    description: 商品タイプフィルターが削除されている
+    test_type: unit
+    given: 発注詳細画面を開いている
+    when: フィルター領域を確認する
+    then: 商品タイプフィルターは表示されない
+
+  - id: AC-011
+    description: 検索とステータスフィルターを組み合わせて使用できる
+    test_type: integration
+    given: 複数のステータスと商品名の明細が存在するメーカーの発注詳細画面を開いている
+    when: 検索欄に「キーホルダー」と入力し、ステータスフィルターで「製造中」を選択する
+    then: 商品名に「キーホルダー」を含み、かつステータスが「製造中」のアイテムのみが表示される
+
+  - id: AC-012
+    description: フィルタをリセットするボタンが動作する
+    test_type: unit
+    given: 検索欄とステータスフィルターに値が設定されている
+    when: 「フィルタをリセット」ボタンをクリックする
+    then: 検索欄とステータスフィルターがクリアされ、全てのアイテムが表示される
+
+  - id: AC-013
+    description: バックエンドAPIがsearchパラメータに対応する
+    test_type: integration
+    given: メーカーに複数の明細が存在する
+    when: GET /manufacturers/{id}/order-items?search=ABC を呼び出す
+    then: order_number, uid, product_nameのいずれかに「ABC」を含む明細のみが返される
+
+  - id: AC-014
+    description: バックエンドAPIがstatusパラメータに対応する
+    test_type: integration
+    given: メーカーに複数のステータスの明細が存在する
+    when: GET /manufacturers/{id}/order-items?status=manufacturing を呼び出す
+    then: ステータスがmanufacturingの明細のみが返される
+
+  - id: AC-015
+    description: バックエンドAPIのデフォルト挙動が全ステータス返却に変更される
+    test_type: integration
+    given: メーカーに複数のステータスの明細が存在する
+    when: GET /manufacturers/{id}/order-items をパラメータなしで呼び出す
+    then: 全てのステータス（ordered, manufacturing, delivered）の明細が返される
+
+  - id: AC-016
+    description: APIレスポンスにステータスフィールドが含まれる
+    test_type: integration
+    given: メーカーに明細が存在する
+    when: GET /manufacturers/{id}/order-items を呼び出す
+    then: 各アイテムのレスポンスにstatusフィールドが含まれる
+
+constraints:
+  performance:
+    - 検索・フィルター操作のレスポンスは500ms以内
+    - デバウンス処理を入れ、検索入力時は300ms待ってからAPI呼び出し
+  security:
+    - 管理者（admin/staff）のみアクセス可能（既存の認証・認可を維持）
+  compatibility:
+    - 既存のステータス更新機能との互換性を維持
+    - 既存のダウンロード・請求書発行機能との互換性を維持
+
+assumptions:
+  - ステータスの日本語表示は「発注済み」「製造中」「納入済」とする
+  - 配送完了（shipped）ステータスのアイテムは発注詳細画面には表示しない（配送一覧で管理）
+  - 検索は大文字小文字を区別しない（case-insensitive）
+  - 検索は部分一致とする
+  - フィルター変更時はページをリロードせず、SWRのmutateで再取得する
+
+success_metrics:
+  - 発注詳細画面で検索・フィルター機能が正常に動作する
+  - 既存の一括更新・ダウンロード機能が引き続き正常に動作する
+  - APIのレスポンスに全ステータスのアイテムとステータス情報が含まれる

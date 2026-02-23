@@ -83,6 +83,7 @@ class TestGenerateOrderDocumentsStatusUpdate:
                 datetime.now(),  # ordered_at
                 "顧客名",  # customer_name
                 1000,  # cost
+                OrderStatus.ORDERED.value,  # order_status
             ))
         return items
 
@@ -117,6 +118,7 @@ class TestGenerateOrderDocumentsStatusUpdate:
                 datetime.now(),  # ordered_at
                 "顧客名",  # customer_name
                 1000,  # cost
+                status.value,  # order_status
             ))
         return items
 

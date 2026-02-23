@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
@@ -8,31 +8,48 @@ import { PageContainer } from "@/components/layout/page-container";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { ManufacturerOrderDetail } from "@/features/purchase-orders/components/manufacturer-order-detail";
 import { useManufacturerOrderItems } from "@/features/purchase-orders/hooks/use-manufacturer-orders";
-import type { ProductType } from "@/types/api";
+import type { OrderStatus } from "@/types/api";
+
+// デバウンスフック
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
 
 export default function PurchaseOrderDetailPage() {
   const params = useParams();
   const router = useRouter();
   const manufacturerId = params.id as string;
 
-  // フィルター状態
-  const [orderedFrom, setOrderedFrom] = useState("");
-  const [orderedTo, setOrderedTo] = useState("");
-  const [productType, setProductType] = useState<ProductType | null>(null);
+  // フィルター状態（新しい形式）
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<OrderStatus | null>(null);
+
+  // デバウンスされた検索値（300ms）
+  const debouncedSearch = useDebounce(search, 300);
 
   const { data, isLoading, isFiltering, error, mutate } = useManufacturerOrderItems(
     manufacturerId,
     {
-      orderedFrom: orderedFrom || undefined,
-      orderedTo: orderedTo || undefined,
-      productType,
+      search: debouncedSearch || undefined,
+      status,
     }
   );
 
   const handleFilterReset = () => {
-    setOrderedFrom("");
-    setOrderedTo("");
-    setProductType(null);
+    setSearch("");
+    setStatus(null);
   };
 
   // 初回ロード時のみ全画面ローディングを表示（dataがない場合）
@@ -83,12 +100,10 @@ export default function PurchaseOrderDetailPage() {
         data={data}
         isLoading={isFiltering}
         onStatusUpdate={() => mutate()}
-        orderedFrom={orderedFrom}
-        orderedTo={orderedTo}
-        productType={productType}
-        onOrderedFromChange={setOrderedFrom}
-        onOrderedToChange={setOrderedTo}
-        onProductTypeChange={setProductType}
+        search={search}
+        status={status}
+        onSearchChange={setSearch}
+        onStatusChange={setStatus}
         onFilterReset={handleFilterReset}
       />
     </PageContainer>

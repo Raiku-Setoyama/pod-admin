@@ -233,12 +233,25 @@ class OrderRepository:
     async def find_ordered_items_by_manufacturer_detail(
         self,
         manufacturer_id: str,
-        status: OrderStatus = OrderStatus.ORDERED,
+        status: str | None = None,
         ordered_from: date | None = None,
         ordered_to: date | None = None,
         product_type: str | None = None,
+        search: str | None = None,
     ) -> list[tuple]:
-        """メーカー別のORDERED受注明細を詳細情報付きで取得"""
+        """メーカー別の受注明細を詳細情報付きで取得
+
+        Args:
+            manufacturer_id: メーカーID
+            status: ステータスフィルター（None の場合は shipped 以外の全て）
+            ordered_from: 発注日From
+            ordered_to: 発注日To
+            product_type: 商品タイプ
+            search: キーワード検索（注文番号・製品番号・商品名）
+
+        Returns:
+            受注明細のタプルリスト（OrderItem, order_number, ordered_at, customer_name, cost, status）
+        """
         from app.models.product import Product
 
         query = (
@@ -248,12 +261,19 @@ class OrderRepository:
                 Order.ordered_at,
                 Order.customer_name,
                 Product.cost,
+                Order.status,
             )
             .join(Order, OrderItem.order_id == Order.id)
             .join(Product, OrderItem.product_id == Product.id)
             .where(Product.manufacturer_id == manufacturer_id)
-            .where(Order.status == status.value)
         )
+
+        # ステータスフィルター
+        if status:
+            query = query.where(Order.status == status)
+        else:
+            # デフォルトは shipped 以外の全ステータス
+            query = query.where(Order.status != OrderStatus.SHIPPED.value)
 
         if ordered_from:
             query = query.where(func.date(Order.ordered_at) >= ordered_from)
@@ -263,6 +283,16 @@ class OrderRepository:
 
         if product_type:
             query = query.where(OrderItem.product_type == product_type)
+
+        # キーワード検索（注文番号・製品番号・商品名）
+        if search:
+            search_pattern = f"%{search}%"
+            search_filter = (
+                Order.order_number.ilike(search_pattern)
+                | OrderItem.uid.ilike(search_pattern)
+                | OrderItem.product_name.ilike(search_pattern)
+            )
+            query = query.where(search_filter)
 
         query = query.order_by(Order.ordered_at.desc())
 

@@ -138,6 +138,7 @@ const createMockManufacturerOrderData = (): ManufacturerOrderItemListResponse =>
       thumbnail_image_url: null,
       ordered_at: '2024-01-15T14:30:00Z',
       customer_name: 'Customer A',
+      status: 'ordered',
     },
   ],
   total: 1,
@@ -308,12 +309,10 @@ describe('AC-003: Manufacturer order detail date format includes time', () => {
         data={data}
         isLoading={false}
         onStatusUpdate={vi.fn()}
-        orderedFrom=""
-        orderedTo=""
-        productType={null}
-        onOrderedFromChange={vi.fn()}
-        onOrderedToChange={vi.fn()}
-        onProductTypeChange={vi.fn()}
+        search=""
+        status={null}
+        onSearchChange={vi.fn()}
+        onStatusChange={vi.fn()}
         onFilterReset={vi.fn()}
       />
     )
@@ -367,6 +366,7 @@ describe('AC-004: Manufacturer portal date format includes time', () => {
           thumbnail_image_url: null,
           ordered_at: '2024-01-15T14:30:00Z',
           customer_name: 'Customer A',
+          status: 'ordered',
         },
       ],
       total: 1,
