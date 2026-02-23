@@ -1,0 +1,197 @@
+id: FEAT-0011
+summary: 管理者が受注・発注・配送一覧の日付表示を統一的に確認でき、受注一覧のステータス更新UIが除去され、発注一覧にステータス表示・フィルタが追加され、配送一覧の不要フィルターが削除された状態で運用できる
+
+background:
+  why: |
+    現状の一覧UIには以下の問題がある:
+    (1) 受注・発注・配送の各一覧で日付カラムの表示形式がバラバラ（YYYY/MM/DD のみの箇所と YYYY/MM/DD HH:MM の箇所が混在）
+    (2) 受注一覧の詳細ページにステータス更新UIがあるが、一括更新機能（FEAT-0010）導入後は個別更新UIは不要になった
+    (3) 発注一覧（メーカー別サマリ）にステータスカラムはあるが全て「発注中」固定のバッジ表示で、ステータスでフィルタリングする機能がない
+    (4) 配送一覧のフィルターUIが過剰で、使用頻度の低いフィルター（運送会社、作成日時ソート、伝票番号検索欄、発送日時フィルター、配送完了予定日時フィルター）が画面を圧迫している
+  who: 管理者（全ユーザー）
+  when: 受注・発注・配送の一覧画面を日常的に使用する場面
+
+scope:
+  includes:
+    - "フロントエンド: 受注一覧（order-list.tsx）の日付カラムをYYYY/MM/DD HH:MM形式に変更"
+    - "フロントエンド: 発注詳細（manufacturer-order-detail.tsx）の受注日カラムをYYYY/MM/DD HH:MM形式に変更"
+    - "フロントエンド: 配送一覧（shipment-list.tsx）の作成日カラムをYYYY/MM/DD HH:MM形式に変更"
+    - "フロントエンド: メーカーポータル（manufacturer/page.tsx）の受注日カラムをYYYY/MM/DD HH:MM形式に変更"
+    - "フロントエンド: 受注詳細（order-detail.tsx）からステータス変更ボタンとOrderStatusUpdateDialogの呼び出しを削除"
+    - "フロントエンド: 発注一覧（manufacturer-order-list.tsx）にステータスカラムを動的表示に変更し、ステータスフィルタリングUIを追加"
+    - "フロントエンド: 配送フィルター（shipment-filters.tsx）から運送会社フィルター・作成日時ソート・伝票番号検索欄・発送日時フィルター・配送完了予定日時フィルターを削除"
+    - "フロントエンド: 配送一覧ページ（shipments/page.tsx）から削除されたフィルターに関連するstate・props・ハンドラを削除"
+  excludes:
+    - "バックエンド変更（APIの変更は一切行わない）"
+    - "order-status-update-dialog.tsx ファイル自体の削除（他のコンテキストで参照される可能性があるため残す。ただし、order-detail.tsx からの参照は削除）"
+    - "受注一覧ページ（orders/page.tsx）の一括ステータス更新UI（FEAT-0010で追加したもの）は削除しない"
+    - "配送一覧のステータスフィルター・汎用検索欄は維持する（削除対象外）"
+  prerequisites:
+    - 既存の受注一覧・発注一覧・配送一覧ページが正常に動作していること
+
+input_output:
+  inputs:
+    - name: ステータスフィルター（発注一覧）
+      type: select
+      required: false
+      validation: "全て | 発注中 | 製造中 | 納入済 のいずれか"
+  outputs:
+    - name: 日付表示
+      type: string
+      description: "全一覧ページでYYYY/MM/DD HH:MM形式の統一された日付表示"
+    - name: フィルタリングされた発注一覧
+      type: ManufacturerOrderSummary[]
+      description: "ステータスでフィルタリングされたメーカー別発注サマリ一覧"
+  state_changes:
+    - "DBやサーバーサイドの状態変化なし（フロントエンドのみの変更）"
+
+acceptance_criteria:
+  # (1) 日付カラムの統一
+  - id: AC-001
+    description: 受注一覧の「受注日」カラムがYYYY/MM/DD HH:MM形式で表示される
+    test_type: unit
+    given: 受注一覧ページに受注データが表示されている
+    when: 受注日カラムを確認する
+    then: 日付が「2024/01/15 14:30」のようなYYYY/MM/DD HH:MM形式で表示されている
+
+  - id: AC-002
+    description: 配送一覧の「作成日」カラムがYYYY/MM/DD HH:MM形式で表示される
+    test_type: unit
+    given: 配送一覧ページに配送データが表示されている
+    when: 作成日カラムを確認する
+    then: 日付が「2024/01/15 14:30」のようなYYYY/MM/DD HH:MM形式で表示されている
+
+  - id: AC-003
+    description: 発注詳細の「受注日」カラムがYYYY/MM/DD HH:MM形式で表示される
+    test_type: unit
+    given: 発注詳細ページに受注明細データが表示されている
+    when: 受注日カラムを確認する
+    then: 日付が「2024/01/15 14:30」のようなYYYY/MM/DD HH:MM形式で表示されている
+
+  - id: AC-004
+    description: メーカーポータルの「受注日」カラムがYYYY/MM/DD HH:MM形式で表示される
+    test_type: unit
+    given: メーカーポータルページに受注明細データが表示されている
+    when: 受注日カラムを確認する
+    then: 日付が「2024/01/15 14:30」のようなYYYY/MM/DD HH:MM形式で表示されている
+
+  # (2) 受注一覧のステータス更新UI削除
+  - id: AC-005
+    description: 受注詳細ページからステータス変更ボタンが削除されている
+    test_type: unit
+    given: 受注詳細ページを表示する
+    when: 受注情報カードを確認する
+    then: 「ステータス変更」ボタンが表示されない
+
+  - id: AC-006
+    description: 受注詳細ページでステータス変更ダイアログが表示されない
+    test_type: unit
+    given: 受注詳細ページを表示する
+    when: ページ内を操作する
+    then: OrderStatusUpdateDialogが描画されない
+
+  # (3) 発注一覧のステータス表示・フィルタ
+  - id: AC-007
+    description: 発注一覧（メーカー別サマリ）のステータスカラムに各メーカーの実際のステータスが表示される
+    test_type: unit
+    given: 発注一覧ページに複数のメーカーが表示されている
+    when: ステータスカラムを確認する
+    then: 各メーカーのステータスがStatusBadgeで正しく表示される（全て「発注中」固定ではない）
+
+  - id: AC-008
+    description: 発注一覧ページにステータスフィルターが表示される
+    test_type: unit
+    given: 発注一覧ページを表示する
+    when: フィルターエリアを確認する
+    then: ステータスでフィルタリングできるSelectコンポーネントが表示される
+
+  - id: AC-009
+    description: ステータスフィルターで「発注中」を選択するとフィルタリングされる
+    test_type: unit
+    given: 発注一覧ページに複数のメーカーが表示されている
+    when: ステータスフィルターで「発注中」を選択する
+    then: 「発注中」のメーカーのみが表示される
+
+  - id: AC-010
+    description: ステータスフィルターで「全て」を選択すると全メーカーが表示される
+    test_type: unit
+    given: ステータスフィルターで特定のステータスが選択されている
+    when: 「全てのステータス」を選択する
+    then: 全てのメーカーが表示される
+
+  # (4) 配送一覧のフィルター削除
+  - id: AC-011
+    description: 配送フィルターから運送会社フィルターが削除されている
+    test_type: unit
+    given: 配送一覧ページを表示する
+    when: フィルターエリアを確認する
+    then: 運送会社のSelectコンポーネントが表示されない
+
+  - id: AC-012
+    description: 配送フィルターから作成日時ソートが削除されている
+    test_type: unit
+    given: 配送一覧ページを表示する
+    when: フィルターエリアを確認する
+    then: 並び替え（ソート）のSelectコンポーネントが表示されない
+
+  - id: AC-013
+    description: 配送フィルターから伝票番号検索欄が削除されている
+    test_type: unit
+    given: 配送一覧ページを表示する
+    when: フィルターエリアを確認する
+    then: 伝票番号の入力欄が表示されない
+
+  - id: AC-014
+    description: 配送フィルターから発送日時フィルターが削除されている
+    test_type: unit
+    given: 配送一覧ページを表示する
+    when: フィルターエリアを確認する
+    then: 発送日時の日付範囲入力が表示されない
+
+  - id: AC-015
+    description: 配送フィルターから配送完了予定日時フィルターが削除されている
+    test_type: unit
+    given: 配送一覧ページを表示する
+    when: フィルターエリアを確認する
+    then: 配送完了予定日時の日付範囲入力が表示されない
+
+  - id: AC-016
+    description: 配送一覧の汎用検索欄とステータスフィルターは維持されている
+    test_type: unit
+    given: 配送一覧ページを表示する
+    when: フィルターエリアを確認する
+    then: 検索入力欄とステータスSelectコンポーネントが表示されている
+
+  - id: AC-017
+    description: 配送一覧のフィルターリセットボタンが正常に動作する
+    test_type: unit
+    given: 配送一覧ページで検索欄またはステータスフィルターが設定されている
+    when: 「フィルタをリセット」ボタンをクリックする
+    then: 検索欄とステータスフィルターがデフォルト値にリセットされる
+
+constraints:
+  performance:
+    - フィルタリングはクライアントサイドまたは既存APIパラメータで処理し、追加のAPI開発は不要
+  security:
+    - 既存の認証・認可の仕組みに影響なし
+  compatibility:
+    - Chrome/Safari/Firefox 最新版対応
+
+assumptions:
+  - 受注一覧のformatDate関数は現在YYYY/MM/DD形式だが、hour/minuteオプションを追加してYYYY/MM/DD HH:MM形式に変更する
+  - 配送一覧のformatDate関数も同様にhour/minuteオプションを追加する
+  - 発注詳細（manufacturer-order-detail.tsx）のformatDate関数も同様に変更する
+  - メーカーポータル（manufacturer/page.tsx）のformatDate関数も同様に変更する
+  - order-detail.tsxのformatDate関数は既にYYYY/MM/DD HH:MM形式のため変更不要
+  - shipment-detail.tsxのformatDate関数は既にYYYY/MM/DD HH:MM形式のため変更不要
+  - 受注詳細ページのステータス変更ボタン削除により、ステータスはStatusBadgeでの表示のみとなる
+  - 発注一覧のステータスフィルターは、ManufacturerOrderSummaryの既存データ構造にstatusフィールドがある前提で実装する。なければフロントエンドでのフィルタリングのみ行う
+  - 配送フィルターの削除に伴い、ShipmentFiltersPropsの不要なpropsも削除する
+  - 配送一覧ページ（shipments/page.tsx）の不要なstate変数（trackingNumber, carrier, shippedFrom, shippedTo, createdFrom, createdTo, deliveredFrom, deliveredTo, sortBy, sortOrder）とそのハンドラも削除する
+  - useShipmentsフックへの不要なパラメータ（tracking_number, carrier, shipped_from, shipped_to, created_from, created_to, delivered_from, delivered_to, sort_by, sort_order）も渡さないように変更する
+
+success_metrics:
+  - 全一覧ページの日付表示がYYYY/MM/DD HH:MM形式に統一され、一貫性のあるUIになる
+  - 受注詳細ページの個別ステータス更新UIが除去され、一括更新（FEAT-0010）に一本化される
+  - 発注一覧でステータスによるフィルタリングが可能になり、業務効率が向上する
+  - 配送一覧のフィルターが簡潔になり、UIの視認性と使いやすさが向上する

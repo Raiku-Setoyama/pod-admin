@@ -29,9 +29,6 @@ import { ShipmentFilters } from "@/features/shipments/components/shipment-filter
 import { useShipments } from "@/features/shipments/hooks/use-shipments";
 import type { Shipment, ShipmentStatus } from "@/types/api";
 
-type SortBy = "created_at" | "shipped_at" | "delivered_at";
-type SortOrder = "asc" | "desc";
-
 export default function ShipmentsPage() {
   const router = useRouter();
   const [page, setPage] = useState(1);
@@ -40,16 +37,6 @@ export default function ShipmentsPage() {
   // Filter states
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<ShipmentStatus | null>(null);
-  const [trackingNumber, setTrackingNumber] = useState("");
-  const [carrier, setCarrier] = useState<string | null>(null);
-  const [shippedFrom, setShippedFrom] = useState("");
-  const [shippedTo, setShippedTo] = useState("");
-  const [createdFrom, setCreatedFrom] = useState("");
-  const [createdTo, setCreatedTo] = useState("");
-  const [deliveredFrom, setDeliveredFrom] = useState("");
-  const [deliveredTo, setDeliveredTo] = useState("");
-  const [sortBy, setSortBy] = useState<SortBy>("created_at");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
 
   // 一括更新用state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -63,16 +50,6 @@ export default function ShipmentsPage() {
     limit,
     status,
     search: search || undefined,
-    tracking_number: trackingNumber || undefined,
-    carrier: carrier || undefined,
-    shipped_from: shippedFrom || undefined,
-    shipped_to: shippedTo || undefined,
-    created_from: createdFrom || undefined,
-    created_to: createdTo || undefined,
-    delivered_from: deliveredFrom || undefined,
-    delivered_to: deliveredTo || undefined,
-    sort_by: sortBy,
-    sort_order: sortOrder,
   });
 
   const handleRowClick = (shipment: Shipment) => {
@@ -82,22 +59,6 @@ export default function ShipmentsPage() {
   const handleReset = () => {
     setSearch("");
     setStatus(null);
-    setTrackingNumber("");
-    setCarrier(null);
-    setShippedFrom("");
-    setShippedTo("");
-    setCreatedFrom("");
-    setCreatedTo("");
-    setDeliveredFrom("");
-    setDeliveredTo("");
-    setSortBy("created_at");
-    setSortOrder("desc");
-    setPage(1);
-  };
-
-  const handleSortChange = (newSortBy: SortBy, newSortOrder: SortOrder) => {
-    setSortBy(newSortBy);
-    setSortOrder(newSortOrder);
     setPage(1);
   };
 
@@ -210,27 +171,8 @@ export default function ShipmentsPage() {
         <ShipmentFilters
           search={search}
           status={status}
-          trackingNumber={trackingNumber}
-          carrier={carrier}
-          shippedFrom={shippedFrom}
-          shippedTo={shippedTo}
-          createdFrom={createdFrom}
-          createdTo={createdTo}
-          deliveredFrom={deliveredFrom}
-          deliveredTo={deliveredTo}
-          sortBy={sortBy}
-          sortOrder={sortOrder}
           onSearchChange={(value) => { setSearch(value); setPage(1); }}
           onStatusChange={(value) => { setStatus(value); setPage(1); }}
-          onTrackingNumberChange={(value) => { setTrackingNumber(value); setPage(1); }}
-          onCarrierChange={(value) => { setCarrier(value); setPage(1); }}
-          onShippedFromChange={(value) => { setShippedFrom(value); setPage(1); }}
-          onShippedToChange={(value) => { setShippedTo(value); setPage(1); }}
-          onCreatedFromChange={(value) => { setCreatedFrom(value); setPage(1); }}
-          onCreatedToChange={(value) => { setCreatedTo(value); setPage(1); }}
-          onDeliveredFromChange={(value) => { setDeliveredFrom(value); setPage(1); }}
-          onDeliveredToChange={(value) => { setDeliveredTo(value); setPage(1); }}
-          onSortChange={handleSortChange}
           onReset={handleReset}
         />
 

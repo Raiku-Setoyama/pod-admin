@@ -80,6 +80,7 @@ export interface ManufacturerOrderSummary {
   total_amount: number;
   lead_time_days: number;
   is_active: boolean;
+  status?: OrderStatus;
 }
 
 export interface ManufacturerOrderSummaryListResponse {
