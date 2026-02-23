@@ -61,5 +61,3 @@ Thumbs.db
 *.log
 *.sqlite
 *.db
-
-tests/

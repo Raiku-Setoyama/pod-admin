@@ -1,0 +1,130 @@
+id: FEAT-0003
+summary: 管理者が配送詳細画面でアップロード済みの梱包写真をプレビュー表示できる
+
+background:
+  why: 現在は梱包写真がアップロードされても「アップロード済みです」というテキスト表示のみで、実際の写真を確認できない
+  who: 管理者（admin）
+  when: 配送詳細画面で梱包写真を確認したいとき
+
+scope:
+  includes:
+    - バックエンドに梱包写真配信用APIエンドポイント追加（GET /api/v1/shipments/{shipment_id}/packing-photo）
+    - フロントエンドで梱包写真のサムネイル表示
+    - クリックで拡大表示するモーダル機能
+  excludes:
+    - 梱包写真の削除機能（既存のアップロード機能で上書き可能なため不要）
+    - 複数枚の梱包写真対応（現在のデータモデルは1枚のみ）
+    - 画像のリサイズ・最適化処理（クライアント側で対応）
+  prerequisites:
+    - 梱包写真アップロード機能が実装済み（packing-photo-upload.tsx）
+    - packing_photo_path フィールドにファイルパスが保存されている
+
+input_output:
+  inputs:
+    - name: shipment_id
+      type: string (UUID)
+      required: true
+      validation: 有効なshipment UUID
+  outputs:
+    - name: 梱包写真画像
+      type: image/jpeg, image/png, image/webp
+      description: バックエンドから配信される画像バイナリ
+    - name: サムネイル表示
+      type: React Component
+      description: 梱包写真カード内に表示される縮小画像
+    - name: 拡大モーダル
+      type: React Component
+      description: クリックで開くフルサイズ画像表示
+  state_changes: []
+
+acceptance_criteria:
+  - id: AC-001
+    description: 梱包写真が存在する配送で、APIから画像を取得できる
+    test_type: integration
+    given: packing_photo_path が設定された配送データが存在する
+    when: GET /api/v1/shipments/{shipment_id}/packing-photo を呼び出す
+    then: 画像バイナリが適切なContent-Typeで返される
+
+  - id: AC-002
+    description: 梱包写真が存在しない配送でAPIを呼び出すと404エラー
+    test_type: integration
+    given: packing_photo_path が null の配送データが存在する
+    when: GET /api/v1/shipments/{shipment_id}/packing-photo を呼び出す
+    then: 404 Not Found エラーが返される
+
+  - id: AC-003
+    description: 存在しない配送IDでAPIを呼び出すと404エラー
+    test_type: integration
+    given: 存在しないshipment_id
+    when: GET /api/v1/shipments/{shipment_id}/packing-photo を呼び出す
+    then: 404 Not Found エラーが返される
+
+  - id: AC-004
+    description: 認証なしでAPIを呼び出すと401エラー
+    test_type: integration
+    given: 認証トークンなし
+    when: GET /api/v1/shipments/{shipment_id}/packing-photo を呼び出す
+    then: 401 Unauthorized エラーが返される
+
+  - id: AC-005
+    description: 梱包写真が存在する場合、配送詳細画面でサムネイルが表示される
+    test_type: unit
+    given: packing_photo_path が設定された配送データ
+    when: 配送詳細画面を表示する
+    then: 梱包写真カード内にサムネイル画像が表示される
+
+  - id: AC-006
+    description: サムネイルクリックで拡大モーダルが開く
+    test_type: unit
+    given: サムネイルが表示されている状態
+    when: サムネイル画像をクリックする
+    then: フルサイズの画像を表示するモーダルが開く
+
+  - id: AC-007
+    description: 拡大モーダルを閉じることができる
+    test_type: unit
+    given: 拡大モーダルが開いている状態
+    when: モーダル外をクリックまたは閉じるボタンをクリック
+    then: モーダルが閉じる
+
+  - id: AC-008
+    description: 梱包写真が存在しない場合はアップロードボタンのみ表示
+    test_type: unit
+    given: packing_photo_path が null の配送データ
+    when: 配送詳細画面を表示する
+    then: サムネイルは表示されず、アップロードボタンのみ表示される
+
+  - id: AC-009
+    description: 画像読み込み中はローディング状態を表示
+    test_type: unit
+    given: 梱包写真が存在する配送データ
+    when: 画像読み込み中
+    then: ローディングインジケータが表示される
+
+  - id: AC-010
+    description: 画像読み込みエラー時はエラーメッセージを表示
+    test_type: unit
+    given: 梱包写真APIがエラーを返す状態
+    when: 配送詳細画面を表示する
+    then: エラーメッセージが表示される
+
+constraints:
+  performance:
+    - 画像読み込みは3秒以内に完了すること（通常のネットワーク環境）
+  security:
+    - 認証済みの管理者のみが画像にアクセス可能
+    - ファイルパスの直接アクセスは不可（API経由のみ）
+  compatibility:
+    - Chrome, Safari, Firefox, Edgeの最新版で動作
+    - スマートフォンでも表示可能（レスポンシブ対応）
+
+assumptions:
+  - ファイルストレージはLocalFileStorageを使用（uploads/ディレクトリ）
+  - 画像形式はJPEG, PNG, WebPを想定（アップロード時にimage/*を許可）
+  - サムネイルのリサイズはCSSで行い、サーバー側での画像処理は行わない
+  - 拡大表示時もオリジナル画像をそのまま表示（別途リサイズ版は生成しない）
+
+success_metrics:
+  - 梱包写真をアップロード後、同じ画面で即座にプレビュー確認できる
+  - 画像クリックでフルサイズ確認ができる
+  - APIがセキュアに画像を配信できる（認証必須）
