@@ -2,22 +2,34 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PageContainer } from "@/components/layout/page-container";
 import { Pagination } from "@/components/common/pagination";
 import { PageLoading } from "@/components/common/loading-spinner";
 import { ManufacturerOrderList } from "@/features/purchase-orders/components/manufacturer-order-list";
 import { useManufacturerOrderSummary } from "@/features/purchase-orders/hooks/use-manufacturer-orders";
-import type { ManufacturerOrderSummary } from "@/types/api";
+import type { ManufacturerOrderSummary, OrderStatus } from "@/types/api";
 
 export default function PurchaseOrdersPage() {
   const router = useRouter();
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
+  const [statusFilter, setStatusFilter] = useState<OrderStatus | null>(null);
 
   const { manufacturers, total, isLoading } = useManufacturerOrderSummary(
     page,
     limit
   );
+
+  const filteredManufacturers = statusFilter
+    ? manufacturers.filter((m) => m.status === statusFilter)
+    : manufacturers;
 
   const handleRowClick = (manufacturer: ManufacturerOrderSummary) => {
     router.push(`/purchase-orders/${manufacturer.id}`);
@@ -29,12 +41,31 @@ export default function PurchaseOrdersPage() {
       description="発注中の商品をメーカー別に表示"
     >
       <div className="space-y-4">
+        <div className="flex items-center gap-4">
+          <Select
+            value={statusFilter ?? "all"}
+            onValueChange={(value) =>
+              setStatusFilter(value === "all" ? null : (value as OrderStatus))
+            }
+          >
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="ステータス" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全てのステータス</SelectItem>
+              <SelectItem value="ordered">発注中</SelectItem>
+              <SelectItem value="manufacturing">製造中</SelectItem>
+              <SelectItem value="delivered">納入済</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         {isLoading ? (
           <PageLoading />
         ) : (
           <>
             <ManufacturerOrderList
-              manufacturers={manufacturers}
+              manufacturers={filteredManufacturers}
               onRowClick={handleRowClick}
             />
             {total > limit && (

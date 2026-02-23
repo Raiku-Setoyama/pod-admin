@@ -8,7 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/common/status-badge";
 import type { ManufacturerOrderSummary } from "@/types/api";
 
 interface ManufacturerOrderListProps {
@@ -68,12 +68,7 @@ export function ManufacturerOrderList({
                   {m.lead_time_days}日
                 </TableCell>
                 <TableCell>
-                  <Badge
-                    variant="outline"
-                    className="bg-green-100 text-green-700 border-green-300"
-                  >
-                    発注中
-                  </Badge>
+                  <StatusBadge status={m.status ?? "ordered"} />
                 </TableCell>
               </TableRow>
             ))
