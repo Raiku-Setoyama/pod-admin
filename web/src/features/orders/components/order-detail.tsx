@@ -39,7 +39,7 @@ function formatProductType(type: string): string {
     acrylic_keychain: "アクリルキーホルダー",
     acrylic_stand: "アクリルスタンド",
     sticker: "ステッカー",
-    mug: "マグカップ",
+    tote_bag: "トートバッグ",
     tshirt: "Tシャツ",
   };
   return typeMap[type] || type;

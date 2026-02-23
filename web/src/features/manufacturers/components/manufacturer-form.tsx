@@ -31,7 +31,7 @@ const productTypes: { value: ProductType; label: string }[] = [
   { value: "acrylic_keychain", label: "アクリルキーホルダー" },
   { value: "acrylic_stand", label: "アクリルスタンド" },
   { value: "sticker", label: "ステッカー" },
-  { value: "mug", label: "マグカップ" },
+  { value: "tote_bag", label: "トートバッグ" },
   { value: "tshirt", label: "Tシャツ" },
 ];
 
