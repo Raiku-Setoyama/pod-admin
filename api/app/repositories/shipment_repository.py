@@ -67,7 +67,9 @@ class ShipmentRepository:
     ) -> tuple[list[Shipment], int]:
         """Find all shipments with pagination and filters."""
         query = select(Shipment).options(
-            selectinload(Shipment.items).selectinload(ShipmentItem.order)
+            selectinload(Shipment.items)
+            .selectinload(ShipmentItem.order)
+            .selectinload(Order.items)
         )
         count_query = select(func.count(Shipment.id))
 

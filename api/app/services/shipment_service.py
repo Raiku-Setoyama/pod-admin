@@ -290,11 +290,20 @@ class ShipmentService:
         first_order = shipment.first_order
         for item in shipment.items:
             order = item.order
+            # order.items から product_name を取得（order.product_name は deprecated）
+            if order and order.items:
+                product_name = ", ".join(
+                    oi.product_name for oi in order.items
+                )
+            elif order:
+                product_name = order.product_name  # フォールバック
+            else:
+                product_name = None
             items.append(ShipmentItemResponse(
                 id=item.id,
                 order_id=item.order_id,
                 order_number=order.order_number if order else None,
-                product_name=order.product_name if order else None,
+                product_name=product_name,
             ))
 
         return ShipmentResponse(
