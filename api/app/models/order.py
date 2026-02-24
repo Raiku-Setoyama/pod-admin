@@ -11,7 +11,6 @@ from app.models.base import Base, CustomerAddressMixin, TimestampMixin, UUIDPrim
 
 if TYPE_CHECKING:
     from app.models.order_source import OrderSource
-    from app.models.order_status_history import OrderStatusHistory
     from app.models.product import Product
 
 
@@ -145,9 +144,6 @@ class Order(Base, UUIDPrimaryKeyMixin, CustomerAddressMixin, TimestampMixin):
     order_source: Mapped["OrderSource | None"] = relationship()
     items: Mapped[list["OrderItem"]] = relationship(
         back_populates="order", cascade="all, delete-orphan"
-    )
-    status_history: Mapped[list["OrderStatusHistory"]] = relationship(
-        cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

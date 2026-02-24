@@ -20,9 +20,7 @@ from app.models.order import (
     TshirtSize,
 )
 from app.models.product import ProductType
-from app.models.order_status_history import OrderStatusHistory
 from app.repositories.order_repository import OrderRepository
-from app.repositories.order_status_history_repository import OrderStatusHistoryRepository
 from app.repositories.product_repository import ProductRepository
 from app.repositories.shipment_repository import ShipmentRepository
 from app.models.shipment import Shipment
@@ -54,12 +52,10 @@ class OrderService:
         order_repo: OrderRepository,
         product_repo: ProductRepository,
         shipment_repo: ShipmentRepository,
-        status_history_repo: OrderStatusHistoryRepository | None = None,
     ):
         self._order_repo = order_repo
         self._product_repo = product_repo
         self._shipment_repo = shipment_repo
-        self._status_history_repo = status_history_repo
 
     async def create(
         self,
@@ -123,18 +119,6 @@ class OrderService:
             order.items.append(order_item)
 
         order = await self._order_repo.create(order)
-
-        # Record initial status history
-        if self._status_history_repo:
-            await self._status_history_repo.create(
-                OrderStatusHistory(
-                    order_id=order.id,
-                    from_status=None,
-                    to_status=OrderStatus.ORDERED.value,
-                    changed_by="system",
-                )
-            )
-
         return await self._to_response(order)
 
     def _validate_item_attributes(self, item_data: OrderItemCreate) -> None:
@@ -196,12 +180,7 @@ class OrderService:
             limit=limit,
         )
 
-    async def update_status(
-        self,
-        order_id: str,
-        status: OrderStatus,
-        changed_by: str | None = None,
-    ) -> OrderResponse:
+    async def update_status(self, order_id: str, status: OrderStatus) -> OrderResponse:
         """Update order status.
 
         Implements manual status switching with the following rules:
@@ -242,17 +221,6 @@ class OrderService:
                     )
                 # そうでなければShipment削除
                 await self._shipment_repo.delete_by_order_id(order_id)
-
-        # Record status history
-        if self._status_history_repo:
-            await self._status_history_repo.create(
-                OrderStatusHistory(
-                    order_id=order_id,
-                    from_status=current_status.value,
-                    to_status=status.value,
-                    changed_by=changed_by,
-                )
-            )
 
         order.status = status.value
         order = await self._order_repo.update(order)
@@ -511,7 +479,6 @@ class OrderService:
         self,
         order_ids: list[str],
         status: OrderStatus,
-        changed_by: str | None = None,
     ) -> OrderBulkStatusUpdateResponse:
         """Bulk update order status.
 
@@ -571,17 +538,6 @@ class OrderService:
                         continue
                     # Delete the shipment
                     await self._shipment_repo.delete_by_order_id(order_id)
-
-            # Record status history
-            if self._status_history_repo:
-                await self._status_history_repo.create(
-                    OrderStatusHistory(
-                        order_id=order_id,
-                        from_status=current_status.value,
-                        to_status=status.value,
-                        changed_by=changed_by,
-                    )
-                )
 
             # Update order status
             order.status = status.value
