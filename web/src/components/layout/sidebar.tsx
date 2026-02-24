@@ -9,7 +9,6 @@ import {
   Factory,
   Package,
   MessageSquare,
-  Store,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -21,7 +20,6 @@ const navigation = [
   { name: "発注", href: "/purchase-orders", icon: FileText },
   { name: "配送", href: "/shipments", icon: Truck },
   { name: "メーカー", href: "/manufacturers", icon: Factory },
-  { name: "受注元", href: "/order-sources", icon: Store },
   { name: "商品マスタ", href: "/products", icon: Package },
   { name: "チャット", href: "/chat", icon: MessageSquare },
 ];

@@ -12,7 +12,6 @@ from app.routers import (
     external,
     manufacturer_portal,
     manufacturers,
-    order_sources,
     orders,
     products,
     shipments,
@@ -76,7 +75,6 @@ app.include_router(orders.router, prefix=settings.API_V1_PREFIX)
 app.include_router(shipments.router, prefix=settings.API_V1_PREFIX)
 app.include_router(chat.router, prefix=settings.API_V1_PREFIX)
 app.include_router(dashboard.router, prefix=settings.API_V1_PREFIX)
-app.include_router(order_sources.router, prefix=settings.API_V1_PREFIX)
 app.include_router(external.router, prefix=settings.API_V1_PREFIX)
 
 

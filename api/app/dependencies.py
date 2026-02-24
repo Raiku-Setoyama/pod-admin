@@ -28,7 +28,6 @@ from app.services.manufacturer_order_service import ManufacturerOrderService
 from app.services.manufacturer_portal_service import ManufacturerPortalService
 from app.services.order_list_service import OrderListService
 from app.services.order_service import OrderService
-from app.services.order_source_service import OrderSourceService
 from app.services.order_status_history_service import OrderStatusHistoryService
 from app.services.product_service import ProductService
 from app.services.shipment_service import ShipmentService
@@ -122,13 +121,6 @@ def get_manufacturer_service(
 ) -> ManufacturerService:
     """Get manufacturer service."""
     return ManufacturerService(manufacturer_repo)
-
-
-def get_order_source_service(
-    order_source_repo: Annotated[OrderSourceRepository, Depends(get_order_source_repository)],
-) -> OrderSourceService:
-    """Get order source service."""
-    return OrderSourceService(order_source_repo)
 
 
 def get_order_service(
