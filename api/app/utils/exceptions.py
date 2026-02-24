@@ -52,6 +52,13 @@ class OrderNotFoundError(NotFoundError):
         super().__init__("Order", order_id)
 
 
+class OrderSourceNotFoundError(NotFoundError):
+    """OrderSource not found error."""
+
+    def __init__(self, order_source_id: UUID | str):
+        super().__init__("OrderSource", order_source_id)
+
+
 class ValidationError(AppException):
     """Validation error."""
 

@@ -140,6 +140,29 @@ export interface ManufacturerOrderStatusUpdate {
   note?: string;
 }
 
+// OrderSource types
+export interface OrderSource {
+  id: string;
+  code: string;
+  name: string;
+  api_key: string;
+  phone: string;
+  postal_code: string;
+  address_prefecture: string;
+  address_city: string;
+  address_building: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OrderSourceListResponse {
+  items: OrderSource[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 // Shipment types
 export type ShipmentStatus = "pending" | "ready" | "shipped";
 
