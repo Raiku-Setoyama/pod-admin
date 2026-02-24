@@ -119,6 +119,21 @@ export interface ManufacturerOrderItemListResponse {
   total_amount: number;
 }
 
+// Order status history types
+export interface OrderStatusHistory {
+  id: string;
+  order_id: string;
+  from_status: string | null;
+  to_status: string;
+  changed_by: string | null;
+  note: string | null;
+  created_at: string;
+}
+
+export interface OrderStatusHistoryListResponse {
+  items: OrderStatusHistory[];
+}
+
 export interface ManufacturerOrderStatusUpdate {
   status: "manufacturing" | "delivered";
   order_item_ids?: string[];

@@ -14,6 +14,7 @@ from app.repositories.chat_repository import ChatRepository
 from app.repositories.manufacturer_repository import ManufacturerRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.order_source_repository import OrderSourceRepository
+from app.repositories.order_status_history_repository import OrderStatusHistoryRepository
 from app.repositories.product_repository import ProductRepository
 from app.repositories.shipment_repository import ShipmentRepository
 from app.repositories.user_repository import UserRepository
@@ -27,6 +28,7 @@ from app.services.manufacturer_order_service import ManufacturerOrderService
 from app.services.manufacturer_portal_service import ManufacturerPortalService
 from app.services.order_list_service import OrderListService
 from app.services.order_service import OrderService
+from app.services.order_status_history_service import OrderStatusHistoryService
 from app.services.product_service import ProductService
 from app.services.shipment_service import ShipmentService
 from app.utils.exceptions import ForbiddenError, UnauthorizedError
@@ -84,6 +86,13 @@ def get_chat_repository(
     return ChatRepository(db)
 
 
+def get_order_status_history_repository(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> OrderStatusHistoryRepository:
+    """Get order status history repository."""
+    return OrderStatusHistoryRepository(db)
+
+
 def get_order_source_repository(
     db: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> OrderSourceRepository:
@@ -118,9 +127,10 @@ def get_order_service(
     order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
     product_repo: Annotated[ProductRepository, Depends(get_product_repository)],
     shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
+    status_history_repo: Annotated[OrderStatusHistoryRepository, Depends(get_order_status_history_repository)],
 ) -> OrderService:
     """Get order service."""
-    return OrderService(order_repo, product_repo, shipment_repo)
+    return OrderService(order_repo, product_repo, shipment_repo, status_history_repo)
 
 
 def get_shipment_service(
@@ -149,6 +159,14 @@ def get_dashboard_service(
     return DashboardService(db)
 
 
+def get_order_status_history_service(
+    history_repo: Annotated[OrderStatusHistoryRepository, Depends(get_order_status_history_repository)],
+    order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
+) -> OrderStatusHistoryService:
+    """Get order status history service."""
+    return OrderStatusHistoryService(history_repo, order_repo)
+
+
 def get_order_list_service(
     order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
     manufacturer_repo: Annotated[ManufacturerRepository, Depends(get_manufacturer_repository)],
@@ -161,9 +179,10 @@ def get_manufacturer_order_service(
     order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
     manufacturer_repo: Annotated[ManufacturerRepository, Depends(get_manufacturer_repository)],
     shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
+    status_history_repo: Annotated[OrderStatusHistoryRepository, Depends(get_order_status_history_repository)],
 ) -> ManufacturerOrderService:
     """Get manufacturer order service."""
-    return ManufacturerOrderService(order_repo, manufacturer_repo, shipment_repo)
+    return ManufacturerOrderService(order_repo, manufacturer_repo, shipment_repo, status_history_repo)
 
 
 def get_manufacturer_portal_service(

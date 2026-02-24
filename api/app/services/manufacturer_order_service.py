@@ -7,8 +7,10 @@ from urllib.parse import urlparse
 import httpx
 
 from app.models.order import Order, OrderStatus
+from app.models.order_status_history import OrderStatusHistory
 from app.repositories.order_repository import OrderRepository
 from app.repositories.manufacturer_repository import ManufacturerRepository
+from app.repositories.order_status_history_repository import OrderStatusHistoryRepository
 from app.repositories.shipment_repository import ShipmentRepository
 from app.schemas.manufacturer import (
     ManufacturerOrderSummary,
@@ -31,10 +33,12 @@ class ManufacturerOrderService:
         order_repo: OrderRepository,
         manufacturer_repo: ManufacturerRepository,
         shipment_repo: ShipmentRepository,
+        status_history_repo: OrderStatusHistoryRepository | None = None,
     ):
         self._order_repo = order_repo
         self._manufacturer_repo = manufacturer_repo
         self._shipment_repo = shipment_repo
+        self._status_history_repo = status_history_repo
         self._order_list_gen = OrderListGenerator()
 
     async def get_order_summary_list(
@@ -163,6 +167,18 @@ class ManufacturerOrderService:
             new_status=new_status,
             order_item_ids=data.order_item_ids,
         )
+
+        # Record status history for each updated order
+        if self._status_history_repo:
+            for order in updated_orders:
+                await self._status_history_repo.create(
+                    OrderStatusHistory(
+                        order_id=order.id,
+                        from_status=OrderStatus.ORDERED.value,
+                        to_status=new_status.value,
+                        changed_by="システム（メーカー発注）",
+                    )
+                )
 
         # delivered になった場合は Shipment を自動作成
         if new_status == OrderStatus.DELIVERED:
@@ -367,11 +383,23 @@ class ManufacturerOrderService:
         zip_bytes = zip_builder.build()
 
         # ZIP生成成功後、対象明細のステータスを「製造中」に更新
-        await self._order_repo.update_status_by_manufacturer(
+        updated_orders = await self._order_repo.update_status_by_manufacturer(
             manufacturer_id=manufacturer_id,
             new_status=OrderStatus.MANUFACTURING,
             order_item_ids=target_order_item_ids,
         )
+
+        # Record status history for each updated order
+        if self._status_history_repo:
+            for order in updated_orders:
+                await self._status_history_repo.create(
+                    OrderStatusHistory(
+                        order_id=order.id,
+                        from_status=OrderStatus.ORDERED.value,
+                        to_status=OrderStatus.MANUFACTURING.value,
+                        changed_by="システム（メーカー発注）",
+                    )
+                )
 
         # ZIP名: 単一タイプの場合はそのタイプフォルダ名、複数の場合は最初のタイプフォルダ名
         zip_name = f"{type_folder_names[0]}.zip"
