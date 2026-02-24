@@ -14,6 +14,7 @@ import {
 import { Download, Package, User, FileText, ShoppingBag, ExternalLink } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import type { Order, OrderItem } from "@/types/api";
+import { OrderStatusHistory } from "./order-status-history";
 
 interface OrderDetailProps {
   order: Order;
@@ -264,6 +265,9 @@ export function OrderDetail({ order }: OrderDetailProps) {
           </CardContent>
         </Card>
       )}
+
+      {/* ステータス履歴 */}
+      <OrderStatusHistory orderId={order.id} />
 
       {/* タイムスタンプ */}
       <Card>
