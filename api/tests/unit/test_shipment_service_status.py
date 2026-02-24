@@ -63,6 +63,10 @@ def create_mock_order(
     order.customer_address_city = "Chiyoda"
     order.customer_address_building = None
     order.customer_phone = "090-1234-5678"
+    # items attribute for _to_response() product_name resolution (FEAT-0014)
+    item = MagicMock()
+    item.product_name = "Test Product"
+    order.items = [item]
     return order
 
 
