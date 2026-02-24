@@ -10,7 +10,6 @@ from app.dependencies import (
     get_current_admin,
     get_file_storage,
     get_order_service,
-    get_order_status_history_service,
     verify_api_key,
 )
 from app.models.order import OrderStatus
@@ -22,11 +21,9 @@ from app.schemas.order import (
     OrderCreate,
     OrderListResponse,
     OrderResponse,
-    OrderStatusHistoryListResponse,
     OrderStatusUpdate,
 )
 from app.services.order_service import OrderService
-from app.services.order_status_history_service import OrderStatusHistoryService
 from app.utils.exceptions import OrderNotFoundError, ValidationError
 from app.utils.file_storage import FileStorage
 
@@ -104,9 +101,7 @@ async def bulk_update_order_status(
 ) -> OrderBulkStatusUpdateResponse:
     """受注ステータスを一括更新"""
     try:
-        return await service.bulk_update_status(
-            data.order_ids, data.status, changed_by=current_user.name
-        )
+        return await service.bulk_update_status(data.order_ids, data.status)
     except ValidationError as e:
         # shipped への直接遷移は 422 として返す
         raise HTTPException(status_code=422, detail=str(e))
@@ -130,17 +125,7 @@ async def update_order_status(
     current_user: Annotated[User, Depends(get_current_admin)],
 ) -> OrderResponse:
     """Update order status."""
-    return await service.update_status(order_id, data.status, changed_by=current_user.name)
-
-
-@router.get("/{order_id}/status-history", response_model=OrderStatusHistoryListResponse)
-async def get_order_status_history(
-    order_id: str,
-    history_service: Annotated[OrderStatusHistoryService, Depends(get_order_status_history_service)],
-    current_user: Annotated[User, Depends(get_current_admin)],
-) -> OrderStatusHistoryListResponse:
-    """Get status history for an order."""
-    return await history_service.get_history(order_id)
+    return await service.update_status(order_id, data.status)
 
 
 @router.get("/{order_id}/manufacturing-data")

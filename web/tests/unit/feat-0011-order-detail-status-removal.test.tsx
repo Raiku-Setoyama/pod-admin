@@ -14,18 +14,6 @@ import { render, screen } from '@testing-library/react'
 // Mock API client
 vi.mock('@/lib/api/client', () => ({
   apiClient: vi.fn(),
-  getApiBaseUrl: () => 'http://test/api/v1',
-}))
-
-// Mock useSWR for OrderStatusHistory component
-vi.mock('swr', () => ({
-  default: vi.fn().mockReturnValue({
-    data: { items: [] },
-    error: undefined,
-    isLoading: false,
-    isValidating: false,
-    mutate: vi.fn(),
-  }),
 }))
 
 // Mock the OrderStatusUpdateDialog to detect if it's rendered

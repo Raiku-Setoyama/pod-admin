@@ -164,23 +164,3 @@ class OrderBulkStatusUpdateResponse(BaseModel):
     updated_count: int
     failed_count: int
     failed_ids: list[str]
-
-
-class OrderStatusHistoryResponse(BaseModel):
-    """ステータス変更履歴レスポンス"""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    order_id: str
-    from_status: str | None = None
-    to_status: str
-    changed_by: str | None = None
-    note: str | None = None
-    created_at: datetime
-
-
-class OrderStatusHistoryListResponse(BaseModel):
-    """ステータス変更履歴一覧レスポンス"""
-
-    items: list[OrderStatusHistoryResponse]
