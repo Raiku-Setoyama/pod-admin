@@ -1,0 +1,235 @@
+id: FEAT-0018
+summary: 管理者が全メーカー分の発注明細を一覧で確認できる「すべての発注」ページを利用できる
+
+background:
+  why: |
+    現在の発注一覧（/purchase-orders）はメーカー別サマリーのみを表示し、
+    特定メーカーをクリックして初めて個別の発注明細が見られる構造になっている。
+    全メーカー横断で発注状況を一覧確認したいユースケース（例: 全体の発注量把握、
+    特定注文番号の検索、ステータスの横断的な確認）に対応できていない。
+    メーカーを跨いで全件の発注明細を閲覧できるビューを追加することで、
+    管理者の業務効率を向上させる。
+  who: 管理者（admin）
+  when: |
+    - 全メーカー分の発注明細を横断的に確認したいとき
+    - 特定の注文番号や商品名をメーカーに関係なく検索したいとき
+    - 全体の発注状況（ステータス分布、数量、金額）を俯瞰したいとき
+
+scope:
+  includes:
+    - バックエンド: 全メーカー分の発注明細を返すAPIエンドポイントの追加（GET /api/v1/manufacturers/all-order-items）
+    - バックエンド: OrderRepositoryに全メーカー横断の発注明細取得メソッドを追加
+    - バックエンド: ManufacturerOrderServiceに全メーカー横断の発注明細取得メソッドを追加
+    - バックエンド: レスポンススキーマに manufacturer_name フィールドを含める（どのメーカーの明細か識別可能にする）
+    - フロントエンド: 「すべての発注」ページの追加（/purchase-orders/all）
+    - フロントエンド: 全メーカー発注明細一覧テーブルコンポーネントの作成
+    - フロントエンド: フィルター機能（ステータス、キーワード検索、メーカー絞り込み）
+    - フロントエンド: 発注一覧ページ（/purchase-orders）に「すべての発注を見る」ナビゲーションボタンの追加
+    - フロントエンド: useAllManufacturerOrderItems カスタムフックの追加
+  excludes:
+    - 既存のメーカー別発注一覧ページ（/purchase-orders, /purchase-orders/[id]）の変更（レイアウト・機能はそのまま維持）
+    - サイドバーのナビゲーション変更（既存の「発注」リンクはそのまま）
+    - 全メーカービューからのステータス一括更新機能（個別メーカーページで実施する運用を想定）
+    - 全メーカービューからの発注資料ダウンロード機能（個別メーカーページで実施する運用を想定）
+    - E2Eテスト（明示的に依頼されていないため）
+  prerequisites:
+    - 既存のメーカー別発注明細取得API（GET /manufacturers/{id}/order-items）が稼働中
+    - OrderRepository.find_ordered_items_by_manufacturer_detail メソッドが存在
+    - ManufacturerOrderService が存在し、メーカー別明細取得が実装済み
+    - フロントエンドの ManufacturerOrderFilters コンポーネントが再利用可能
+
+input_output:
+  inputs:
+    - name: status
+      type: string
+      required: false
+      validation: OrderStatus enum値（ordered, manufacturing, delivered）のいずれか。Noneの場合はshipped以外の全て
+    - name: search
+      type: string
+      required: false
+      validation: 注文番号・製品番号・商品名に対する部分一致検索
+    - name: manufacturer_id
+      type: string
+      required: false
+      validation: UUID文字列（既存メーカーのID）。指定時はそのメーカーの明細のみに絞り込み
+    - name: product_type
+      type: string
+      required: false
+      validation: ProductType enum値（acrylic_keychain, acrylic_stand, sticker, tote_bag, tshirt）
+    - name: ordered_from
+      type: date
+      required: false
+      validation: ISO 8601 日付形式（YYYY-MM-DD）
+    - name: ordered_to
+      type: date
+      required: false
+      validation: ISO 8601 日付形式（YYYY-MM-DD）
+  outputs:
+    - name: AllManufacturerOrderItemListResponse
+      type: object
+      description: |
+        全メーカー横断の発注明細一覧レスポンス。
+        各明細に manufacturer_id と manufacturer_name を含み、どのメーカーの発注かを識別可能。
+        集計情報（total, total_quantity, total_amount）を含む。
+  state_changes:
+    - なし（読み取り専用のビュー機能、データ変更なし）
+
+acceptance_criteria:
+  # --- バックエンド: リポジトリ ---
+  - id: AC-001
+    description: OrderRepositoryが全メーカー横断で発注明細を取得できる
+    test_type: unit
+    given: 複数メーカーに紐づく発注明細がDBに存在する
+    when: find_all_ordered_items_detail メソッドをフィルターなしで呼び出す
+    then: 全メーカーの発注明細が返される（shipped以外の全ステータス）
+
+  - id: AC-002
+    description: 全メーカー発注明細をステータスでフィルターできる
+    test_type: unit
+    given: ordered, manufacturing, delivered の各ステータスの発注明細が存在する
+    when: find_all_ordered_items_detail を status="ordered" で呼び出す
+    then: ordered ステータスの明細のみが返される
+
+  - id: AC-003
+    description: 全メーカー発注明細をキーワードで検索できる
+    test_type: unit
+    given: 注文番号 "ORD-001" の発注明細が存在する
+    when: find_all_ordered_items_detail を search="ORD-001" で呼び出す
+    then: 注文番号に "ORD-001" を含む明細のみが返される
+
+  - id: AC-004
+    description: 全メーカー発注明細をメーカーIDでフィルターできる
+    test_type: unit
+    given: メーカーAとメーカーBの発注明細が存在する
+    when: find_all_ordered_items_detail を manufacturer_id=メーカーAのID で呼び出す
+    then: メーカーAの明細のみが返される
+
+  # --- バックエンド: サービス ---
+  - id: AC-005
+    description: ManufacturerOrderServiceが全メーカー発注明細一覧を正しく組み立てる
+    test_type: unit
+    given: 複数メーカーの発注明細が存在する
+    when: get_all_order_items メソッドを呼び出す
+    then: 各明細に manufacturer_name が付与され、total, total_quantity, total_amount が正しく集計されたレスポンスが返される
+
+  # --- バックエンド: API統合テスト ---
+  - id: AC-006
+    description: GET /manufacturers/all-order-items が全メーカーの発注明細を返す
+    test_type: integration
+    given: 複数メーカーに紐づく発注明細がDBに存在する
+    when: GET /api/v1/manufacturers/all-order-items を管理者トークンで呼び出す
+    then: ステータス200で全メーカーの発注明細一覧が返される。各明細にmanufacturer_nameが含まれる
+
+  - id: AC-007
+    description: GET /manufacturers/all-order-items がステータスフィルターに対応する
+    test_type: integration
+    given: orderedとmanufacturingの発注明細が存在する
+    when: GET /api/v1/manufacturers/all-order-items?status=ordered を呼び出す
+    then: orderedステータスの明細のみが返される
+
+  - id: AC-008
+    description: GET /manufacturers/all-order-items がキーワード検索に対応する
+    test_type: integration
+    given: 注文番号 "ORD-001" と "ORD-002" の発注明細が存在する
+    when: GET /api/v1/manufacturers/all-order-items?search=ORD-001 を呼び出す
+    then: 注文番号に "ORD-001" を含む明細のみが返される
+
+  - id: AC-009
+    description: GET /manufacturers/all-order-items がメーカーIDフィルターに対応する
+    test_type: integration
+    given: メーカーAとメーカーBの発注明細が存在する
+    when: GET /api/v1/manufacturers/all-order-items?manufacturer_id={メーカーA.id} を呼び出す
+    then: メーカーAの明細のみが返される
+
+  - id: AC-010
+    description: GET /manufacturers/all-order-items で認証なしの場合401が返る
+    test_type: integration
+    given: なし
+    when: 認証トークンなしでGET /api/v1/manufacturers/all-order-items を呼び出す
+    then: ステータス401が返される
+
+  - id: AC-011
+    description: 発注明細が0件の場合、空配列とtotal=0が返される
+    test_type: integration
+    given: 発注明細が存在しない（またはすべてshippedステータス）
+    when: GET /api/v1/manufacturers/all-order-items を呼び出す
+    then: items=[], total=0, total_quantity=0, total_amount=0 が返される
+
+  # --- フロントエンド: ページ・コンポーネント ---
+  - id: AC-012
+    description: /purchase-orders/all ページが「すべての発注」一覧を表示する
+    test_type: unit
+    given: 全メーカーの発注明細APIが正常にデータを返す
+    when: /purchase-orders/all ページを開く
+    then: 全メーカーの発注明細がテーブルに表示され、各行にメーカー名が表示される
+
+  - id: AC-013
+    description: 全メーカー発注一覧テーブルに必要なカラムが表示される
+    test_type: unit
+    given: 発注明細データが存在する
+    when: AllManufacturerOrderList コンポーネントが描画される
+    then: メーカー名、注文番号、製品番号、商品名、商品タイプ、ステータス、数量、金額、顧客名、受注日 のカラムが表示される
+
+  - id: AC-014
+    description: 発注一覧ページに「すべての発注を見る」ボタンが表示される
+    test_type: unit
+    given: /purchase-orders ページを開いている
+    when: ページが描画される
+    then: 「すべての発注を見る」ナビゲーションボタンが表示され、クリックで /purchase-orders/all に遷移する
+
+  - id: AC-015
+    description: フィルター（ステータス、キーワード検索）が正常に動作する
+    test_type: unit
+    given: /purchase-orders/all ページが表示されている
+    when: ステータスフィルターで「発注済み」を選択する
+    then: APIリクエストにstatus=orderedが含まれ、フィルタリングされた結果が表示される
+
+  - id: AC-016
+    description: メーカーフィルターで特定メーカーに絞り込みできる
+    test_type: unit
+    given: /purchase-orders/all ページが表示されている、メーカー一覧が取得済み
+    when: メーカーフィルターでメーカーAを選択する
+    then: APIリクエストにmanufacturer_id=メーカーAのIDが含まれ、そのメーカーの明細のみ表示される
+
+  - id: AC-017
+    description: 発注明細が0件の場合、空メッセージが表示される
+    test_type: unit
+    given: APIが空配列を返す
+    when: /purchase-orders/all ページが描画される
+    then: 「発注中の明細がありません」等の空メッセージが表示される
+
+  - id: AC-018
+    description: サマリーカード（合計明細数、合計数量、合計金額）が表示される
+    test_type: unit
+    given: 発注明細データが存在する
+    when: /purchase-orders/all ページが描画される
+    then: 合計明細数、合計数量、合計金額のサマリーカードが表示される
+
+constraints:
+  performance:
+    - 全メーカー発注明細一覧のAPI応答は500ms以内
+    - クエリは適切なJOINとインデックスを利用し、N+1問題を回避する
+  security:
+    - 管理者（admin）のみアクセス可能（get_current_admin依存性を使用）
+    - 認証なしのアクセスは401を返す
+  compatibility:
+    - 既存のメーカー別発注一覧（/purchase-orders, /purchase-orders/[id]）の動作を一切変更しない
+    - 既存APIエンドポイントに影響を与えない
+    - Chrome / Safari / Firefox で正常に動作する
+
+assumptions:
+  - APIエンドポイントは GET /api/v1/manufacturers/all-order-items として新規追加する（既存の /manufacturers/{id}/order-items は変更しない）
+  - エンドポイントのパスは /manufacturers/order-summary と同様に /{manufacturer_id} より前に定義し、パスの競合を回避する
+  - レスポンススキーマは既存の ManufacturerOrderItemResponse を拡張し、manufacturer_id と manufacturer_name を含める
+  - 全メーカービューは閲覧専用とし、ステータス更新や発注資料ダウンロードは既存のメーカー別ページで行う運用を想定
+  - デフォルトでは shipped 以外の全ステータスの明細を返す（既存のメーカー別一覧と同じデフォルト動作）
+  - フロントエンドのページパスは /purchase-orders/all とし、既存の /purchase-orders/[id] と競合しないようにする
+  - ページネーションは将来的に追加可能だが、初期実装ではスクロールで全件表示とする（明細数が多い場合は後続で対応）
+  - メーカーフィルターのセレクトボックスの選択肢は GET /api/v1/manufacturers から動的に取得する
+
+success_metrics:
+  - 全メーカー横断の発注明細一覧APIが正常に動作し、フィルター機能が機能する
+  - フロントエンドで全メーカーの発注明細が一覧表示され、メーカー名で識別できる
+  - 既存のメーカー別発注一覧ページが影響なく正常に動作する
+  - バックエンドのユニットテスト・統合テストが全てパスする
+  - フロントエンドのユニットテストが全てパスする

@@ -16,6 +16,8 @@ from app.schemas.manufacturer import (
     ManufacturerOrderItemResponse,
     ManufacturerOrderItemListResponse,
     ManufacturerOrderStatusUpdate,
+    AllManufacturerOrderItemResponse,
+    AllManufacturerOrderItemListResponse,
 )
 from app.utils.exceptions import NotFoundError, NoOrderedItemsError
 from app.utils.order_list_generator import OrderListGenerator, get_product_type_name
@@ -135,6 +137,72 @@ class ManufacturerOrderService:
         return ManufacturerOrderItemListResponse(
             manufacturer_id=manufacturer_id,
             manufacturer_name=manufacturer.name,
+            items=items,
+            total=len(items),
+            total_quantity=total_quantity,
+            total_amount=total_amount,
+        )
+
+    async def get_all_order_items(
+        self,
+        ordered_from: date | None = None,
+        ordered_to: date | None = None,
+        product_type: str | None = None,
+        status: str | None = None,
+        search: str | None = None,
+        manufacturer_id: str | None = None,
+    ) -> AllManufacturerOrderItemListResponse:
+        """全メーカー横断の受注明細一覧を取得
+
+        Args:
+            ordered_from: 発注日From
+            ordered_to: 発注日To
+            product_type: 商品タイプ
+            status: ステータスフィルター（None の場合は shipped 以外の全て）
+            search: キーワード検索（注文番号・製品番号・商品名）
+            manufacturer_id: メーカーIDフィルター
+        """
+        rows = await self._order_repo.find_all_ordered_items_detail(
+            ordered_from=ordered_from,
+            ordered_to=ordered_to,
+            product_type=product_type,
+            status=status,
+            search=search,
+            manufacturer_id=manufacturer_id,
+        )
+
+        items = []
+        total_quantity = 0
+        total_amount = 0
+
+        for order_item, order_number, ordered_at, customer_name, cost, order_status, mfr_id, mfr_name in rows:
+            items.append(
+                AllManufacturerOrderItemResponse(
+                    id=order_item.id,
+                    order_id=order_item.order_id,
+                    order_number=order_number,
+                    uid=order_item.uid,
+                    product_id=order_item.product_id,
+                    product_name=order_item.product_name,
+                    product_type=order_item.product_type,
+                    price=order_item.price,
+                    quantity=order_item.quantity,
+                    size=order_item.size,
+                    position=order_item.position,
+                    color=order_item.color,
+                    design_image_url=order_item.design_image_url,
+                    thumbnail_image_url=order_item.thumbnail_image_url,
+                    ordered_at=ordered_at,
+                    customer_name=customer_name,
+                    status=order_status,
+                    manufacturer_id=mfr_id,
+                    manufacturer_name=mfr_name,
+                )
+            )
+            total_quantity += order_item.quantity
+            total_amount += order_item.price * order_item.quantity
+
+        return AllManufacturerOrderItemListResponse(
             items=items,
             total=len(items),
             total_quantity=total_quantity,
