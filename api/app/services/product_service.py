@@ -27,6 +27,32 @@ class ProductService:
         self._product_repo = product_repo
         self._manufacturer_repo = manufacturer_repo
 
+    @staticmethod
+    def _to_response(product) -> ProductResponse:
+        """Convert a Product model to ProductResponse with manufacturer_name."""
+        manufacturer = getattr(product, "manufacturer", None)
+        manufacturer_name: str | None = None
+        if manufacturer is not None:
+            name = getattr(manufacturer, "name", None)
+            if isinstance(name, str):
+                manufacturer_name = name
+        data = {
+            "id": product.id,
+            "product_type": product.product_type,
+            "size": product.size,
+            "position": product.position,
+            "color": product.color,
+            "manufacturer_id": product.manufacturer_id,
+            "cost": product.cost,
+            "lead_time_days": product.lead_time_days,
+            "order_limit": product.order_limit,
+            "is_active": product.is_active,
+            "manufacturer_name": manufacturer_name,
+            "created_at": product.created_at,
+            "updated_at": product.updated_at,
+        }
+        return ProductResponse(**data)
+
     async def _check_duplicate(
         self,
         product_type: str,
@@ -78,14 +104,14 @@ class ProductService:
         )
 
         product = await self._product_repo.create(product)
-        return ProductResponse.model_validate(product)
+        return self._to_response(product)
 
     async def get_by_id(self, product_id: str) -> ProductResponse:
         """Get a product by ID."""
         product = await self._product_repo.find_by_id(product_id)
         if not product:
             raise ProductNotFoundError(product_id)
-        return ProductResponse.model_validate(product)
+        return self._to_response(product)
 
     async def list(
         self,
@@ -107,7 +133,7 @@ class ProductService:
         )
 
         return ProductListResponse(
-            items=[ProductResponse.model_validate(p) for p in products],
+            items=[self._to_response(p) for p in products],
             total=total,
             page=page,
             limit=limit,
@@ -162,7 +188,7 @@ class ProductService:
                 setattr(product, field, value)
 
         product = await self._product_repo.update(product)
-        return ProductResponse.model_validate(product)
+        return self._to_response(product)
 
     async def delete(self, product_id: str) -> None:
         """Delete a product."""
