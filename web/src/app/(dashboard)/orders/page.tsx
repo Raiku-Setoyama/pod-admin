@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { RefreshCw } from "lucide-react";
+import { Download, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
+import { downloadFileByPost } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { PageContainer } from "@/components/layout/page-container";
 import { Pagination } from "@/components/common/pagination";
@@ -52,16 +54,43 @@ export default function OrdersPage() {
     mutate();
   };
 
+  const handleImageDownload = async () => {
+    try {
+      const now = new Date();
+      const timestamp = now.getFullYear().toString()
+        + (now.getMonth() + 1).toString().padStart(2, "0")
+        + now.getDate().toString().padStart(2, "0")
+        + "_"
+        + now.getHours().toString().padStart(2, "0")
+        + now.getMinutes().toString().padStart(2, "0")
+        + now.getSeconds().toString().padStart(2, "0");
+      const filename = `受注画像_${timestamp}.zip`;
+      await downloadFileByPost(
+        "/orders/download-images",
+        { order_ids: selectedIds },
+        filename
+      );
+    } catch {
+      toast.error("画像のダウンロードに失敗しました");
+    }
+  };
+
   return (
     <PageContainer
       title="受注一覧"
       description="外部販売サイトからの受注情報"
       actions={
         selectedIds.length > 0 ? (
-          <Button onClick={() => setIsBulkStatusDialogOpen(true)}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            選択した{selectedIds.length}件を更新
-          </Button>
+          <>
+            <Button variant="outline" onClick={handleImageDownload}>
+              <Download className="h-4 w-4 mr-2" />
+              イメージ画像ダウンロード
+            </Button>
+            <Button onClick={() => setIsBulkStatusDialogOpen(true)}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              選択した{selectedIds.length}件を更新
+            </Button>
+          </>
         ) : undefined
       }
     >

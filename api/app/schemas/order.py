@@ -164,3 +164,9 @@ class OrderBulkStatusUpdateResponse(BaseModel):
     updated_count: int
     failed_count: int
     failed_ids: list[str]
+
+
+class OrderImageDownloadRequest(BaseModel):
+    """受注イメージ画像ZIPダウンロードリクエスト"""
+
+    order_ids: list[str] = Field(..., min_length=1)
