@@ -270,7 +270,7 @@ class OrderService:
                 filename=order.manufacturing_data_filename,
                 path=order.manufacturing_data_path,
                 size=order.manufacturing_data_size,
-                download_url=f"/api/v1/orders/{order.id}/manufacturing-data",
+                download_url=f"/orders/{order.id}/manufacturing-data",
             )
 
         # Convert order items

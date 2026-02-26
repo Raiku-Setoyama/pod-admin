@@ -55,7 +55,10 @@ class TestGetOrderItemsByManufacturerStatusFilter:
 
     @pytest.fixture
     def mock_order_items_multi_status(self):
-        """複数ステータスの受注明細"""
+        """複数ステータスの受注明細
+
+        タプル構造: (OrderItem, order_number, ordered_at, customer_name, cost, item_status, order_status)
+        """
         items = []
         statuses = [
             OrderStatus.ORDERED,
@@ -85,7 +88,8 @@ class TestGetOrderItemsByManufacturerStatusFilter:
                 datetime.now(),  # ordered_at
                 "顧客名",  # customer_name
                 500,  # cost
-                status.value,  # order_status
+                status.value,  # item_status (OrderItem.status)
+                status.value,  # order_status (Order.status)
             ))
         return items
 

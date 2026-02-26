@@ -14,8 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "グッズ管理 - POD受発注管理システム",
-  description: "PODグッズの受発注管理システム",
+  title: "TOSYO",
 };
 
 export default function RootLayout({

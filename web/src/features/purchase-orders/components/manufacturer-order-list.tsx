@@ -8,16 +8,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { StatusBadge } from "@/components/common/status-badge";
 import type { ManufacturerOrderSummary } from "@/types/api";
 
 interface ManufacturerOrderListProps {
   manufacturers: ManufacturerOrderSummary[];
   onRowClick?: (manufacturer: ManufacturerOrderSummary) => void;
-}
-
-function formatPrice(price: number): string {
-  return `¥${price.toLocaleString()}`;
 }
 
 export function ManufacturerOrderList({
@@ -32,16 +27,14 @@ export function ManufacturerOrderList({
             <TableHead>メーカー名</TableHead>
             <TableHead className="text-center">発注中明細数</TableHead>
             <TableHead className="text-center">合計数量</TableHead>
-            <TableHead className="text-right">合計金額</TableHead>
             <TableHead className="text-center">リードタイム</TableHead>
-            <TableHead>ステータス</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {manufacturers.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={6}
+                colSpan={4}
                 className="h-24 text-center text-muted-foreground"
               >
                 発注中の明細がありません
@@ -61,14 +54,8 @@ export function ManufacturerOrderList({
                 <TableCell className="text-center">
                   {m.total_quantity}点
                 </TableCell>
-                <TableCell className="text-right">
-                  {formatPrice(m.total_amount)}
-                </TableCell>
                 <TableCell className="text-center">
                   {m.lead_time_days}日
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={m.status ?? "ordered"} />
                 </TableCell>
               </TableRow>
             ))

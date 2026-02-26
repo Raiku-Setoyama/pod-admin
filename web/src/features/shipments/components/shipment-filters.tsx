@@ -1,6 +1,7 @@
 "use client";
 
 import { Search, X } from "lucide-react";
+import { DateRange } from "react-day-picker";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -10,33 +11,34 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { DateRangePicker } from "@/components/common/date-range-picker";
+import { getShipmentStatusOptions } from "@/constants/status";
 import type { ShipmentStatus } from "@/types/api";
 
-const statusOptions: { value: ShipmentStatus | "all"; label: string }[] = [
-  { value: "all", label: "全てのステータス" },
-  { value: "pending", label: "配送準備中" },
-  { value: "ready", label: "準備完了" },
-  { value: "shipped", label: "発送完了" },
-];
+const statusOptions = getShipmentStatusOptions();
 
 interface ShipmentFiltersProps {
   // Filter values
   search: string;
   status: ShipmentStatus | null;
+  dateRange?: DateRange;
   // Handlers
   onSearchChange: (value: string) => void;
   onStatusChange: (value: ShipmentStatus | null) => void;
+  onDateRangeChange?: (range: DateRange | undefined) => void;
   onReset: () => void;
 }
 
 export function ShipmentFilters({
   search,
   status,
+  dateRange,
   onSearchChange,
   onStatusChange,
+  onDateRangeChange,
   onReset,
 }: ShipmentFiltersProps) {
-  const hasActiveFilters = search || status;
+  const hasActiveFilters = search || status || dateRange?.from;
 
   return (
     <div className="space-y-4">
@@ -68,6 +70,14 @@ export function ShipmentFilters({
             ))}
           </SelectContent>
         </Select>
+
+        {onDateRangeChange && (
+          <DateRangePicker
+            value={dateRange}
+            onChange={onDateRangeChange}
+            placeholder="作成日"
+          />
+        )}
 
         {/* Reset button */}
         {hasActiveFilters && (

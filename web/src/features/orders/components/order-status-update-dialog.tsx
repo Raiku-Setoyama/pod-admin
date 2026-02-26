@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { apiClient } from "@/lib/api/client";
+import { getOrderStatusUpdateOptions, getOrderStatusLabel } from "@/constants/status";
 import type { Order, OrderStatus } from "@/types/api";
 
 interface OrderStatusUpdateDialogProps {
@@ -27,12 +28,7 @@ interface OrderStatusUpdateDialogProps {
   onSuccess: () => void;
 }
 
-// Statuses that can be selected manually (shipped is controlled by shipment)
-const statusOptions: { value: OrderStatus; label: string }[] = [
-  { value: "ordered", label: "受注済み" },
-  { value: "manufacturing", label: "製造中" },
-  { value: "delivered", label: "配送準備完了" },
-];
+const statusOptions = getOrderStatusUpdateOptions();
 
 export function OrderStatusUpdateDialog({
   order,
@@ -80,9 +76,7 @@ export function OrderStatusUpdateDialog({
     }
   };
 
-  const currentStatusLabel =
-    statusOptions.find((opt) => opt.value === order.status)?.label ||
-    order.status;
+  const currentStatusLabel = getOrderStatusLabel(order.status);
 
   return (
     <Dialog open={open} onOpenChange={onClose}>

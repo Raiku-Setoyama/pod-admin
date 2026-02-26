@@ -129,7 +129,8 @@ class ManufacturerOrderItemResponse(BaseModel):
     thumbnail_image_url: str | None
     ordered_at: datetime
     customer_name: str
-    status: str  # Order.status (ordered, manufacturing, delivered)
+    status: str  # OrderItem.status (ordered, manufacturing, delivered) - 後方互換性のため維持
+    item_status: str | None = None  # OrderItem.status (新フィールド、製品単位のステータス)
 
 
 class ManufacturerOrderItemListResponse(BaseModel):
@@ -181,6 +182,6 @@ class AllManufacturerOrderItemListResponse(BaseModel):
 class ManufacturerOrderStatusUpdate(BaseModel):
     """メーカー別受注ステータス一括更新"""
 
-    status: Literal["manufacturing", "delivered"]  # MANUFACTURING, DELIVERED
-    order_item_ids: list[str] | None = None  # 指定がなければ全てのORDERED明細
+    status: Literal["ordered", "manufacturing", "delivered"]  # 全ステータス間で遷移可能
+    order_item_ids: list[str] | None = None  # 指定がなければ対象の全明細
     note: str | None = None

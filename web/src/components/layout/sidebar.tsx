@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { useCurrentUser } from "@/features/auth/hooks/use-current-user";
 
 const navigation = [
-  { name: "受注", href: "/orders", icon: ShoppingCart },
+  { name: "受注", href: "/", icon: ShoppingCart },
   { name: "発注", href: "/purchase-orders", icon: FileText },
   { name: "配送", href: "/shipments", icon: Truck },
   { name: "メーカー", href: "/manufacturers", icon: Factory },
@@ -41,13 +41,13 @@ export function Sidebar() {
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
           <Package className="h-5 w-5 text-primary-foreground" />
         </div>
-        <span className="font-semibold text-foreground">グッズ管理</span>
+        <span className="font-semibold text-foreground">TOSYO</span>
       </div>
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 px-2 py-4">
         {navigation.map((item) => {
-          const isActive = pathname.startsWith(item.href);
+          const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
           return (
             <Link
               key={item.name}

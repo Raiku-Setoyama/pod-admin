@@ -42,7 +42,7 @@ const manufacturerSchema = z.object({
   supported_products: z.array(z.string()).min(1, "対応商品を1つ以上選択してください"),
   lead_time_days: z.number().min(1, "リードタイムは1日以上を入力してください"),
   daily_order_limit: z.number().min(1, "1日発注上限は1以上を入力してください"),
-  sharing_method: z.enum(["DRIVE", "portal"]),
+  sharing_method: z.enum(["drive", "portal"]),
   is_active: z.boolean(),
   password: z.string().optional(),
 });
@@ -73,7 +73,7 @@ export function ManufacturerForm({
       supported_products: manufacturer?.supported_products || [],
       lead_time_days: manufacturer?.lead_time_days || 7,
       daily_order_limit: manufacturer?.daily_order_limit || 100,
-      sharing_method: manufacturer?.sharing_method || "DRIVE",
+      sharing_method: manufacturer?.sharing_method || "drive",
       is_active: manufacturer?.is_active ?? true,
       password: "",
     },
@@ -297,7 +297,7 @@ export function ManufacturerForm({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="DRIVE">TOSYO DRIVE</SelectItem>
+                      <SelectItem value="drive">TOSYO DRIVE</SelectItem>
                       <SelectItem value="portal">メーカーポータル</SelectItem>
                     </SelectContent>
                   </Select>

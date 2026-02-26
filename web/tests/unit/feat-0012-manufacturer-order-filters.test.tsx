@@ -84,7 +84,7 @@ function createMockOrderItemsData(): ManufacturerOrderItemListResponse {
         id: 'item-001',
         order_id: 'order-001',
         order_number: 'ORD-001',
-        uid: 'UID-001',
+        uid: '0000001',
         product_id: 'prod-001',
         product_name: 'アクリルキーホルダーA',
         product_type: 'acrylic_keychain',
@@ -103,7 +103,7 @@ function createMockOrderItemsData(): ManufacturerOrderItemListResponse {
         id: 'item-002',
         order_id: 'order-002',
         order_number: 'ORD-002',
-        uid: 'UID-002',
+        uid: '0000002',
         product_id: 'prod-002',
         product_name: 'Tシャツ白',
         product_type: 'tshirt',
@@ -122,7 +122,7 @@ function createMockOrderItemsData(): ManufacturerOrderItemListResponse {
         id: 'item-003',
         order_id: 'order-003',
         order_number: 'ORD-003',
-        uid: 'UID-003',
+        uid: '0000003',
         product_id: 'prod-003',
         product_name: 'ステッカー大',
         product_type: 'sticker',
@@ -211,7 +211,7 @@ describe('AC-005: Status filter select is displayed', () => {
     expect(statusText).toBeInTheDocument()
   })
 
-  it('status filter has correct options: 全てのステータス, 発注済み, 製造中, 納入済', async () => {
+  it('status filter has correct options: 全てのステータス, 発注済み, 製造中, 納品済み', async () => {
     const user = userEvent.setup()
     render(<ManufacturerOrderFilters {...createNewFilterProps()} />)
 
@@ -224,7 +224,7 @@ describe('AC-005: Status filter select is displayed', () => {
     expect(screen.getAllByText('全てのステータス').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('発注済み')).toBeInTheDocument()
     expect(screen.getByText('製造中')).toBeInTheDocument()
-    expect(screen.getByText('納入済')).toBeInTheDocument()
+    expect(screen.getByText('納品済み')).toBeInTheDocument()
   })
 
   it('calls onStatusChange when user selects a status', async () => {
@@ -282,7 +282,7 @@ describe('AC-008: Status badge is displayed for each item', () => {
     expect(badge).toBeInTheDocument()
   })
 
-  it('renders status badge for delivered items showing "納入済"', () => {
+  it('renders status badge for delivered items showing "納品済み"', () => {
     const props = createNewDetailProps()
 
     render(<ManufacturerOrderDetail {...props} />)
@@ -291,8 +291,8 @@ describe('AC-008: Status badge is displayed for each item', () => {
     const row = screen.getByText('ORD-003').closest('tr')
     expect(row).toBeInTheDocument()
 
-    // Check that the row contains a "納入済" badge
-    const badge = within(row!).getByText('納入済')
+    // Check that the row contains a "納品済み" badge
+    const badge = within(row!).getByText('納品済み')
     expect(badge).toBeInTheDocument()
   })
 

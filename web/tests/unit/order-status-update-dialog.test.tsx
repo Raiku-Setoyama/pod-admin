@@ -18,7 +18,6 @@ const createMockOrder = (overrides: Partial<Order> = {}): Order => ({
   order_number: 'TEST-001',
   status: 'ordered' as OrderStatus,
   source: 'test-source',
-  order_source_id: 'source-123',
   customer_name: 'Test Customer',
   customer_postal_code: '100-0001',
   customer_address_prefecture: 'Tokyo',
@@ -116,9 +115,9 @@ describe('OrderStatusUpdateDialog', () => {
       fireEvent.click(selectTrigger)
 
       // Check that all valid statuses are available (may have duplicates due to description)
-      expect(screen.getAllByText(/受注済み/).length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText(/発注済み/).length).toBeGreaterThanOrEqual(1)
       expect(screen.getAllByText(/製造中/).length).toBeGreaterThanOrEqual(1)
-      expect(screen.getAllByText(/配送準備完了/).length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText(/納品済み/).length).toBeGreaterThanOrEqual(1)
     })
 
     it('does not show shipped as a direct option (controlled by shipment)', () => {
@@ -206,7 +205,7 @@ describe('OrderStatusUpdateDialog', () => {
 
       const selectTrigger = screen.getByRole('combobox')
       await user.click(selectTrigger)
-      const orderedOption = screen.getByRole('option', { name: /受注済み/ })
+      const orderedOption = screen.getByRole('option', { name: /発注済み/ })
       await user.click(orderedOption)
 
       const submitButton = screen.getByRole('button', { name: /更新/ })
@@ -247,7 +246,7 @@ describe('OrderStatusUpdateDialog', () => {
 
       const selectTrigger = screen.getByRole('combobox')
       await user.click(selectTrigger)
-      const deliveredOption = screen.getByRole('option', { name: /配送準備完了/ })
+      const deliveredOption = screen.getByRole('option', { name: /納品済み/ })
       await user.click(deliveredOption)
 
       const submitButton = screen.getByRole('button', { name: /更新/ })
@@ -285,7 +284,7 @@ describe('OrderStatusUpdateDialog', () => {
 
       const selectTrigger = screen.getByRole('combobox')
       await user.click(selectTrigger)
-      const deliveredOption = screen.getByRole('option', { name: /配送準備完了/ })
+      const deliveredOption = screen.getByRole('option', { name: /納品済み/ })
       await user.click(deliveredOption)
 
       const submitButton = screen.getByRole('button', { name: /更新/ })
@@ -328,7 +327,7 @@ describe('OrderStatusUpdateDialog', () => {
 
       const selectTrigger = screen.getByRole('combobox')
       await user.click(selectTrigger)
-      const orderedOption = screen.getByRole('option', { name: /受注済み/ })
+      const orderedOption = screen.getByRole('option', { name: /発注済み/ })
       await user.click(orderedOption)
 
       const submitButton = screen.getByRole('button', { name: /更新/ })
@@ -562,8 +561,8 @@ describe('OrderStatusUpdateDialog', () => {
       // Should have Japanese labels
       // (Actual labels depend on implementation, testing the pattern)
       expect(
-        screen.queryByText(/ordered|manufacturing|配送準備完了/) ||
-        screen.queryByText(/ordered|manufacturing|配送準備完了/)
+        screen.queryByText(/ordered|manufacturing|納品済み/) ||
+        screen.queryByText(/ordered|manufacturing|納品済み/)
       ).toBeInTheDocument()
     })
   })

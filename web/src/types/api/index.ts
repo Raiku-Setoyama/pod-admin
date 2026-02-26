@@ -5,6 +5,9 @@ export type OrderStatus =
   | "delivered"
   | "shipped";
 
+// OrderItemのステータス（製品単位）
+export type OrderItemStatus = "ordered" | "manufacturing" | "delivered";
+
 export interface OrderItem {
   id: string;
   uid: string;
@@ -17,6 +20,7 @@ export interface OrderItem {
   color: string | null;
   design_image_url: string | null;
   thumbnail_image_url: string | null;
+  status?: OrderItemStatus;  // 製品単位のステータス
   created_at: string;
   updated_at: string;
 }
@@ -107,7 +111,8 @@ export interface ManufacturerOrderItem {
   thumbnail_image_url: string | null;
   ordered_at: string;
   customer_name: string;
-  status: OrderStatus;
+  status: OrderItemStatus;  // 製品単位のステータス
+  item_status?: OrderItemStatus | null;  // 新フィールド（製品単位のステータス）
 }
 
 export interface ManufacturerOrderItemListResponse {
@@ -120,7 +125,7 @@ export interface ManufacturerOrderItemListResponse {
 }
 
 export interface ManufacturerOrderStatusUpdate {
-  status: "manufacturing" | "delivered";
+  status: "ordered" | "manufacturing" | "delivered";  // 全ステータス間で遷移可能
   order_item_ids?: string[];
   note?: string;
 }
@@ -217,7 +222,7 @@ export interface Manufacturer {
   unit_prices: Record<string, number>;
   lead_time_days: number;
   daily_order_limit: number;
-  sharing_method: "DRIVE" | "portal";
+  sharing_method: "drive" | "portal";
   is_active: boolean;
   created_at: string;
   updated_at: string;

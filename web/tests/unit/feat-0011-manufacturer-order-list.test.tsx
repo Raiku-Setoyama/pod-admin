@@ -4,7 +4,7 @@
  * Covers:
  * - AC-007: 発注一覧のステータスカラムにStatusBadgeで実際のステータスが表示される
  * - AC-008: 発注一覧ページにステータスフィルターが表示される
- * - AC-009: ステータスフィルターで「発注中」を選択するとフィルタリングされる
+ * - AC-009: ステータスフィルターで「発注済み」を選択するとフィルタリングされる
  * - AC-010: ステータスフィルターで「全て」を選択すると全メーカーが表示される
  *
  * NOTE: TDD Red phase - tests will fail until implementation is completed.
@@ -60,7 +60,7 @@ describe('AC-007: Manufacturer order list shows dynamic status with StatusBadge'
 
   it('renders StatusBadge for each manufacturer status instead of hardcoded Badge', () => {
     // After implementation, ManufacturerOrderSummary should have a `status` field
-    // and the list should use StatusBadge instead of a hardcoded "発注中" Badge
+    // and the list should use StatusBadge instead of a hardcoded "発注済み" Badge
     const manufacturers: ManufacturerOrderSummary[] = [
       createMockManufacturer({
         id: 'mfr-1',
@@ -87,14 +87,14 @@ describe('AC-007: Manufacturer order list shows dynamic status with StatusBadge'
       />
     )
 
-    // After implementation, StatusBadge should show "発注中", "製造中", "納入済" based on status field
-    // Currently all show "発注中" as hardcoded Badge
-    expect(screen.getByText('発注中')).toBeInTheDocument()
+    // After implementation, StatusBadge should show "発注済み", "製造中", "納品済み" based on status field
+    // Currently all show "発注済み" as hardcoded Badge
+    expect(screen.getByText('発注済み')).toBeInTheDocument()
     expect(screen.getByText('製造中')).toBeInTheDocument()
-    expect(screen.getByText('納入済')).toBeInTheDocument()
+    expect(screen.getByText('納品済み')).toBeInTheDocument()
   })
 
-  it('does not show all manufacturers as "発注中" when statuses differ', () => {
+  it('does not show all manufacturers as "発注済み" when statuses differ', () => {
     const manufacturers: ManufacturerOrderSummary[] = [
       createMockManufacturer({
         id: 'mfr-1',
@@ -115,8 +115,8 @@ describe('AC-007: Manufacturer order list shows dynamic status with StatusBadge'
       />
     )
 
-    // Count how many "発注中" badges exist - should be exactly 1 (not all rows)
-    const allBadges = screen.getAllByText('発注中')
+    // Count how many "発注済み" badges exist - should be exactly 1 (not all rows)
+    const allBadges = screen.getAllByText('発注済み')
     expect(allBadges).toHaveLength(1)
   })
 })
@@ -157,7 +157,7 @@ describe('AC-008: Status filter is displayed on purchase orders page', () => {
     expect(statusFilter).toBeInTheDocument()
   })
 
-  it('shows status options: 全てのステータス, 発注中, 製造中, 納入済', async () => {
+  it('shows status options: 全てのステータス, 発注済み, 製造中, 納品済み', async () => {
     const user = userEvent.setup()
 
     const { useManufacturerOrderSummary } = await import(
@@ -186,22 +186,22 @@ describe('AC-008: Status filter is displayed on purchase orders page', () => {
 
     // Should have these options
     expect(screen.getByRole('option', { name: /全て/ })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: /発注中/ })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /発注済み/ })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: /製造中/ })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: /納入済/ })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /納品済み/ })).toBeInTheDocument()
   })
 })
 
 // ======================================
-// AC-009: ステータスフィルターで「発注中」を選択するとフィルタリングされる
+// AC-009: ステータスフィルターで「発注済み」を選択するとフィルタリングされる
 // ======================================
 
-describe('AC-009: Filtering by "発注中" status shows only matching manufacturers', () => {
+describe('AC-009: Filtering by "発注済み" status shows only matching manufacturers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('shows only "発注中" manufacturers when that status is selected', async () => {
+  it('shows only "発注済み" manufacturers when that status is selected', async () => {
     const user = userEvent.setup()
 
     const { useManufacturerOrderSummary } = await import(
@@ -240,10 +240,10 @@ describe('AC-009: Filtering by "発注中" status shows only matching manufactur
 
     render(<PurchaseOrdersPage />)
 
-    // Select "発注中" from the filter
+    // Select "発注済み" from the filter
     const statusFilter = screen.getByRole('combobox')
     await user.click(statusFilter)
-    const orderedOption = screen.getByRole('option', { name: /発注中/ })
+    const orderedOption = screen.getByRole('option', { name: /発注済み/ })
     await user.click(orderedOption)
 
     // Only "Ordered Manufacturer" should be visible
@@ -304,7 +304,7 @@ describe('AC-010: Selecting "全て" shows all manufacturers', () => {
     // First select a specific status to narrow down
     const statusFilter = screen.getByRole('combobox')
     await user.click(statusFilter)
-    const orderedOption = screen.getByRole('option', { name: /発注中/ })
+    const orderedOption = screen.getByRole('option', { name: /発注済み/ })
     await user.click(orderedOption)
 
     // Then select "全てのステータス" to show all

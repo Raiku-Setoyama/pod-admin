@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download, RefreshCw, Upload } from "lucide-react";
+import { format } from "date-fns";
+import { DateRange } from "react-day-picker";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,7 +29,10 @@ import { PageLoading } from "@/components/common/loading-spinner";
 import { ShipmentList } from "@/features/shipments/components/shipment-list";
 import { ShipmentFilters } from "@/features/shipments/components/shipment-filters";
 import { useShipments } from "@/features/shipments/hooks/use-shipments";
+import { getShipmentStatusUpdateOptions } from "@/constants/status";
 import type { Shipment, ShipmentStatus } from "@/types/api";
+
+const statusOptions = getShipmentStatusUpdateOptions();
 
 export default function ShipmentsPage() {
   const router = useRouter();
@@ -37,6 +42,7 @@ export default function ShipmentsPage() {
   // Filter states
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<ShipmentStatus | null>(null);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
   // 一括更新用state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -50,6 +56,8 @@ export default function ShipmentsPage() {
     limit,
     status,
     search: search || undefined,
+    created_from: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
+    created_to: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
   });
 
   const handleRowClick = (shipment: Shipment) => {
@@ -59,6 +67,7 @@ export default function ShipmentsPage() {
   const handleReset = () => {
     setSearch("");
     setStatus(null);
+    setDateRange(undefined);
     setPage(1);
   };
 
@@ -67,11 +76,10 @@ export default function ShipmentsPage() {
     try {
       const response = await apiClient("/shipments/bulk-status", {
         method: "PATCH",
-        body: JSON.stringify({
+        body: {
           shipment_ids: Array.from(selectedIds),
           status: bulkNewStatus,
-        }),
-        headers: { "Content-Type": "application/json" },
+        },
       }) as { updated_count: number; failed_count: number };
       toast.success(`${response.updated_count}件のステータスを更新しました`);
       if (response.failed_count > 0) {
@@ -152,14 +160,15 @@ export default function ShipmentsPage() {
             disabled={isExporting || selectedIds.size === 0}
           >
             <Download className="h-4 w-4 mr-2" />
-            {isExporting ? "エクスポート中..." : selectedIds.size > 0 ? `受注CSV (${selectedIds.size}件)` : "受注CSV"}
+            {isExporting ? "エクスポート中..." : "受注CSV"}
           </Button>
-          {selectedIds.size > 0 && (
-            <Button onClick={() => setIsBulkStatusDialogOpen(true)}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              選択した{selectedIds.size}件を更新
-            </Button>
-          )}
+          <Button
+            onClick={() => setIsBulkStatusDialogOpen(true)}
+            disabled={selectedIds.size === 0}
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            ステータス更新
+          </Button>
           <Button variant="outline">
             <Upload className="h-4 w-4" />
             伝票番号インポート
@@ -171,8 +180,10 @@ export default function ShipmentsPage() {
         <ShipmentFilters
           search={search}
           status={status}
+          dateRange={dateRange}
           onSearchChange={(value) => { setSearch(value); setPage(1); }}
           onStatusChange={(value) => { setStatus(value); setPage(1); }}
+          onDateRangeChange={(range) => { setDateRange(range); setPage(1); }}
           onReset={handleReset}
         />
 
@@ -218,9 +229,11 @@ export default function ShipmentsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="pending">配送準備中</SelectItem>
-                <SelectItem value="ready">配送準備完了</SelectItem>
-                <SelectItem value="shipped">発送済み</SelectItem>
+                {statusOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

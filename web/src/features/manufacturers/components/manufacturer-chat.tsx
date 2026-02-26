@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Send, Paperclip, User, Factory, X, Download } from "lucide-react";
+import { Send, Paperclip, User, Factory, X, FileText, FileSpreadsheet, FileImage, File } from "lucide-react";
 import { apiClient, downloadFile } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +41,80 @@ interface ManufacturerChatProps {
 }
 
 const fetcher = (url: string) => apiClient<ChatMessagesResponse>(url);
+
+function getFileTypeInfo(filename: string, contentType?: string): { icon: React.ReactNode; label: string; bgColor: string } {
+  const ext = filename.split(".").pop()?.toLowerCase() || "";
+
+  // Excel
+  if (["xls", "xlsx"].includes(ext) || contentType?.includes("spreadsheet") || contentType?.includes("excel")) {
+    return {
+      icon: <FileSpreadsheet className="h-5 w-5 text-white" />,
+      label: ext.toUpperCase(),
+      bgColor: "bg-green-700",
+    };
+  }
+
+  // CSV
+  if (ext === "csv") {
+    return {
+      icon: <FileSpreadsheet className="h-5 w-5 text-white" />,
+      label: "CSV",
+      bgColor: "bg-green-700",
+    };
+  }
+
+  // PDF
+  if (ext === "pdf" || contentType?.includes("pdf")) {
+    return {
+      icon: <FileText className="h-5 w-5 text-white" />,
+      label: "PDF",
+      bgColor: "bg-red-600",
+    };
+  }
+
+  // Word
+  if (["doc", "docx"].includes(ext) || contentType?.includes("word")) {
+    return {
+      icon: <FileText className="h-5 w-5 text-white" />,
+      label: ext.toUpperCase(),
+      bgColor: "bg-blue-600",
+    };
+  }
+
+  // Image
+  if (["jpg", "jpeg", "png", "gif", "webp"].includes(ext) || contentType?.startsWith("image/")) {
+    return {
+      icon: <FileImage className="h-5 w-5 text-white" />,
+      label: ext.toUpperCase(),
+      bgColor: "bg-purple-600",
+    };
+  }
+
+  // Text
+  if (ext === "txt" || contentType?.includes("text/plain")) {
+    return {
+      icon: <FileText className="h-5 w-5 text-white" />,
+      label: "TXT",
+      bgColor: "bg-gray-600",
+    };
+  }
+
+  // ZIP
+  if (ext === "zip" || contentType?.includes("zip")) {
+    return {
+      icon: <File className="h-5 w-5 text-white" />,
+      label: "ZIP",
+      bgColor: "bg-yellow-600",
+    };
+  }
+
+  // Default
+  return {
+    icon: <File className="h-5 w-5 text-white" />,
+    label: ext ? ext.toUpperCase() : "FILE",
+    bgColor: "bg-gray-500",
+  };
+}
 
 export function ManufacturerChat({ manufacturerId, manufacturerName }: ManufacturerChatProps) {
   const [message, setMessage] = useState("");
@@ -129,70 +203,108 @@ export function ManufacturerChat({ manufacturerId, manufacturerName }: Manufactu
                 まだメッセージがありません
               </div>
             ) : (
-              messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={cn(
-                    "flex gap-3",
-                    msg.sender_type === "admin" && "flex-row-reverse"
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
-                      msg.sender_type === "admin"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted"
+              messages.map((msg) => {
+                const isAdmin = msg.sender_type === "admin";
+                return (
+                  <div key={msg.id} className="space-y-2">
+                    {/* Text content */}
+                    {msg.content && (
+                      <div
+                        className={cn(
+                          "flex gap-3",
+                          isAdmin && "flex-row-reverse"
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
+                            isAdmin
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted"
+                          )}
+                        >
+                          {isAdmin ? (
+                            <User className="h-4 w-4" />
+                          ) : (
+                            <Factory className="h-4 w-4" />
+                          )}
+                        </div>
+                        <div
+                          className={cn(
+                            "max-w-[70%] space-y-1",
+                            isAdmin && "text-right"
+                          )}
+                        >
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span>{msg.sender_name}</span>
+                            <span>{formatTime(msg.created_at)}</span>
+                          </div>
+                          <div
+                            className={cn(
+                              "p-3 rounded-lg",
+                              isAdmin
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-muted"
+                            )}
+                          >
+                            <p className="whitespace-pre-wrap">{msg.content}</p>
+                          </div>
+                        </div>
+                      </div>
                     )}
-                  >
-                    {msg.sender_type === "admin" ? (
-                      <User className="h-4 w-4" />
-                    ) : (
-                      <Factory className="h-4 w-4" />
-                    )}
-                  </div>
-                  <div
-                    className={cn(
-                      "max-w-[70%] space-y-1",
-                      msg.sender_type === "admin" && "text-right"
-                    )}
-                  >
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>{msg.sender_name}</span>
-                      <span>{formatTime(msg.created_at)}</span>
-                    </div>
-                    <div
-                      className={cn(
-                        "p-3 rounded-lg",
-                        msg.sender_type === "admin"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted"
-                      )}
-                    >
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
-                      {msg.attachments.length > 0 && (
-                        <div className="mt-2 space-y-1">
-                          {msg.attachments.map((att) => (
+
+                    {/* Attachments as separate items */}
+                    {msg.attachments.map((att) => {
+                      const fileInfo = getFileTypeInfo(att.filename, att.content_type);
+                      return (
+                        <div
+                          key={att.id}
+                          className={cn(
+                            "flex gap-3",
+                            isAdmin && "flex-row-reverse"
+                          )}
+                        >
+                          <div className="w-8 flex-shrink-0" />
+                          <div
+                            className={cn(
+                              "max-w-[70%] space-y-1",
+                              isAdmin && "text-right"
+                            )}
+                          >
+                            {!msg.content && (
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <span>{msg.sender_name}</span>
+                                <span>{formatTime(msg.created_at)}</span>
+                              </div>
+                            )}
                             <button
-                              key={att.id}
                               type="button"
                               onClick={() => {
                                 if (att.download_url) {
                                   downloadFile(att.download_url, att.filename);
                                 }
                               }}
-                              className="text-xs opacity-75 flex items-center gap-1 underline cursor-pointer hover:opacity-100"
+                              className="flex items-center gap-3 rounded-lg bg-muted p-3 cursor-pointer hover:bg-muted/80 transition-colors"
                             >
-                              <Download className="h-3 w-3" />
-                              {att.filename}
+                              <div className={cn("flex h-10 w-10 items-center justify-center rounded-lg shrink-0", fileInfo.bgColor)}>
+                                {fileInfo.icon}
+                              </div>
+                              <div className="flex-1 min-w-0 text-left">
+                                <p className="text-sm font-medium truncate text-foreground">
+                                  {att.filename}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {fileInfo.label}
+                                </p>
+                              </div>
                             </button>
-                          ))}
+                          </div>
                         </div>
-                      )}
-                    </div>
+                      );
+                    })}
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </ScrollArea>

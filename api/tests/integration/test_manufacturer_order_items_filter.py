@@ -161,16 +161,18 @@ async def test_orders_with_items(
             }
         )
 
-        # 受注明細を作成
+        # 受注明細を作成（statusはOrder.statusと同期）
+        # shipped の場合は OrderItem.status は delivered として扱う（OrderItemStatusには shipped がないため）
+        item_status = "delivered" if status == "shipped" else status
         await db_session.execute(
             text("""
                 INSERT INTO order_items (
                     id, order_id, uid, product_id, product_name, product_type,
-                    price, quantity, created_at, updated_at
+                    price, quantity, status, created_at, updated_at
                 )
                 VALUES (
                     :id, :order_id, :uid, :product_id, :product_name, :product_type,
-                    :price, :quantity, NOW(), NOW()
+                    :price, :quantity, :status, NOW(), NOW()
                 )
             """),
             {
@@ -182,6 +184,7 @@ async def test_orders_with_items(
                 "product_type": "tshirt",
                 "price": 1000,
                 "quantity": 1,
+                "status": item_status,
             }
         )
 
@@ -218,11 +221,14 @@ class TestManufacturerOrderItemsAPI:
         auth_headers: dict,
         test_orders_with_items: dict,
     ):
-        """AC-007/AC-015: デフォルトでは全ステータス（shipped除く）が返される
+        """AC-007/AC-015: デフォルトでは全OrderItemステータス（ordered/manufacturing/delivered）が返される
 
         given: 複数のステータスの明細が存在する
         when: パラメータなしで GET /manufacturers/{id}/order-items を呼び出す
-        then: ordered, manufacturing, delivered の明細が全て返される（shippedは除く）
+        then: ordered, manufacturing, delivered の明細が全て返される
+
+        Note: OrderItem.statusには shipped がないため、shipped の Order に紐づく OrderItem も
+        delivered ステータスとして含まれる（全7件）
         """
         manufacturer_id = test_orders_with_items["manufacturer_id"]
 
@@ -234,10 +240,10 @@ class TestManufacturerOrderItemsAPI:
         assert response.status_code == 200
         data = response.json()
 
-        # shipped 以外の6件が返されることを確認
-        assert data["total"] == 6
+        # 全7件が返される（OrderItem.statusでフィルタするため全て含まれる）
+        assert data["total"] == 7
 
-        # shipped のアイテムが含まれていないことを確認
+        # OrderItem には shipped ステータスがないことを確認
         statuses = [item["status"] for item in data["items"]]
         assert "shipped" not in statuses
 
@@ -316,6 +322,9 @@ class TestManufacturerOrderItemsAPI:
         given: 複数のステータスの明細が存在する
         when: status=delivered でAPIを呼び出す
         then: 納入済み(delivered)の明細のみが返される
+
+        Note: shipped の Order に紐づく OrderItem も delivered ステータスを持つため、
+        2件が返される（1件は元々 delivered、1件は shipped Order に紐づく）
         """
         manufacturer_id = test_orders_with_items["manufacturer_id"]
 
@@ -328,9 +337,10 @@ class TestManufacturerOrderItemsAPI:
         assert response.status_code == 200
         data = response.json()
 
-        # delivered ステータスの1件のみ返されることを確認
-        assert data["total"] == 1
-        assert data["items"][0]["status"] == "delivered"
+        # delivered ステータスの2件が返されることを確認
+        assert data["total"] == 2
+        for item in data["items"]:
+            assert item["status"] == "delivered"
 
     @pytest.mark.asyncio
     async def test_api_search_by_order_number(
@@ -544,11 +554,14 @@ class TestManufacturerOrderItemsAPI:
         auth_headers: dict,
         test_orders_with_items: dict,
     ):
-        """shipped ステータスのアイテムはデフォルトでは除外される
+        """OrderItem.status には shipped がないことを確認
 
-        given: shipped ステータスを含む複数のステータスの明細が存在する
+        given: Order.status が shipped のアイテムを含む複数のステータスの明細が存在する
         when: パラメータなしでAPIを呼び出す
-        then: shipped のアイテムは含まれない
+        then: 全てのアイテムの status は shipped でない（OrderItem.status に shipped は存在しない）
+
+        Note: shipped Order に紐づく OrderItem は delivered ステータスを持つため、
+        「トートバッグ」は含まれるが、そのステータスは delivered
         """
         manufacturer_id = test_orders_with_items["manufacturer_id"]
 
@@ -560,10 +573,12 @@ class TestManufacturerOrderItemsAPI:
         assert response.status_code == 200
         data = response.json()
 
-        # shipped の「トートバッグ」が含まれていないことを確認
-        product_names = [item["product_name"] for item in data["items"]]
-        assert "トートバッグ" not in product_names
-
-        # 全てのアイテムが shipped でないことを確認
+        # 全てのアイテムの item.status が shipped でないことを確認
+        # （OrderItem.status には shipped がないため）
         for item in data["items"]:
             assert item["status"] != "shipped"
+            assert item["status"] in ["ordered", "manufacturing", "delivered"]
+
+        # トートバッグは含まれる（shipped Order に紐づくが、OrderItem.status は delivered）
+        product_names = [item["product_name"] for item in data["items"]]
+        assert "トートバッグ" in product_names

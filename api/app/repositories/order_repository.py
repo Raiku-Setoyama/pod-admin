@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.order import Order, OrderItem, OrderStatus
+from app.models.order import Order, OrderItem, OrderItemStatus, OrderStatus
 from app.models.product import ProductType
 
 
@@ -200,7 +200,7 @@ class OrderRepository:
     async def get_ordered_items_summary_by_manufacturer(
         self,
     ) -> list[dict]:
-        """メーカー別のORDERED受注明細サマリーを取得"""
+        """メーカー別のORDERED受注明細サマリーを取得（OrderItem.statusベース）"""
         from app.models.product import Product
         from app.models.manufacturer import Manufacturer
 
@@ -220,11 +220,11 @@ class OrderRepository:
             .join(Product, Product.manufacturer_id == Manufacturer.id)
             .join(OrderItem, OrderItem.product_id == Product.id)
             .join(Order, Order.id == OrderItem.order_id)
-            .where(Order.status == OrderStatus.ORDERED.value)
+            .where(OrderItem.status == OrderItemStatus.ORDERED.value)  # OrderItem.statusでフィルタ
             .where(Manufacturer.is_active == True)
             .group_by(Manufacturer.id)
             .having(func.count(OrderItem.id) > 0)
-            .order_by(Manufacturer.name)
+            .order_by(func.max(Order.ordered_at).desc())
         )
 
         result = await self._db.execute(query)
@@ -243,14 +243,14 @@ class OrderRepository:
 
         Args:
             manufacturer_id: メーカーID
-            status: ステータスフィルター（None の場合は shipped 以外の全て）
+            status: ステータスフィルター（OrderItem.statusでフィルタ、None の場合は全て）
             ordered_from: 発注日From
             ordered_to: 発注日To
             product_type: 商品タイプ
             search: キーワード検索（注文番号・製品番号・商品名）
 
         Returns:
-            受注明細のタプルリスト（OrderItem, order_number, ordered_at, customer_name, cost, status）
+            受注明細のタプルリスト（OrderItem, order_number, ordered_at, customer_name, cost, item_status, order_status）
         """
         from app.models.product import Product
 
@@ -261,19 +261,17 @@ class OrderRepository:
                 Order.ordered_at,
                 Order.customer_name,
                 Product.cost,
-                Order.status,
+                OrderItem.status,  # item_status
+                Order.status,  # order_status（後方互換性のため）
             )
             .join(Order, OrderItem.order_id == Order.id)
             .join(Product, OrderItem.product_id == Product.id)
             .where(Product.manufacturer_id == manufacturer_id)
         )
 
-        # ステータスフィルター
+        # ステータスフィルター（OrderItem.statusでフィルタ）
         if status:
-            query = query.where(Order.status == status)
-        else:
-            # デフォルトは shipped 以外の全ステータス
-            query = query.where(Order.status != OrderStatus.SHIPPED.value)
+            query = query.where(OrderItem.status == status)
 
         if ordered_from:
             query = query.where(func.date(Order.ordered_at) >= ordered_from)
@@ -375,49 +373,131 @@ class OrderRepository:
         result = await self._db.execute(query)
         return result.all()
 
-    async def update_status_by_manufacturer(
+    async def update_item_status_by_manufacturer(
         self,
         manufacturer_id: str,
-        new_status: OrderStatus,
+        new_status: OrderItemStatus,
         order_item_ids: list[str] | None = None,
-    ) -> list[Order]:
-        """メーカーの受注ステータスを一括更新
+    ) -> tuple[list[OrderItem], set[str]]:
+        """メーカーの受注明細ステータスをOrderItem単位で更新
 
-        指定されたメーカーに紐づくORDEREDステータスの受注を一括更新。
+        指定されたメーカーに紐づくOrderItemのステータスを更新。
+        発注中・製造中・納入済みの全ステータス間で遷移可能。
+        （同じステータスへの更新はスキップ）
 
         Args:
             manufacturer_id: メーカーID
-            new_status: 新しいステータス
+            new_status: 新しいステータス（ordered, manufacturing, delivered）
             order_item_ids: 更新対象のOrderItem ID（指定がなければ全て）
 
         Returns:
-            更新されたOrderのリスト
+            tuple[list[OrderItem], set[str]]: (更新されたOrderItemリスト, 影響を受けたorder_idのセット)
         """
         from app.models.product import Product
 
-        # 対象のOrderItemに紐づくorder_idを取得
+        # 更新可能な元ステータス（新ステータスと同じものは除外）
+        all_updatable_statuses = [
+            OrderItemStatus.ORDERED.value,
+            OrderItemStatus.MANUFACTURING.value,
+            OrderItemStatus.DELIVERED.value,
+        ]
+        valid_from_statuses = [s for s in all_updatable_statuses if s != new_status.value]
+
+        # 対象のOrderItemを取得
         query = (
-            select(OrderItem.order_id)
-            .distinct()
-            .join(Order, OrderItem.order_id == Order.id)
+            select(OrderItem)
             .join(Product, OrderItem.product_id == Product.id)
             .where(Product.manufacturer_id == manufacturer_id)
-            .where(Order.status == OrderStatus.ORDERED.value)
+            .where(OrderItem.status.in_(valid_from_statuses))
         )
 
         if order_item_ids:
             query = query.where(OrderItem.id.in_(order_item_ids))
 
         result = await self._db.execute(query)
-        order_ids = [row[0] for row in result.all()]
+        items = list(result.scalars().all())
 
-        # Orderのステータスを更新
-        updated_orders: list[Order] = []
-        for order_id in order_ids:
-            order = await self.find_by_id(order_id)
-            if order:
-                order.status = new_status.value
-                await self._db.flush()
-                updated_orders.append(order)
+        # OrderItemのステータスを更新
+        affected_order_ids: set[str] = set()
+        for item in items:
+            item.status = new_status.value
+            affected_order_ids.add(item.order_id)
 
-        return updated_orders
+        await self._db.flush()
+
+        return items, affected_order_ids
+
+    async def check_all_items_delivered(self, order_id: str) -> bool:
+        """指定されたOrderの全OrderItemがdeliveredかどうかを確認
+
+        Args:
+            order_id: 注文ID
+
+        Returns:
+            bool: 全てのOrderItemがdeliveredならTrue
+        """
+        # deliveredでないOrderItemが1件でもあればFalse
+        query = (
+            select(func.count(OrderItem.id))
+            .where(OrderItem.order_id == order_id)
+            .where(OrderItem.status != OrderItemStatus.DELIVERED.value)
+        )
+        result = await self._db.execute(query)
+        non_delivered_count = result.scalar() or 0
+
+        return non_delivered_count == 0
+
+    def derive_order_status(self, order: Order) -> str:
+        """OrderItemのステータスからOrder.statusを導出
+
+        導出ルール:
+        - "shipped": Shipmentが存在し、shipped状態（この関数では判定しない、サービス層で処理）
+        - "delivered": 全OrderItemが "delivered"
+        - "manufacturing": 1つ以上のOrderItemが "manufacturing"
+        - "ordered": それ以外
+
+        Args:
+            order: Orderオブジェクト（itemsがロード済みであること）
+
+        Returns:
+            str: 導出されたステータス
+        """
+        if not order.items:
+            return OrderStatus.ORDERED.value
+
+        statuses = [item.status for item in order.items]
+
+        # 全てdeliveredなら"delivered"
+        if all(s == OrderItemStatus.DELIVERED.value for s in statuses):
+            return OrderStatus.DELIVERED.value
+
+        # 1つでもmanufacturingがあれば"manufacturing"
+        if any(s == OrderItemStatus.MANUFACTURING.value for s in statuses):
+            return OrderStatus.MANUFACTURING.value
+
+        # それ以外は"ordered"
+        return OrderStatus.ORDERED.value
+
+    async def update_order_derived_status(self, order_id: str) -> Order | None:
+        """Orderのステータスを配下のOrderItemから導出して更新
+
+        Args:
+            order_id: 注文ID
+
+        Returns:
+            更新されたOrderオブジェクト
+        """
+        order = await self.find_by_id(order_id)
+        if not order:
+            return None
+
+        # shippedの場合は変更しない
+        if order.status == OrderStatus.SHIPPED.value:
+            return order
+
+        new_status = self.derive_order_status(order)
+        if order.status != new_status:
+            order.status = new_status
+            await self._db.flush()
+
+        return order

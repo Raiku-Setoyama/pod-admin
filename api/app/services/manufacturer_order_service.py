@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from app.models.order import Order, OrderStatus
+from app.models.order import Order, OrderItemStatus, OrderStatus
 from app.repositories.order_repository import OrderRepository
 from app.repositories.manufacturer_repository import ManufacturerRepository
 from app.repositories.shipment_repository import ShipmentRepository
@@ -109,7 +109,7 @@ class ManufacturerOrderService:
         total_quantity = 0
         total_amount = 0
 
-        for order_item, order_number, ordered_at, customer_name, cost, order_status in rows:
+        for order_item, order_number, ordered_at, customer_name, cost, item_status, order_status in rows:
             items.append(
                 ManufacturerOrderItemResponse(
                     id=order_item.id,
@@ -128,7 +128,8 @@ class ManufacturerOrderService:
                     thumbnail_image_url=order_item.thumbnail_image_url,
                     ordered_at=ordered_at,
                     customer_name=customer_name,
-                    status=order_status,
+                    status=item_status,  # OrderItem.statusを使用
+                    item_status=item_status,  # 新フィールド
                 )
             )
             total_quantity += order_item.quantity
@@ -213,44 +214,61 @@ class ManufacturerOrderService:
         self,
         manufacturer_id: str,
         data: ManufacturerOrderStatusUpdate,
-    ) -> int:
-        """メーカーの受注ステータスを一括更新
+    ) -> tuple[int, int]:
+        """メーカーの受注ステータスを一括更新（OrderItem単位）
 
-        delivered ステータスへの更新時は、各受注に対してShipmentを自動作成します。
+        OrderItemのステータスを更新し、Order.statusを導出して更新します。
+        全OrderItemがdeliveredになった場合のみShipmentを自動作成します。
         Shipment作成に失敗した場合、トランザクション全体がロールバックされます。
+
+        Returns:
+            tuple[int, int]: (更新されたOrderItem数, 作成されたShipment数)
         """
         manufacturer = await self._manufacturer_repo.find_by_id(manufacturer_id)
         if not manufacturer:
             raise NotFoundError("Manufacturer", manufacturer_id)
 
-        # Convert string status to OrderStatus enum
-        new_status = OrderStatus(data.status)
+        # Convert string status to OrderItemStatus enum
+        new_status = OrderItemStatus(data.status)
 
-        updated_orders = await self._order_repo.update_status_by_manufacturer(
+        # OrderItem単位でステータス更新
+        updated_items, affected_order_ids = await self._order_repo.update_item_status_by_manufacturer(
             manufacturer_id=manufacturer_id,
             new_status=new_status,
             order_item_ids=data.order_item_ids,
         )
 
-        # delivered になった場合は Shipment を自動作成
-        if new_status == OrderStatus.DELIVERED:
-            for order in updated_orders:
-                await self._create_shipment_for_order(order)
+        # 影響を受けた各Orderのステータスを導出して更新
+        shipments_created = 0
+        for order_id in affected_order_ids:
+            order = await self._order_repo.update_order_derived_status(order_id)
 
-        return len(updated_orders)
+            # 全OrderItemがdeliveredになった場合のみShipmentを作成
+            if order and new_status == OrderItemStatus.DELIVERED:
+                all_delivered = await self._order_repo.check_all_items_delivered(order_id)
+                if all_delivered:
+                    created = await self._create_shipment_for_order(order)
+                    if created:
+                        shipments_created += 1
 
-    async def _create_shipment_for_order(self, order: Order) -> None:
+        return len(updated_items), shipments_created
+
+    async def _create_shipment_for_order(self, order: Order) -> bool:
         """Create a shipment for the delivered order.
 
         This method is idempotent - if a shipment already exists for the order,
         it will not create a duplicate.
+
+        Returns:
+            bool: True if a shipment was created, False if it already existed
         """
         # Check if shipment already exists (prevent duplicates)
         if await self._shipment_repo.exists_for_order(order.id):
-            return
+            return False
 
         # Customer info is now accessed via shipment.first_order relationship
         await self._shipment_repo.create(order_ids=[order.id])
+        return True
 
     # Product type -> manufacturing data extension mapping
     _MANUFACTURING_EXT: dict[str, str] = {
@@ -268,11 +286,14 @@ class ManufacturerOrderService:
         ordered_to: date | None = None,
         product_type: str | None = None,
         order_item_ids: list[str] | None = None,
+        status: str | None = None,
+        update_status: bool = True,
     ) -> tuple[bytes, str]:
         """発注資料ZIPを生成
 
-        ダウンロード対象は「発注中（ORDERED）」ステータスの明細のみ。
-        ZIP生成成功後、対象明細のステータスを「製造中（MANUFACTURING）」に更新する。
+        全ステータスの明細をダウンロード可能。
+        update_status=True かつメーカーポータルからの呼び出しの場合、
+        「発注中（ORDERED）」ステータスの明細のみ「製造中（MANUFACTURING）」に更新する。
 
         FEAT-0012 命名規則:
         - ZIP名: {type_folder_name}.zip
@@ -290,42 +311,47 @@ class ManufacturerOrderService:
             ordered_to: 発注日To（オプション）
             product_type: 商品種類フィルタ（オプション）
             order_item_ids: 対象のOrderItem ID（オプション、指定がなければ全て）
+            status: ステータスフィルタ（オプション、指定がなければ全ステータス）
+            update_status: ステータスを更新するかどうか（メーカーポータル=True、管理者=False）
 
         Returns:
             tuple[bytes, str]: (ZIPファイルのバイト列, ファイル名)
 
         Raises:
             NotFoundError: メーカーが存在しない場合
-            NoOrderedItemsError: 発注中の明細が0件の場合
+            NoOrderedItemsError: ダウンロード対象の明細が0件の場合
         """
         manufacturer = await self._manufacturer_repo.find_by_id(manufacturer_id)
         if not manufacturer:
             raise NotFoundError("Manufacturer", manufacturer_id)
 
-        # 「発注中」ステータスの明細のみを取得
+        # 指定されたステータス（または全ステータス）の明細を取得
         rows = await self._order_repo.find_ordered_items_by_manufacturer_detail(
             manufacturer_id,
             ordered_from=ordered_from,
             ordered_to=ordered_to,
             product_type=product_type,
-            status=OrderStatus.ORDERED.value,
+            status=status,
         )
 
         # order_item_idsが指定された場合、そのIDのみにフィルタリング
         if order_item_ids:
             rows = [row for row in rows if row[0].id in order_item_ids]
 
-        # 発注中の明細が0件の場合はエラー
+        # ダウンロード対象の明細が0件の場合はエラー
         if not rows:
             raise NoOrderedItemsError()
 
-        # ZIP生成対象のorder_item_idsを記録
-        target_order_item_ids = [row[0].id for row in rows]
+        # 発注中ステータスのorder_item_idsを記録（ステータス更新対象）
+        # row[5]はitem_status
+        ordered_item_ids = [
+            row[0].id for row in rows if row[5] == OrderItemStatus.ORDERED.value
+        ]
 
         # グループキー別にアイテムを整理
         # Tシャツは (product_type, position) でグループ、他は (product_type,) でグループ
         items_by_group: dict[tuple, list[dict]] = {}
-        for order_item, order_number, ordered_at, customer_name, cost, order_status in rows:
+        for order_item, order_number, ordered_at, customer_name, cost, item_status, order_status in rows:
             item_product_type = order_item.product_type
             if item_product_type == "tshirt":
                 group_key = (item_product_type, order_item.position or "")
@@ -434,12 +460,16 @@ class ManufacturerOrderService:
         # ZIP生成
         zip_bytes = zip_builder.build()
 
-        # ZIP生成成功後、対象明細のステータスを「製造中」に更新
-        await self._order_repo.update_status_by_manufacturer(
-            manufacturer_id=manufacturer_id,
-            new_status=OrderStatus.MANUFACTURING,
-            order_item_ids=target_order_item_ids,
-        )
+        # メーカーポータルからのダウンロード時のみ、発注中の明細を「製造中」に更新
+        if update_status and ordered_item_ids:
+            _, affected_order_ids = await self._order_repo.update_item_status_by_manufacturer(
+                manufacturer_id=manufacturer_id,
+                new_status=OrderItemStatus.MANUFACTURING,
+                order_item_ids=ordered_item_ids,
+            )
+            # 影響を受けた各Orderのステータスを導出して更新
+            for order_id in affected_order_ids:
+                await self._order_repo.update_order_derived_status(order_id)
 
         # ZIP名: 単一タイプの場合はそのタイプフォルダ名、複数の場合は最初のタイプフォルダ名
         zip_name = f"{type_folder_names[0]}.zip"

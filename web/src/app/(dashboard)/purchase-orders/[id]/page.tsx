@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { format } from "date-fns";
+import { DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { PageContainer } from "@/components/layout/page-container";
@@ -35,6 +37,7 @@ export default function PurchaseOrderDetailPage() {
   // フィルター状態（新しい形式）
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<OrderStatus | null>(null);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
   // デバウンスされた検索値（300ms）
   const debouncedSearch = useDebounce(search, 300);
@@ -44,12 +47,15 @@ export default function PurchaseOrderDetailPage() {
     {
       search: debouncedSearch || undefined,
       status,
+      ordered_from: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
+      ordered_to: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
     }
   );
 
   const handleFilterReset = () => {
     setSearch("");
     setStatus(null);
+    setDateRange(undefined);
   };
 
   // 初回ロード時のみ全画面ローディングを表示（dataがない場合）
@@ -102,8 +108,10 @@ export default function PurchaseOrderDetailPage() {
         onStatusUpdate={() => mutate()}
         search={search}
         status={status}
+        dateRange={dateRange}
         onSearchChange={setSearch}
         onStatusChange={setStatus}
+        onDateRangeChange={setDateRange}
         onFilterReset={handleFilterReset}
       />
     </PageContainer>

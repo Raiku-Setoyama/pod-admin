@@ -23,6 +23,14 @@ class OrderStatus(str, Enum):
     SHIPPED = "shipped"  # 発送完了（最終ステータス）
 
 
+class OrderItemStatus(str, Enum):
+    """OrderItem status - 製品単位のステータス."""
+
+    ORDERED = "ordered"  # 発注済み（初期ステータス）
+    MANUFACTURING = "manufacturing"  # 製造中
+    DELIVERED = "delivered"  # 納入済み
+
+
 class TshirtSize(str, Enum):
     """Tシャツサイズ."""
 
@@ -171,6 +179,11 @@ class OrderItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # 製造種類（リクエストから直接設定）
     product_type: Mapped[str] = mapped_column(String(50), index=True)
 
+    # 製品単位のステータス
+    status: Mapped[str] = mapped_column(
+        String(20), default=OrderItemStatus.ORDERED.value, index=True
+    )
+
     price: Mapped[int] = mapped_column(Integer)
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     size: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -184,4 +197,4 @@ class OrderItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     product: Mapped["Product"] = relationship()  # 商品マスタへの参照
 
     def __repr__(self) -> str:
-        return f"<OrderItem(id={self.id}, product_name={self.product_name}, quantity={self.quantity})>"
+        return f"<OrderItem(id={self.id}, product_name={self.product_name}, quantity={self.quantity}, status={self.status})>"

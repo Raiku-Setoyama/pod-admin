@@ -67,7 +67,7 @@ export function LoginForm() {
           <Package className="h-6 w-6 text-primary-foreground" />
         </div>
         <div>
-          <h1 className="text-xl font-bold">グッズ管理</h1>
+          <h1 className="text-xl font-bold">TOSYO</h1>
           <p className="text-sm text-muted-foreground">
             管理画面にログインしてください
           </p>

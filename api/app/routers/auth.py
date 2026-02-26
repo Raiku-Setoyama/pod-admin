@@ -40,10 +40,12 @@ async def get_me(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> UserResponse:
     """Get current user information."""
+    # role may be a string (from DB) or UserRole enum
+    role_value = current_user.role.value if hasattr(current_user.role, 'value') else current_user.role
     return UserResponse(
         id=current_user.id,
         email=current_user.email,
         name=current_user.name,
-        role=current_user.role.value,
+        role=role_value,
         is_active=current_user.is_active,
     )

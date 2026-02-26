@@ -22,7 +22,7 @@ class ChatAttachmentResponse(BaseModel):
 class ChatMessageCreate(BaseModel):
     """Chat message creation schema."""
 
-    content: str = Field(..., min_length=1, max_length=5000)
+    content: str = Field("", min_length=0, max_length=5000)
 
 
 class ChatMessageResponse(BaseModel):

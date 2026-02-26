@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { apiClient } from "@/lib/api/client";
+import { getOrderStatusUpdateOptions } from "@/constants/status";
 
 // 一括更新可能なステータス（shippedは除外）
 type BulkUpdateStatus = "ordered" | "manufacturing" | "delivered";
@@ -29,6 +30,8 @@ interface OrderBulkStatusUpdateDialogProps {
   onClose: () => void;
   onSuccess: () => void;
 }
+
+const statusOptions = getOrderStatusUpdateOptions();
 
 export function OrderBulkStatusUpdateDialog({
   selectedIds,
@@ -88,9 +91,11 @@ export function OrderBulkStatusUpdateDialog({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ordered">受注済み</SelectItem>
-              <SelectItem value="manufacturing">製造中</SelectItem>
-              <SelectItem value="delivered">配送準備完了</SelectItem>
+              {statusOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

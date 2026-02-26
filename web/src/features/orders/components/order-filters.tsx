@@ -1,6 +1,7 @@
 "use client";
 
 import { Search } from "lucide-react";
+import { DateRange } from "react-day-picker";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -9,36 +10,35 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { DateRangePicker } from "@/components/common/date-range-picker";
+import { getOrderFilterStatusOptions } from "@/constants/status";
 import type { OrderStatus, ShipmentStatus } from "@/types/api";
 
 // 表示用ステータス（Shipmentステータスを含む）
 type DisplayStatus = OrderStatus | ShipmentStatus;
 
-const statusOptions: { value: DisplayStatus | "all"; label: string }[] = [
-  { value: "all", label: "全てのステータス" },
-  { value: "ordered", label: "発注中" },
-  { value: "manufacturing", label: "製造中" },
-  { value: "pending", label: "配送準備中" },
-  { value: "ready", label: "準備完了" },
-  { value: "shipped", label: "発送完了" },
-];
+const statusOptions = getOrderFilterStatusOptions();
 
 interface OrderFiltersProps {
   search: string;
   status: DisplayStatus | null;
+  dateRange?: DateRange;
   onSearchChange: (value: string) => void;
   onStatusChange: (value: DisplayStatus | null) => void;
+  onDateRangeChange?: (range: DateRange | undefined) => void;
 }
 
 export function OrderFilters({
   search,
   status,
+  dateRange,
   onSearchChange,
   onStatusChange,
+  onDateRangeChange,
 }: OrderFiltersProps) {
   return (
-    <div className="flex items-center gap-4">
-      <div className="relative flex-1 max-w-sm">
+    <div className="flex flex-wrap items-center gap-4">
+      <div className="relative flex-1 min-w-[200px] max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder="注文番号、購入者名で検索..."
@@ -65,6 +65,14 @@ export function OrderFilters({
           ))}
         </SelectContent>
       </Select>
+
+      {onDateRangeChange && (
+        <DateRangePicker
+          value={dateRange}
+          onChange={onDateRangeChange}
+          placeholder="受注日"
+        />
+      )}
     </div>
   );
 }
