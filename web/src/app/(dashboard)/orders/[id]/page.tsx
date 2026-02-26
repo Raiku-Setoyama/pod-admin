@@ -48,7 +48,7 @@ export default function OrderDetailPage() {
   return (
     <PageContainer
       title={`受注詳細: ${order.order_number}`}
-      description={`${order.product_name} - ${order.customer_name}`}
+      description={`${order.source ?? '不明'} - ${order.customer_name}`}
       actions={
         <Button variant="outline" onClick={() => router.push("/orders")}>
           <ArrowLeft className="h-4 w-4 mr-2" />
