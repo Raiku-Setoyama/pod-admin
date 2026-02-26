@@ -18,6 +18,7 @@ from app.schemas.shipment import (
     ShipmentListResponse,
     ShipmentResponse,
     ShipmentStatusUpdate,
+    TrackingFileImportResult,
     TrackingImportRequest,
 )
 from app.services.shipment_service import ShipmentService
@@ -92,6 +93,39 @@ async def export_shipments_csv(
         UTF-8 BOM付きCSVファイル
     """
     csv_bytes, filename = await service.export_csv(data.shipment_ids)
+
+    encoded_filename = quote(filename)
+
+    return StreamingResponse(
+        iter([csv_bytes]),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
+        },
+    )
+
+
+@router.post("/import", response_model=TrackingFileImportResult)
+async def import_tracking_from_file(
+    service: Annotated[ShipmentService, Depends(get_shipment_service)],
+    current_user: Annotated[User, Depends(get_current_admin)],
+    file: UploadFile = File(...),
+) -> TrackingFileImportResult:
+    """CSV/XLSXファイルから伝票番号を一括インポート.
+
+    注文番号・伝票番号・運送会社名を含むCSV/XLSXファイルをアップロードし、
+    対応する配送レコードの伝票番号・運送会社を一括更新します。
+    """
+    return await service.import_tracking_from_file(file)
+
+
+@router.get("/import-template")
+async def download_import_template(
+    service: Annotated[ShipmentService, Depends(get_shipment_service)],
+    current_user: Annotated[User, Depends(get_current_admin)],
+) -> StreamingResponse:
+    """伝票番号インポート用のサンプルCSVテンプレートをダウンロード."""
+    csv_bytes, filename = await service.generate_import_template()
 
     encoded_filename = quote(filename)
 
