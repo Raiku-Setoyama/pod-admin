@@ -1,0 +1,148 @@
+id: FEAT-0021
+summary: 管理者が配送詳細ページで商品単位（OrderItem単位）の情報（注文番号・商品名・数量・サムネイル画像）を確認・ダウンロードできる
+
+background:
+  why: |
+    現在の配送詳細ページ「含まれる注文」セクションは注文単位で表示しており、
+    1つの注文に複数の OrderItem がある場合は商品名をカンマ区切りで結合して表示している。
+    運用上、商品単位で数量やサムネイル画像を確認したいニーズがあるため、
+    OrderItem 単位で行を展開し、数量・画像も表示できるように変更する。
+  who: 管理者（admin / staff）
+  when: 配送詳細ページ（/shipments/{id}）で配送に含まれる商品を確認する場面
+
+scope:
+  includes:
+    - セクション名を「含まれる注文 (N件)」から「含まれる商品 (N件)」に変更
+    - バックエンド ShipmentItemResponse に quantity, thumbnail_image_url フィールドを追加
+    - バックエンド _to_response メソッドを修正し、1注文 → 複数 ShipmentItemResponse（OrderItem 単位）に展開
+    - フロントエンド ShipmentItem 型に quantity, thumbnail_image_url を追加
+    - フロントエンド shipment-detail.tsx のテーブルに「数量」「画像」カラムを追加
+    - サムネイル画像のプレビュー表示とダウンロードボタン
+  excludes:
+    - ステータス更新ダイアログの変更（既存のまま）
+    - 配送一覧ページの変更（影響なし）
+    - 画像のリサイズ・加工処理（thumbnail_image_url をそのまま利用）
+    - E2Eテスト（明示的な依頼なし）
+  prerequisites:
+    - OrderItem モデルに quantity, thumbnail_image_url フィールドが既に存在する
+    - Shipment → ShipmentItem → Order → OrderItem のリレーションが既に存在する
+
+input_output:
+  inputs:
+    - name: shipment_id
+      type: string (UUID)
+      required: true
+      validation: 既存の配送IDであること
+  outputs:
+    - name: ShipmentResponse.items
+      type: list[ShipmentItemResponse]
+      description: |
+        OrderItem 単位で展開された商品リスト。
+        各要素に id, order_id, order_number, product_name, quantity, thumbnail_image_url を含む。
+        N件の件数は OrderItem の合計数。
+  state_changes:
+    - DBスキーマ変更なし（既存フィールドを利用するのみ）
+
+acceptance_criteria:
+  # バックエンド
+  - id: AC-001
+    description: ShipmentItemResponse に quantity フィールドが含まれる
+    test_type: unit
+    given: ShipmentItemResponse スキーマが定義されている
+    when: quantity を指定してインスタンスを生成する
+    then: quantity フィールドが正しく設定される（int | None）
+
+  - id: AC-002
+    description: ShipmentItemResponse に thumbnail_image_url フィールドが含まれる
+    test_type: unit
+    given: ShipmentItemResponse スキーマが定義されている
+    when: thumbnail_image_url を指定してインスタンスを生成する
+    then: thumbnail_image_url フィールドが正しく設定される（str | None）
+
+  - id: AC-003
+    description: 1注文に複数 OrderItem がある場合、OrderItem 単位で ShipmentItemResponse が生成される
+    test_type: unit
+    given: 1つの注文に 3つの OrderItem（商品A:数量2, 商品B:数量1, 商品C:数量3）が紐づく配送がある
+    when: _to_response メソッドで ShipmentResponse を生成する
+    then: items に 3つの ShipmentItemResponse が含まれ、各 product_name, quantity, thumbnail_image_url が正しい
+
+  - id: AC-004
+    description: 1注文に OrderItem が0件の場合でもエラーにならない
+    test_type: unit
+    given: 注文に OrderItem が紐づいていない配送がある
+    when: _to_response メソッドで ShipmentResponse を生成する
+    then: items は空リストまたは product_name=None の1件（フォールバック動作）
+
+  - id: AC-005
+    description: 複数注文が含まれる配送で、各注文の OrderItem が正しく展開される
+    test_type: unit
+    given: 2つの注文（注文A: OrderItem 2件、注文B: OrderItem 1件）が含まれる配送がある
+    when: _to_response メソッドで ShipmentResponse を生成する
+    then: items に 3つの ShipmentItemResponse が含まれ、各 order_number が正しい注文に紐づく
+
+  - id: AC-006
+    description: GET /shipments/{id} API が quantity と thumbnail_image_url を含むレスポンスを返す
+    test_type: integration
+    given: OrderItem（quantity=5, thumbnail_image_url="https://example.com/thumb.jpg"）を含む配送が存在する
+    when: GET /shipments/{id} を呼び出す
+    then: レスポンスの items 内に quantity=5, thumbnail_image_url="https://example.com/thumb.jpg" が含まれる
+
+  # フロントエンド
+  - id: AC-007
+    description: セクション名が「含まれる商品 (N件)」と表示される
+    test_type: unit
+    given: 配送詳細コンポーネントに items が3件ある shipment データを渡す
+    when: コンポーネントをレンダリングする
+    then: 「含まれる商品 (3件)」というテキストが表示される
+
+  - id: AC-008
+    description: テーブルに「数量」「画像」ヘッダーが表示される
+    test_type: unit
+    given: 配送詳細コンポーネントをレンダリングする
+    when: 含まれる商品テーブルを確認する
+    then: 「注文番号」「商品名」「数量」「画像」のヘッダーが存在する
+
+  - id: AC-009
+    description: 各行に数量が表示される
+    test_type: unit
+    given: quantity=3 の ShipmentItem を含む shipment データを渡す
+    when: コンポーネントをレンダリングする
+    then: テーブル行に「3」が表示される
+
+  - id: AC-010
+    description: thumbnail_image_url がある場合にサムネイル画像とダウンロードボタンが表示される
+    test_type: unit
+    given: thumbnail_image_url="https://example.com/thumb.jpg" の ShipmentItem を含む shipment データを渡す
+    when: コンポーネントをレンダリングする
+    then: img 要素（サムネイル）とダウンロードリンク/ボタンが表示される
+
+  - id: AC-011
+    description: thumbnail_image_url が null の場合は画像セルに「-」が表示される
+    test_type: unit
+    given: thumbnail_image_url=null の ShipmentItem を含む shipment データを渡す
+    when: コンポーネントをレンダリングする
+    then: 画像セルに「-」が表示される
+
+constraints:
+  performance:
+    - 配送詳細APIのレスポンス時間は既存と同等（500ms以内）
+  security:
+    - 認証済みユーザーのみアクセス可能（既存の認証ミドルウェアを利用）
+    - thumbnail_image_url は外部URLのため、img タグに適切な属性（alt等）を設定する
+  compatibility:
+    - 既存の配送一覧ページや他のAPIに影響を与えない
+    - ShipmentItemResponse の既存フィールド（id, order_id, order_number, product_name）は維持する
+
+assumptions:
+  - OrderItem に thumbnail_image_url が設定されている商品とされていない商品が混在する（null許容で対応）
+  - ダウンロードは thumbnail_image_url への直接リンク（<a href download>）で実現する。CORS制限がある場合はフロントエンドで fetch + Blob ダウンロードにフォールバックする想定だが、初期実装は直接リンク方式とする
+  - ShipmentItemResponse の id は引き続き shipment_item.id を使用する（同じ shipment_item から複数の ShipmentItemResponse が生成されるため、id の一意性には OrderItem の id を付与するか検討が必要。推測: `{shipment_item.id}_{order_item.id}` のような複合IDとする）
+  - quantity が null の OrderItem は存在しない想定だが、スキーマ上は null 許容とする
+  - 件数表示の N は ShipmentItemResponse の数（= OrderItem の合計数）とする
+
+success_metrics:
+  - 配送詳細ページで商品単位の情報（注文番号・商品名・数量・画像）が正しく表示される
+  - 1注文に複数 OrderItem がある場合に行が展開されて表示される
+  - サムネイル画像のプレビューとダウンロードが機能する
+  - 既存のステータス更新機能に影響がない
+  - 全テスト（ユニット・統合）がパスする

@@ -48,10 +48,17 @@ def shipment_service(mock_shipment_repo, mock_order_repo, mock_file_storage):
     )
 
 
-def create_mock_order_item(product_name: str) -> MagicMock:
+def create_mock_order_item(
+    product_name: str,
+    quantity: int = 1,
+    thumbnail_image_url: str | None = None,
+) -> MagicMock:
     """Create a mock OrderItem with the given product_name."""
     item = MagicMock(spec=OrderItem)
+    item.id = f"oi-{product_name}"
     item.product_name = product_name
+    item.quantity = quantity
+    item.thumbnail_image_url = thumbnail_image_url
     return item
 
 
@@ -163,14 +170,14 @@ class TestShipmentProductName:
     # AC-002: Multiple OrderItems -> comma-separated
     # ===========================================
 
-    def test_ac002_multiple_order_items_comma_separated(self, shipment_service):
-        """AC-002: Order に複数の OrderItem がある場合、商品名がカンマ区切りで結合される.
+    def test_ac002_multiple_order_items_expanded(self, shipment_service):
+        """AC-002: Order に複数の OrderItem がある場合、OrderItem 単位で展開される.
 
         Given: ShipmentItem に紐づく Order が複数の OrderItem
                ("商品A", "商品B") を持つ
         When: ShipmentService._to_response() で ShipmentResponse を生成する
-        Then: 該当 ShipmentItemResponse の product_name が
-              "商品A, 商品B" となる
+        Then: 2つの ShipmentItemResponse が生成され、各 product_name が正しい
+              (FEAT-0021 で OrderItem 単位展開に変更)
         """
         # Arrange
         order_item_a = create_mock_order_item("商品A")
@@ -186,9 +193,10 @@ class TestShipmentProductName:
         # Act
         response = shipment_service._to_response(shipment)
 
-        # Assert
-        assert len(response.items) == 1
-        assert response.items[0].product_name == "商品A, 商品B"
+        # Assert - FEAT-0021: OrderItem 単位で展開
+        assert len(response.items) == 2
+        assert response.items[0].product_name == "商品A"
+        assert response.items[1].product_name == "商品B"
 
     # ===========================================
     # AC-003: Order is null -> product_name is null
@@ -296,7 +304,8 @@ class TestShipmentProductName:
 
     def test_multiple_shipment_items_each_with_different_orders(self, shipment_service):
         """Multiple ShipmentItems with different orders should each resolve
-        product_name independently from their own Order's OrderItems."""
+        product_name independently from their own Order's OrderItems.
+        FEAT-0021: OrderItem 単位で展開されるため、合計3行になる。"""
         # Arrange
         order1_item = create_mock_order_item("商品X")
         order1 = create_mock_order(
@@ -325,7 +334,8 @@ class TestShipmentProductName:
         # Act
         response = shipment_service._to_response(shipment)
 
-        # Assert
-        assert len(response.items) == 2
+        # Assert - FEAT-0021: OrderItem 単位で展開 (1 + 2 = 3行)
+        assert len(response.items) == 3
         assert response.items[0].product_name == "商品X"
-        assert response.items[1].product_name == "商品Y, 商品Z"
+        assert response.items[1].product_name == "商品Y"
+        assert response.items[2].product_name == "商品Z"

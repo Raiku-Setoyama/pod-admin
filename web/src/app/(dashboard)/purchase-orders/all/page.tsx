@@ -84,7 +84,6 @@ export default function AllPurchaseOrdersPage() {
     items: [],
     total: 0,
     total_quantity: 0,
-    total_amount: 0,
   };
 
   return (
