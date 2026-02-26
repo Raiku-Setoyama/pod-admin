@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Package, Upload } from "lucide-react";
-import { apiClient } from "@/lib/api/client";
+import { apiClient, downloadFile } from "@/lib/api/client";
 import type { TrackingFileImportResult } from "@/types/api";
 
 interface TrackingImportProps {
@@ -60,7 +60,13 @@ export function TrackingImport({ onImportComplete }: TrackingImportProps) {
     }
   };
 
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+  const handleTemplateDownload = async () => {
+    try {
+      await downloadFile("/shipments/import-template", "import-template.xlsx");
+    } catch {
+      setError("テンプレートのダウンロードに失敗しました");
+    }
+  };
 
   return (
     <Card>
@@ -77,12 +83,13 @@ export function TrackingImport({ onImportComplete }: TrackingImportProps) {
       <CardContent className="space-y-4">
         {/* テンプレートダウンロード */}
         <div>
-          <a
-            href={`${apiBaseUrl}/shipments/import-template`}
+          <button
+            type="button"
+            onClick={handleTemplateDownload}
             className="text-sm text-blue-600 hover:underline"
           >
             サンプルテンプレートをダウンロード
-          </a>
+          </button>
         </div>
 
         {/* ファイル選択 */}
