@@ -26,6 +26,7 @@ from app.schemas.chat import (
 )
 from app.schemas.invoice import InvoiceItemRequest
 from app.schemas.manufacturer import (
+    AllManufacturerOrderItemListResponse,
     ManufacturerCreate,
     ManufacturerListResponse,
     ManufacturerOrderItemListResponse,
@@ -88,6 +89,40 @@ async def get_manufacturer_order_summary(
     各メーカーの発注明細数、合計数量、合計金額を集計して返します。
     """
     return await service.get_order_summary_list(page=page, limit=limit)
+
+
+@router.get("/all-order-items", response_model=AllManufacturerOrderItemListResponse)
+async def get_all_manufacturer_order_items(
+    service: Annotated[ManufacturerOrderService, Depends(get_manufacturer_order_service)],
+    current_user: Annotated[User, Depends(get_current_admin)],
+    ordered_from: date | None = None,
+    ordered_to: date | None = None,
+    product_type: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    manufacturer_id: str | None = None,
+) -> AllManufacturerOrderItemListResponse:
+    """全メーカー横断の受注明細一覧を取得
+
+    全メーカーの発注明細を横断的に一覧表示します。
+    デフォルトでは shipped 以外の全ステータスを返します。
+
+    Args:
+        ordered_from: 発注日From
+        ordered_to: 発注日To
+        product_type: 商品タイプフィルター
+        status: ステータスフィルター（ordered, manufacturing, delivered）
+        search: キーワード検索（注文番号、製品番号、商品名）
+        manufacturer_id: メーカーIDフィルター
+    """
+    return await service.get_all_order_items(
+        ordered_from=ordered_from,
+        ordered_to=ordered_to,
+        product_type=product_type,
+        status=status,
+        search=search,
+        manufacturer_id=manufacturer_id,
+    )
 
 
 @router.get("/{manufacturer_id}", response_model=ManufacturerResponse)

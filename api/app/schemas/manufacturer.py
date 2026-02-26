@@ -143,6 +143,41 @@ class ManufacturerOrderItemListResponse(BaseModel):
     total_amount: int
 
 
+class AllManufacturerOrderItemResponse(BaseModel):
+    """全メーカー横断受注明細レスポンス"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str  # OrderItem.id
+    order_id: str
+    order_number: str
+    uid: str | None
+    product_id: str
+    product_name: str
+    product_type: str
+    price: int
+    quantity: int
+    size: str | None
+    position: str | None
+    color: str | None
+    design_image_url: str | None
+    thumbnail_image_url: str | None
+    ordered_at: datetime
+    customer_name: str
+    status: str  # Order.status (ordered, manufacturing, delivered)
+    manufacturer_id: str
+    manufacturer_name: str
+
+
+class AllManufacturerOrderItemListResponse(BaseModel):
+    """全メーカー横断受注明細一覧レスポンス"""
+
+    items: list[AllManufacturerOrderItemResponse]
+    total: int
+    total_quantity: int
+    total_amount: int
+
+
 class ManufacturerOrderStatusUpdate(BaseModel):
     """メーカー別受注ステータス一括更新"""
 

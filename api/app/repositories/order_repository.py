@@ -299,6 +299,82 @@ class OrderRepository:
         result = await self._db.execute(query)
         return result.all()
 
+    async def find_all_ordered_items_detail(
+        self,
+        status: str | None = None,
+        ordered_from: date | None = None,
+        ordered_to: date | None = None,
+        product_type: str | None = None,
+        search: str | None = None,
+        manufacturer_id: str | None = None,
+    ) -> list[tuple]:
+        """全メーカー横断の受注明細を詳細情報付きで取得
+
+        Args:
+            status: ステータスフィルター（None の場合は shipped 以外の全て）
+            ordered_from: 発注日From
+            ordered_to: 発注日To
+            product_type: 商品タイプ
+            search: キーワード検索（注文番号・製品番号・商品名）
+            manufacturer_id: メーカーIDフィルター
+
+        Returns:
+            受注明細のタプルリスト（OrderItem, order_number, ordered_at, customer_name, cost, status, manufacturer_id, manufacturer_name）
+        """
+        from app.models.product import Product
+        from app.models.manufacturer import Manufacturer
+
+        query = (
+            select(
+                OrderItem,
+                Order.order_number,
+                Order.ordered_at,
+                Order.customer_name,
+                Product.cost,
+                Order.status,
+                Manufacturer.id.label("manufacturer_id"),
+                Manufacturer.name.label("manufacturer_name"),
+            )
+            .join(Order, OrderItem.order_id == Order.id)
+            .join(Product, OrderItem.product_id == Product.id)
+            .join(Manufacturer, Product.manufacturer_id == Manufacturer.id)
+        )
+
+        # ステータスフィルター
+        if status:
+            query = query.where(Order.status == status)
+        else:
+            # デフォルトは shipped 以外の全ステータス
+            query = query.where(Order.status != OrderStatus.SHIPPED.value)
+
+        # メーカーIDフィルター
+        if manufacturer_id:
+            query = query.where(Manufacturer.id == manufacturer_id)
+
+        if ordered_from:
+            query = query.where(func.date(Order.ordered_at) >= ordered_from)
+
+        if ordered_to:
+            query = query.where(func.date(Order.ordered_at) <= ordered_to)
+
+        if product_type:
+            query = query.where(OrderItem.product_type == product_type)
+
+        # キーワード検索（注文番号・製品番号・商品名）
+        if search:
+            search_pattern = f"%{search}%"
+            search_filter = (
+                Order.order_number.ilike(search_pattern)
+                | OrderItem.uid.ilike(search_pattern)
+                | OrderItem.product_name.ilike(search_pattern)
+            )
+            query = query.where(search_filter)
+
+        query = query.order_by(Order.ordered_at.desc())
+
+        result = await self._db.execute(query)
+        return result.all()
+
     async def update_status_by_manufacturer(
         self,
         manufacturer_id: str,
