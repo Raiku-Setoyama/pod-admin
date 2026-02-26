@@ -30,10 +30,6 @@ function formatDate(dateString: string): string {
   });
 }
 
-function formatPrice(price: number): string {
-  return `¥${price.toLocaleString()}`;
-}
-
 function formatProductType(type: string): string {
   const typeMap: Record<string, string> = {
     acrylic_keychain: "アクリルキーホルダー",
@@ -94,12 +90,6 @@ export function OrderDetail({ order }: OrderDetailProps) {
               <dt className="text-sm text-muted-foreground">商品数</dt>
               <dd className="font-medium">{order.items?.length || 1}種類 / {totalQuantity}点</dd>
             </div>
-            <div>
-              <dt className="text-sm text-muted-foreground">合計金額</dt>
-              <dd className="font-medium text-lg">
-                {formatPrice(order.total_price)}
-              </dd>
-            </div>
           </dl>
         </CardContent>
       </Card>
@@ -125,8 +115,6 @@ export function OrderDetail({ order }: OrderDetailProps) {
                   <TableHead>色</TableHead>
                   <TableHead>位置</TableHead>
                   <TableHead className="text-right">数量</TableHead>
-                  <TableHead className="text-right">単価</TableHead>
-                  <TableHead className="text-right">小計</TableHead>
                   <TableHead>デザイン</TableHead>
                 </TableRow>
               </TableHeader>
@@ -155,10 +143,6 @@ export function OrderDetail({ order }: OrderDetailProps) {
                     <TableCell>{item.color || "-"}</TableCell>
                     <TableCell>{item.position || "-"}</TableCell>
                     <TableCell className="text-right">{item.quantity}</TableCell>
-                    <TableCell className="text-right">{formatPrice(item.price)}</TableCell>
-                    <TableCell className="text-right font-medium">
-                      {formatPrice(item.price * item.quantity)}
-                    </TableCell>
                     <TableCell>
                       {item.design_image_url && (
                         <a
@@ -185,18 +169,6 @@ export function OrderDetail({ order }: OrderDetailProps) {
               <div>
                 <dt className="text-sm text-muted-foreground">数量</dt>
                 <dd className="font-medium">{order.quantity || 0}点</dd>
-              </div>
-              <div>
-                <dt className="text-sm text-muted-foreground">単価</dt>
-                <dd className="font-medium">{order.price ? formatPrice(order.price) : "-"}</dd>
-              </div>
-              <div>
-                <dt className="text-sm text-muted-foreground">合計金額</dt>
-                <dd className="font-medium text-lg">
-                  {order.price && order.quantity
-                    ? formatPrice(order.price * order.quantity)
-                    : formatPrice(order.total_price)}
-                </dd>
               </div>
             </dl>
           )}

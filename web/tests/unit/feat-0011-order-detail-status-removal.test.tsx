@@ -48,7 +48,7 @@ const createMockOrder = (overrides: Partial<Order> = {}): Order => ({
   items: [
     {
       id: 'item-1',
-      uid: 'UID-001',
+      uid: '0000001',
       product_name: 'Acrylic Keychain',
       product_type: 'acrylic_keychain',
       price: 1000,
@@ -98,7 +98,7 @@ describe('AC-005: Status change button is removed from order detail', () => {
     render(<OrderDetail order={order} />)
 
     // StatusBadge should still be displayed (it shows status as a read-only badge)
-    expect(screen.getByText('発注中')).toBeInTheDocument()
+    expect(screen.getByText('発注済み')).toBeInTheDocument()
   })
 
   it('does not render status change button for any order status', () => {

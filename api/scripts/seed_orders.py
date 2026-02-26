@@ -36,8 +36,8 @@ def generate_uuid() -> str:
 
 
 def generate_order_number(index: int) -> str:
-    """Generate order number."""
-    return f"ORD-{datetime.now().strftime('%Y%m%d')}-{index:04d}"
+    """Generate order number (7-digit numeric)."""
+    return f"{index:07d}"
 
 
 async def reset_orders(session: AsyncSession) -> None:
@@ -263,7 +263,7 @@ async def seed_orders(
             order_item = OrderItem(
                 id=generate_uuid(),
                 order_id=order.id,
-                uid=f"UID-{i+1:04d}-{j+1:02d}",
+                uid=f"{(i + 1) * 10 + (j + 1):07d}",
                 product_id=product.id,
                 product_name=product_name,
                 product_type=product_type,

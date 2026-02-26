@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 from app.services.manufacturer_order_service import ManufacturerOrderService
-from app.models.order import OrderStatus
+from app.models.order import OrderItemStatus, OrderStatus
 from app.utils.exceptions import NoOrderedItemsError, NotFoundError
 
 
@@ -42,7 +42,10 @@ def _make_order_item(
     cost: int = 1000,
     ordered_at: datetime | None = None,
 ) -> tuple:
-    """Create a mock order item tuple matching the repository return format."""
+    """Create a mock order item tuple matching the repository return format.
+
+    Returns: (OrderItem, order_number, ordered_at, customer_name, cost, item_status, order_status)
+    """
     order_item = MagicMock()
     order_item.id = str(uuid4())
     order_item.order_id = str(uuid4())
@@ -55,6 +58,7 @@ def _make_order_item(
     order_item.color = color
     order_item.design_image_url = design_image_url
     order_item.thumbnail_image_url = thumbnail_image_url
+    order_item.status = status.value  # OrderItem.status
 
     order = MagicMock()
     order.id = order_item.order_id
@@ -62,13 +66,15 @@ def _make_order_item(
     order.status = status.value
     order_item.order = order
 
+    # 新しいタプル構造: (OrderItem, order_number, ordered_at, customer_name, cost, item_status, order_status)
     return (
         order_item,
         order_number,
         ordered_at or datetime(2026, 2, 24, 10, 0, 0),
         "顧客名",
         cost,
-        status.value,
+        status.value,  # item_status (OrderItem.status)
+        status.value,  # order_status (Order.status)
     )
 
 
@@ -162,6 +168,13 @@ class TestGenerateOrderDocumentsStatusUpdate:
         mock_manufacturer_repo.find_by_id.return_value = mock_manufacturer
         mock_order_repo.find_ordered_items_by_manufacturer_detail.return_value = mock_order_items_ordered
 
+        # update_item_status_by_manufacturerのモック設定
+        affected_order_ids = {item[0].order_id for item in mock_order_items_ordered}
+        mock_order_repo.update_item_status_by_manufacturer.return_value = (
+            [item[0] for item in mock_order_items_ordered],
+            affected_order_ids,
+        )
+
         # ZIPを生成（モックはしない - 実際の生成をテスト）
         with patch.object(service, '_download_file', return_value=(None, "")):
             zip_bytes, filename = await service.generate_order_documents(
@@ -174,10 +187,10 @@ class TestGenerateOrderDocumentsStatusUpdate:
         assert filename.endswith(".zip")
 
         # ステータス更新が呼ばれたことを確認
-        mock_order_repo.update_status_by_manufacturer.assert_called_once()
-        call_args = mock_order_repo.update_status_by_manufacturer.call_args
+        mock_order_repo.update_item_status_by_manufacturer.assert_called_once()
+        call_args = mock_order_repo.update_item_status_by_manufacturer.call_args
         assert call_args.kwargs["manufacturer_id"] == manufacturer_id
-        assert call_args.kwargs["new_status"] == OrderStatus.MANUFACTURING
+        assert call_args.kwargs["new_status"] == OrderItemStatus.MANUFACTURING
         # 3件のorder_item_idsが渡されること
         order_item_ids = call_args.kwargs["order_item_ids"]
         assert len(order_item_ids) == 3
@@ -211,6 +224,13 @@ class TestGenerateOrderDocumentsStatusUpdate:
         ]
         mock_order_repo.find_ordered_items_by_manufacturer_detail.return_value = ordered_items
 
+        # update_item_status_by_manufacturerのモック設定
+        affected_order_ids = {item[0].order_id for item in ordered_items}
+        mock_order_repo.update_item_status_by_manufacturer.return_value = (
+            [item[0] for item in ordered_items],
+            affected_order_ids,
+        )
+
         with patch.object(service, '_download_file', return_value=(None, "")):
             zip_bytes, filename = await service.generate_order_documents(
                 manufacturer_id=manufacturer_id,
@@ -220,8 +240,8 @@ class TestGenerateOrderDocumentsStatusUpdate:
         assert zip_bytes is not None
 
         # ステータス更新が呼ばれたことを確認
-        mock_order_repo.update_status_by_manufacturer.assert_called_once()
-        call_args = mock_order_repo.update_status_by_manufacturer.call_args
+        mock_order_repo.update_item_status_by_manufacturer.assert_called_once()
+        call_args = mock_order_repo.update_item_status_by_manufacturer.call_args
         # 2件のorder_item_idsのみが渡されること
         order_item_ids = call_args.kwargs["order_item_ids"]
         assert len(order_item_ids) == 2
@@ -277,6 +297,14 @@ class TestGenerateOrderDocumentsStatusUpdate:
         # 最初の2件のみを指定
         target_item_ids = [mock_order_items_ordered[0][0].id, mock_order_items_ordered[1][0].id]
 
+        # update_item_status_by_manufacturerのモック設定
+        target_items = mock_order_items_ordered[:2]
+        affected_order_ids = {item[0].order_id for item in target_items}
+        mock_order_repo.update_item_status_by_manufacturer.return_value = (
+            [item[0] for item in target_items],
+            affected_order_ids,
+        )
+
         with patch.object(service, '_download_file', return_value=(None, "")):
             zip_bytes, filename = await service.generate_order_documents(
                 manufacturer_id=manufacturer_id,
@@ -287,8 +315,8 @@ class TestGenerateOrderDocumentsStatusUpdate:
         assert zip_bytes is not None
 
         # ステータス更新が指定された2件のみで呼ばれることを確認
-        mock_order_repo.update_status_by_manufacturer.assert_called_once()
-        call_args = mock_order_repo.update_status_by_manufacturer.call_args
+        mock_order_repo.update_item_status_by_manufacturer.assert_called_once()
+        call_args = mock_order_repo.update_item_status_by_manufacturer.call_args
         order_item_ids = call_args.kwargs["order_item_ids"]
         assert len(order_item_ids) == 2
         assert set(order_item_ids) == set(target_item_ids)
@@ -315,11 +343,18 @@ class TestGenerateOrderDocumentsStatusUpdate:
         mock_manufacturer_repo.find_by_id.return_value = mock_manufacturer
         mock_order_repo.find_ordered_items_by_manufacturer_detail.return_value = mock_order_items_ordered
 
+        # update_item_status_by_manufacturerのモック設定
+        affected_order_ids = {item[0].order_id for item in mock_order_items_ordered}
+        mock_order_repo.update_item_status_by_manufacturer.return_value = (
+            [item[0] for item in mock_order_items_ordered],
+            affected_order_ids,
+        )
+
         with patch.object(service, '_download_file', return_value=(None, "")):
             await service.generate_order_documents(manufacturer_id=manufacturer_id)
 
         # ZIP生成成功後にステータス更新が呼ばれることを確認
-        mock_order_repo.update_status_by_manufacturer.assert_called_once()
+        mock_order_repo.update_item_status_by_manufacturer.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_generate_order_documents_raises_not_found_for_invalid_manufacturer(
@@ -413,6 +448,13 @@ class TestFeat0012NamingRules:
         """テスト用にZIPを生成するヘルパー"""
         mock_manufacturer_repo.find_by_id.return_value = mock_manufacturer
         mock_order_repo.find_ordered_items_by_manufacturer_detail.return_value = items
+
+        # update_item_status_by_manufacturerのモック設定
+        affected_order_ids = {item[0].order_id for item in items}
+        mock_order_repo.update_item_status_by_manufacturer.return_value = (
+            [item[0] for item in items],
+            affected_order_ids,
+        )
 
         if download_file_side_effect:
             side_effect = download_file_side_effect

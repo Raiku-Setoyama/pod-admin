@@ -1,6 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
+import { DateRange } from "react-day-picker";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -10,31 +11,32 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { DateRangePicker } from "@/components/common/date-range-picker";
+import { getManufacturerOrderFilterStatusOptions } from "@/constants/status";
 import type { OrderStatus } from "@/types/api";
 
-const statusOptions: { value: OrderStatus | "all"; label: string }[] = [
-  { value: "all", label: "全てのステータス" },
-  { value: "ordered", label: "発注済み" },
-  { value: "manufacturing", label: "製造中" },
-  { value: "delivered", label: "納入済" },
-];
+const statusOptions = getManufacturerOrderFilterStatusOptions();
 
 interface ManufacturerOrderFiltersProps {
   search: string;
   status: OrderStatus | null;
+  dateRange?: DateRange;
   onSearchChange: (value: string) => void;
   onStatusChange: (value: OrderStatus | null) => void;
+  onDateRangeChange?: (range: DateRange | undefined) => void;
   onReset: () => void;
 }
 
 export function ManufacturerOrderFilters({
   search,
   status,
+  dateRange,
   onSearchChange,
   onStatusChange,
+  onDateRangeChange,
   onReset,
 }: ManufacturerOrderFiltersProps) {
-  const hasActiveFilters = search || status;
+  const hasActiveFilters = search || status || dateRange?.from;
 
   return (
     <div className="flex flex-wrap items-end gap-4 mb-4">
@@ -69,6 +71,15 @@ export function ManufacturerOrderFilters({
           </SelectContent>
         </Select>
       </div>
+
+      {/* 日付範囲フィルター */}
+      {onDateRangeChange && (
+        <DateRangePicker
+          value={dateRange}
+          onChange={onDateRangeChange}
+          placeholder="受注日"
+        />
+      )}
 
       {/* リセットボタン */}
       {hasActiveFilters && (

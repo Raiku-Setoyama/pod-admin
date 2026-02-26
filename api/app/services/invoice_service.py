@@ -69,7 +69,7 @@ class InvoiceService:
 
         Args:
             manufacturer: Manufacturer model instance
-            rows: List of (order_item, order_number, ordered_at, customer_name, cost) tuples
+            rows: List of (order_item, order_number, ordered_at, customer_name, cost, status) tuples
 
         Returns:
             Tuple of (pdf_bytes, filename, item_count, total_amount)
@@ -104,7 +104,7 @@ class InvoiceService:
 
         # Build items list for template
         items = []
-        for order_item, order_number, ordered_at, customer_name, cost in rows:
+        for order_item, order_number, ordered_at, customer_name, cost, status in rows:
             # cost is the unit cost from manufacturer's unit_prices
             unit_price = cost if cost else 0
             amount = unit_price * order_item.quantity

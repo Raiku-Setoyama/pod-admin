@@ -125,7 +125,7 @@ const createMockManufacturerOrderData = (): ManufacturerOrderItemListResponse =>
       id: 'item-1',
       order_id: 'order-1',
       order_number: 'ORD-001',
-      uid: 'UID-001',
+      uid: '0000001',
       product_id: 'prod-1',
       product_name: 'Acrylic Keychain',
       product_type: 'acrylic_keychain',
@@ -182,8 +182,6 @@ describe('AC-001: Order list date format includes time', () => {
     render(
       <OrderList
         orders={orders}
-        selectedIds={[]}
-        onSelectChange={vi.fn()}
       />
     )
 
@@ -194,8 +192,8 @@ describe('AC-001: Order list date format includes time', () => {
     // First row is header, second is data
     const dataRow = rows[1]
     const cells = dataRow.querySelectorAll('td')
-    // Column order: checkbox, order_number, source, customer_name, product_count, total_price, ordered_at, status
-    const dateCell = cells[6] // 7th column (0-indexed) = 受注日
+    // Column order: order_number, source, customer_name, product_count, ordered_at, status
+    const dateCell = cells[4] // 5th column (0-indexed) = 受注日
     expectDateWithTime(dateCell.textContent)
   })
 
@@ -215,8 +213,6 @@ describe('AC-001: Order list date format includes time', () => {
     render(
       <OrderList
         orders={orders}
-        selectedIds={[]}
-        onSelectChange={vi.fn()}
       />
     )
 
@@ -224,7 +220,7 @@ describe('AC-001: Order list date format includes time', () => {
     // Check both data rows have time in date
     for (let i = 1; i < rows.length; i++) {
       const cells = rows[i].querySelectorAll('td')
-      const dateCell = cells[6]
+      const dateCell = cells[4]
       expectDateWithTime(dateCell.textContent)
     }
   })
@@ -353,7 +349,7 @@ describe('AC-004: Manufacturer portal date format includes time', () => {
           id: 'item-1',
           order_id: 'order-1',
           order_number: 'ORD-001',
-          uid: 'UID-001',
+          uid: '0000001',
           product_id: 'prod-1',
           product_name: 'Acrylic Keychain',
           product_type: 'acrylic_keychain',

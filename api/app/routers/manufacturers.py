@@ -206,11 +206,13 @@ async def download_manufacturer_order_documents(
     ordered_to: date | None = None,
     product_type: str | None = None,
     order_item_ids: str | None = None,
+    status: str | None = None,
 ) -> StreamingResponse:
     """メーカー別発注資料ZIPをダウンロード
 
-    指定されたメーカーに紐づく発注中（ORDERED）ステータスの受注明細を含む
+    指定されたメーカーに紐づく受注明細を含む
     発注資料ZIPファイルを生成してダウンロードします。
+    管理者からのダウンロードではステータス更新は行いません。
 
     ZIPには以下が含まれます:
     - 商品タイプ別のCSV（発注リスト）
@@ -224,6 +226,8 @@ async def download_manufacturer_order_documents(
         ordered_to=ordered_to,
         product_type=product_type,
         order_item_ids=item_ids,
+        status=status,
+        update_status=False,  # 管理者からのダウンロードではステータス更新しない
     )
 
     encoded_filename = quote(filename)
@@ -246,21 +250,23 @@ async def update_manufacturer_order_status(
 ) -> dict:
     """メーカーの受注ステータスを一括更新
 
-    指定されたメーカーに紐づく発注中（ORDERED）ステータスの受注を
-    指定されたステータス（manufacturing または delivered）に一括更新します。
+    指定されたメーカーに紐づく受注を指定されたステータスに一括更新します。
+    OrderItem単位でステータスを更新し、全OrderItemがdeliveredになった場合のみ
+    Shipmentを自動作成します。
 
     Args:
         manufacturer_id: メーカーID
         data: ステータス更新リクエスト
-            - status: 新しいステータス（manufacturing または delivered）
+            - status: 新しいステータス（ordered, manufacturing, delivered）
             - order_item_ids: 更新対象のOrderItem ID（省略時は全て）
             - note: 備考
 
     Returns:
-        updated_count: 更新された受注数
+        updated_count: 更新されたOrderItem数
+        shipments_created: 作成されたShipment数（全製品がdeliveredになった注文のみ）
     """
-    updated_count = await service.update_order_status(manufacturer_id, data)
-    return {"updated_count": updated_count}
+    updated_count, shipments_created = await service.update_order_status(manufacturer_id, data)
+    return {"updated_count": updated_count, "shipments_created": shipments_created}
 
 
 # === 請求書エンドポイント ===

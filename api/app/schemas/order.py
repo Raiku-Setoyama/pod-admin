@@ -25,8 +25,15 @@ class CustomerInfo(BaseModel):
 class OrderItemCreate(BaseModel):
     """Order item creation schema (from external sales site)."""
 
-    # 外部販売サイトのオリジナル商品ID
-    uid: str = Field(..., min_length=1, max_length=100)
+    # 製品番号（7桁数字）
+    uid: str = Field(
+        ...,
+        min_length=7,
+        max_length=7,
+        pattern=r"^\d{7}$",
+        description="製品番号（7桁数字）",
+        examples=["0000001"],
+    )
 
     # 製造種類（商品タイプ）
     product_type: ProductType
@@ -77,7 +84,14 @@ class ManufacturingDataInfo(BaseModel):
 class OrderCreate(BaseModel):
     """Order creation schema (from external sales site)."""
 
-    order_number: str = Field(..., min_length=1, max_length=50)
+    order_number: str = Field(
+        ...,
+        min_length=7,
+        max_length=7,
+        pattern=r"^\d{7}$",
+        description="受注番号（7桁数字）",
+        examples=["0000001"],
+    )
     ordered_at: datetime
     customer: CustomerInfo
     items: list[OrderItemCreate] = Field(..., min_length=1)

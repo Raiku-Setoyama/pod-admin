@@ -31,6 +31,7 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { PackingPhotoUpload } from "./packing-photo-upload";
 import { Truck, Package, MapPin } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
+import { getShipmentStatusUpdateOptions } from "@/constants/status";
 import type { Shipment, ShipmentStatus } from "@/types/api";
 
 interface ShipmentDetailProps {
@@ -49,11 +50,7 @@ function formatDate(dateString: string): string {
   });
 }
 
-const statusOptions: { value: ShipmentStatus; label: string }[] = [
-  { value: "pending", label: "配送準備中" },
-  { value: "ready", label: "準備完了" },
-  { value: "shipped", label: "発送完了" },
-];
+const statusOptions = getShipmentStatusUpdateOptions();
 
 export function ShipmentDetail({ shipment, onUpdate }: ShipmentDetailProps) {
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
@@ -179,12 +176,12 @@ export function ShipmentDetail({ shipment, onUpdate }: ShipmentDetailProps) {
         onUploadComplete={onUpdate}
       />
 
-      {/* 含まれる商品一覧 */}
+      {/* 含まれる注文一覧 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Package className="h-5 w-5" />
-            含まれる商品 ({shipment.items.length}件)
+            含まれる注文 ({shipment.items.length}件)
           </CardTitle>
         </CardHeader>
         <CardContent>

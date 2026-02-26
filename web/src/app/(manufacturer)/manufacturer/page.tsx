@@ -127,7 +127,7 @@ export default function ManufacturerDashboardPage() {
               ? "ダウンロード中..."
               : selectedIds.size > 0
                 ? `選択した${selectedIds.size}件をダウンロード`
-                : "ダウンロードする項目を選択"}
+                : "発注資料"}
           </Button>
         </div>
       </div>

@@ -9,6 +9,8 @@ import type {
 export interface ManufacturerOrderFilters {
   status?: OrderStatus | null;
   search?: string;
+  ordered_from?: string;
+  ordered_to?: string;
 }
 
 export function useManufacturerOrderSummary(page = 1, limit = 20) {
@@ -37,6 +39,8 @@ export function useManufacturerOrderItems(
   const queryParams = new URLSearchParams();
   if (filters?.status) queryParams.set("status", filters.status);
   if (filters?.search) queryParams.set("search", filters.search);
+  if (filters?.ordered_from) queryParams.set("ordered_from", filters.ordered_from);
+  if (filters?.ordered_to) queryParams.set("ordered_to", filters.ordered_to);
 
   const queryString = queryParams.toString();
   const url = manufacturerId

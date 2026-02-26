@@ -149,7 +149,7 @@ class ChatService:
                     filename=att.filename,
                     file_size=att.file_size,
                     content_type=att.content_type,
-                    download_url=f"/api/v1/chat/attachments/{att.id}",
+                    download_url=f"/chat/attachments/{att.id}",
                 )
                 for att in message.attachments
             ],

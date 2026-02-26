@@ -39,10 +39,10 @@
 
 | フィールド | 説明 | 例 |
 |-----------|------|-----|
-| `uid` | 外部販売サイトのオリジナル商品ID | `"my-original-tshirt-001"` |
+| `uid` | 製品番号（7桁数字） | `"0000001"` |
 | `product_type` | 製造種類（商品タイプ） | `"tshirt"` |
 
-**例**: 外部サイトで販売している「オリジナルTシャツA」（uid: `EXT-001`）を、Tシャツ（product_type: `tshirt`）として製造する。
+**例**: 外部サイトで販売している「オリジナルTシャツA」（uid: `0000001`）を、Tシャツ（product_type: `tshirt`）として製造する。
 
 ---
 
@@ -99,7 +99,7 @@ POST /api/v1/orders
 
 ```json
 {
-  "order_number": "ORD-2024-001",
+  "order_number": "0000001",
   "ordered_at": "2024-01-15T10:30:00+09:00",
   "customer": {
     "name": "山田太郎",
@@ -112,7 +112,7 @@ POST /api/v1/orders
   },
   "items": [
     {
-      "uid": "my-original-tshirt-001",
+      "uid": "0000011",
       "product_type": "tshirt",
       "product_name": "オリジナルTシャツ デザインA",
       "price": 2500,
@@ -133,7 +133,7 @@ POST /api/v1/orders
 
 | フィールド | 型 | 必須 | 説明 | 制約 |
 |-----------|-----|:---:|------|------|
-| order_number | string | ○ | 受注番号（販売サイト側で採番） | 1-50文字、ユニーク |
+| order_number | string | ○ | 受注番号（7桁数字） | 7桁数字、ユニーク |
 | ordered_at | datetime | ○ | 受注日時（ISO 8601形式） | タイムゾーン付き |
 | customer | object | ○ | 顧客情報 | 下記参照 |
 | items | array | ○ | 受注明細（商品リスト） | 1件以上必須 |
@@ -154,7 +154,7 @@ POST /api/v1/orders
 
 | フィールド | 型 | 必須 | 説明 | 制約 |
 |-----------|-----|:---:|------|------|
-| uid | string | ○ | 外部販売サイトのオリジナル商品ID | 1-100文字 |
+| uid | string | ○ | 製品番号（7桁数字） | 7桁数字 |
 | product_type | string | ○ | 製造種類（商品タイプ） | 有効値: tshirt, acrylic_keychain, acrylic_stand, sticker, tote_bag |
 | product_name | string | ○ | 外部販売サイトの商品名 | 1-200文字 |
 | price | integer | ○ | 単価（税込） | 0以上 |
@@ -206,7 +206,7 @@ POST /api/v1/orders
 ```json
 {
   "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "order_number": "ORD-2024-001",
+  "order_number": "0000001",
   "status": "ordered",
   "source": "RKSYO",
   "order_source_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
@@ -223,7 +223,7 @@ POST /api/v1/orders
   "items": [
     {
       "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
-      "uid": "my-original-tshirt-001",
+      "uid": "0000011",
       "product_name": "オリジナルTシャツ デザインA",
       "product_type": "tshirt",
       "price": 2500,
@@ -237,6 +237,7 @@ POST /api/v1/orders
       "updated_at": "2024-01-15T10:30:00+09:00"
     }
   ],
+  "shipment": null,
   "created_at": "2024-01-15T10:30:00+09:00",
   "updated_at": "2024-01-15T10:30:00+09:00"
 }
@@ -262,6 +263,7 @@ POST /api/v1/orders
 | ordered_at | datetime | 受注日時 |
 | total_price | integer | 合計金額（price × quantity の合計） |
 | items | array | 受注明細 |
+| shipment | object \| null | 出荷情報（納入済み以降で設定） |
 | created_at | datetime | 作成日時 |
 | updated_at | datetime | 更新日時 |
 
@@ -270,7 +272,7 @@ POST /api/v1/orders
 | フィールド | 型 | 説明 |
 |-----------|-----|------|
 | id | string | 受注明細ID（UUID） |
-| uid | string | 外部販売サイトのオリジナル商品ID |
+| uid | string | 製品番号（7桁数字） |
 | product_name | string | 外部販売サイトの商品名 |
 | product_type | string | 製造種類（商品タイプ） |
 | price | integer | 単価 |
@@ -282,6 +284,15 @@ POST /api/v1/orders
 | thumbnail_image_url | string \| null | サムネイル画像URL |
 | created_at | datetime | 作成日時 |
 | updated_at | datetime | 更新日時 |
+
+#### shipment（出荷情報）
+
+| フィールド | 型 | 説明 |
+|-----------|-----|------|
+| id | string | 出荷ID（UUID） |
+| status | string | 出荷ステータス（`pending`, `ready`, `shipped`） |
+| tracking_number | string \| null | 追跡番号 |
+| carrier | string \| null | 配送業者 |
 
 ---
 
@@ -310,7 +321,7 @@ GET /api/v1/external/orders/{order_number}/status
 
 ```json
 {
-  "order_number": "ORD-2024-001",
+  "order_number": "0000001",
   "status": "manufacturing",
   "ordered_at": "2024-01-15T10:30:00+09:00",
   "updated_at": "2024-01-16T14:00:00+09:00"
@@ -342,7 +353,7 @@ GET /api/v1/external/orders/{order_number}/status
 ### cURL例
 
 ```bash
-curl -X GET "https://api.example.com/api/v1/external/orders/ORD-2024-001/status" \
+curl -X GET "https://api.example.com/api/v1/external/orders/0000001/status" \
   -H "X-API-Key: your-api-key-here"
 ```
 
@@ -381,7 +392,7 @@ curl -X GET "https://api.example.com/api/v1/external/orders/ORD-2024-001/status"
 {
   "error": {
     "code": "DUPLICATE",
-    "message": "Order with order_number 'ORD-2024-001' already exists"
+    "message": "Order with order_number '0000001' already exists"
   }
 }
 ```
@@ -405,7 +416,7 @@ Tシャツに対して、`size`、`color`、`position` を未指定で送信し�
 {
   "error": {
     "code": "VALIDATION_ERROR",
-    "message": "size is required for T-shirt (uid: my-original-tshirt-001)"
+    "message": "size is required for T-shirt (uid: 0000011)"
   }
 }
 ```
@@ -418,7 +429,7 @@ Tシャツに対して、許可されていない値を指定した場合：
 {
   "error": {
     "code": "VALIDATION_ERROR",
-    "message": "Invalid size 'XXL'. Valid: ['S', 'M', 'L', 'XL'] (uid: my-original-tshirt-001)"
+    "message": "Invalid size 'XXL'. Valid: ['S', 'M', 'L', 'XL'] (uid: 0000011)"
   }
 }
 ```
@@ -835,7 +846,7 @@ curl -X POST "https://api.example.com/api/v1/orders" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-api-key-here" \
   -d '{
-    "order_number": "ORD-2024-001",
+    "order_number": "0000001",
     "ordered_at": "2024-01-15T10:30:00+09:00",
     "customer": {
       "name": "山田太郎",
@@ -848,7 +859,7 @@ curl -X POST "https://api.example.com/api/v1/orders" \
     },
     "items": [
       {
-        "uid": "my-original-tshirt-001",
+        "uid": "0000011",
         "product_type": "tshirt",
         "product_name": "オリジナルTシャツ デザインA",
         "price": 2500,
@@ -873,7 +884,7 @@ headers = {
 }
 
 payload = {
-    "order_number": "ORD-2024-001",
+    "order_number": "0000001",
     "ordered_at": "2024-01-15T10:30:00+09:00",
     "customer": {
         "name": "山田太郎",
@@ -886,7 +897,7 @@ payload = {
     },
     "items": [
         {
-            "uid": "my-original-tshirt-001",
+            "uid": "0000011",
             "product_type": "tshirt",
             "product_name": "オリジナルTシャツ デザインA",
             "price": 2500,
@@ -915,7 +926,7 @@ const createOrder = async () => {
   const url = "https://api.example.com/api/v1/orders";
 
   const payload = {
-    order_number: "ORD-2024-001",
+    order_number: "0000001",
     ordered_at: "2024-01-15T10:30:00+09:00",
     customer: {
       name: "山田太郎",
@@ -928,7 +939,7 @@ const createOrder = async () => {
     },
     items: [
       {
-        uid: "my-original-tshirt-001",
+        uid: "0000011",
         product_type: "tshirt",
         product_name: "オリジナルTシャツ デザインA",
         price: 2500,
@@ -970,7 +981,7 @@ $url = "https://api.example.com/api/v1/orders";
 $apiKey = "your-api-key-here";
 
 $payload = [
-    "order_number" => "ORD-2024-001",
+    "order_number" => "0000001",
     "ordered_at" => "2024-01-15T10:30:00+09:00",
     "customer" => [
         "name" => "山田太郎",
@@ -983,7 +994,7 @@ $payload = [
     ],
     "items" => [
         [
-            "uid" => "my-original-tshirt-001",
+            "uid" => "0000011",
             "product_type" => "tshirt",
             "product_name" => "オリジナルTシャツ デザインA",
             "price" => 2500,
@@ -1023,9 +1034,9 @@ if ($statusCode === 201) {
 
 1. **べき等性**: 同じ `order_number` での再送信はエラー（409）となります。リトライ時は新しい受注番号を使用してください。
 
-2. **製造種類**: `product_type` はサポートされている商品タイプを指定してください。現在は `tshirt` のみサポートしています。
+2. **製造種類**: `product_type` はサポートされている商品タイプを指定してください（`tshirt`, `acrylic_keychain`, `acrylic_stand`, `sticker`, `tote_bag`）。
 
-3. **外部商品ID**: `uid` は外部販売サイトで管理しているオリジナル商品のIDを指定してください。POD管理システムでは参照用として保存されます。
+3. **製品番号**: `uid` は7桁数字形式（例: `0000001`）で指定してください。POD管理システムでは参照用として保存されます。
 
 4. **Tシャツの属性**: Tシャツ（`product_type: tshirt`）の場合、`size`、`color`、`position` はすべて必須で、有効な値のみ許可されます。
 
@@ -1041,6 +1052,7 @@ if ($statusCode === 201) {
 
 | バージョン | 日付 | 内容 |
 |-----------|------|------|
+| 3.3.0 | 2026-02-25 | order_numberおよびuidを7桁数字形式に変更。バリデーション追加。 |
 | 3.2.0 | 2026-02-23 | ステッカーのカラーから「クリア」を削除。「ホワイト」のみの単一カラー体制に変更。(FEAT-0007) |
 | 3.1.0 | 2026-02-14 | レスポンスに `source` および `order_source_id` フィールド追加。受注元管理がDB管理に完全移行。 |
 | 3.0.0 | 2026-02-14 | **破壊的変更**: 住所フィールド正規化。`address` を削除し、`address_prefecture` + `address_city` を必須に。レスポンスの `customer_address` を `customer_full_address` に変更（自動生成）。 |

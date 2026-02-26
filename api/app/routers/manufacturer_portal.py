@@ -4,7 +4,7 @@ from datetime import date
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, Header, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.dependencies import (
@@ -139,11 +139,13 @@ async def download_order_documents(
     ordered_to: date | None = None,
     product_type: str | None = None,
     order_item_ids: str | None = None,
+    status: str | None = None,
 ) -> StreamingResponse:
     """発注資料ZIPをダウンロード
 
-    ログイン中のメーカーに紐づく発注中（ORDERED）ステータスの受注明細を含む
+    ログイン中のメーカーに紐づく受注明細を含む
     発注資料ZIPファイルを生成してダウンロードします。
+    発注中（ORDERED）ステータスの明細は製造中（MANUFACTURING）に自動更新されます。
 
     ZIPには以下が含まれます:
     - 商品タイプ別のCSV（発注リスト）
@@ -157,6 +159,8 @@ async def download_order_documents(
         ordered_to=ordered_to,
         product_type=product_type,
         order_item_ids=item_ids,
+        status=status,
+        update_status=True,  # メーカーからのダウンロードでは発注中→製造中に更新
     )
 
     encoded_filename = quote(filename)
@@ -230,9 +234,9 @@ async def get_chat_messages(
 
 @router.post("/chat", response_model=ChatMessageResponse)
 async def send_chat_message(
-    content: Annotated[str, Form()],
     manufacturer: Annotated[Manufacturer, Depends(get_current_manufacturer)],
     service: Annotated[ChatService, Depends(get_chat_service)],
+    content: Annotated[str | None, Form()] = None,
     attachments: list[UploadFile] | None = File(None),
 ) -> ChatMessageResponse:
     """メーカー向けチャットメッセージ送信
@@ -240,9 +244,18 @@ async def send_chat_message(
     ログイン中のメーカーとしてメッセージを送信します。
     ファイル添付も可能です。
     """
+    has_content = content and content.strip()
+    has_attachments = attachments and any(a.filename for a in attachments)
+
+    if not has_content and not has_attachments:
+        raise HTTPException(
+            status_code=400,
+            detail="メッセージ本文またはファイルのいずれかが必要です",
+        )
+
     return await service.send_message(
         manufacturer_id=str(manufacturer.id),
-        data=ChatMessageCreate(content=content),
+        data=ChatMessageCreate(content=content or ""),
         sender_type=MessageSender.MANUFACTURER,
         sender_name=manufacturer.name,
         attachments=attachments,

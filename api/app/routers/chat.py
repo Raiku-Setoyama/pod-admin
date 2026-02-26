@@ -3,7 +3,7 @@
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.dependencies import (
@@ -46,15 +46,24 @@ async def get_chat_messages(
 @router.post("/manufacturers/{manufacturer_id}", response_model=ChatMessageResponse)
 async def send_chat_message(
     manufacturer_id: str,
-    content: Annotated[str, Form()],
     service: Annotated[ChatService, Depends(get_chat_service)],
     current_user: Annotated[User, Depends(get_current_admin)],
+    content: Annotated[str | None, Form()] = None,
     attachments: list[UploadFile] | None = File(None),
 ) -> ChatMessageResponse:
     """Send a chat message to a manufacturer."""
+    has_content = content and content.strip()
+    has_attachments = attachments and any(a.filename for a in attachments)
+
+    if not has_content and not has_attachments:
+        raise HTTPException(
+            status_code=400,
+            detail="メッセージ本文またはファイルのいずれかが必要です",
+        )
+
     return await service.send_message(
         manufacturer_id=manufacturer_id,
-        data=ChatMessageCreate(content=content),
+        data=ChatMessageCreate(content=content or ""),
         sender_type=MessageSender.ADMIN,
         sender_name=current_user.name,
         attachments=attachments,

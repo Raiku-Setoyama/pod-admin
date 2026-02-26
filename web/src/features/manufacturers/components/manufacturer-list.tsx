@@ -76,7 +76,7 @@ export function ManufacturerList({ manufacturers, onRowClick }: ManufacturerList
                 </TableCell>
                 <TableCell>
                   <Badge variant="outline">
-                    {manufacturer.sharing_method === "DRIVE" ? "DRIVE" : "ポータル"}
+                    {manufacturer.sharing_method === "drive" ? "DRIVE" : "ポータル"}
                   </Badge>
                 </TableCell>
                 <TableCell>

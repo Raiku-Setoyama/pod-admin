@@ -40,20 +40,22 @@ async def create_order(
 
     Request body (JSON):
     {
-        "order_number": "ORD-2024-001",
+        "order_number": "0000001",
         "ordered_at": "2024-01-15T10:30:00+09:00",
         "customer": {
             "name": "山田太郎",
             "postal_code": "123-4567",
-            "address": "東京都渋谷区...",
+            "address_prefecture": "東京都",
+            "address_city": "渋谷区〇〇町1-2-3",
+            "address_building": "○○ビル101",
             "phone": "03-1234-5678",
             "email": "yamada@example.com"
         },
         "items": [
             {
-                "product_id": "uuid",
-                "product_name": "Tシャツ Mサイズ 白",
+                "uid": "0000011",
                 "product_type": "tshirt",
+                "product_name": "オリジナルTシャツ デザインA",
                 "price": 2500,
                 "quantity": 2,
                 "size": "M",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { DateRange } from "react-day-picker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +32,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Download, Factory, Loader2, Package, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
+import { StatusBadge } from "@/components/common/status-badge";
+import {
+  getManufacturerOrderStatusUpdateOptions,
+} from "@/constants/status";
 import type { ManufacturerOrderItemListResponse, OrderStatus } from "@/types/api";
 import { ManufacturerOrderFilters } from "./manufacturer-order-filters";
 import { InvoiceDialog } from "@/features/invoice";
@@ -42,15 +47,16 @@ interface ManufacturerOrderDetailProps {
   // フィルター（新しい形式）
   search: string;
   status: OrderStatus | null;
+  dateRange?: DateRange;
   onSearchChange: (value: string) => void;
   onStatusChange: (value: OrderStatus | null) => void;
+  onDateRangeChange?: (range: DateRange | undefined) => void;
   onFilterReset: () => void;
 }
 
-const statusUpdateOptions = [
-  { value: "manufacturing", label: "製造中" },
-  { value: "delivered", label: "納入済" },
-];
+const statusUpdateOptions = getManufacturerOrderStatusUpdateOptions();
+
+type ManufacturerOrderStatus = "ordered" | "manufacturing" | "delivered";
 
 const productTypeLabels: Record<string, string> = {
   acrylic_keychain: "アクリルキーホルダー",
@@ -58,20 +64,6 @@ const productTypeLabels: Record<string, string> = {
   sticker: "ステッカー",
   tote_bag: "トートバッグ",
   tshirt: "Tシャツ",
-};
-
-const statusLabels: Record<string, string> = {
-  ordered: "発注済み",
-  manufacturing: "製造中",
-  delivered: "納入済",
-  shipped: "配送完了",
-};
-
-const statusVariants: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
-  ordered: "default",
-  manufacturing: "secondary",
-  delivered: "outline",
-  shipped: "outline",
 };
 
 function formatDate(dateString: string): string {
@@ -91,12 +83,14 @@ export function ManufacturerOrderDetail({
   onStatusUpdate,
   search,
   status,
+  dateRange,
   onSearchChange,
   onStatusChange,
+  onDateRangeChange,
   onFilterReset,
 }: ManufacturerOrderDetailProps) {
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
-  const [newStatus, setNewStatus] = useState<"manufacturing" | "delivered">(
+  const [newStatus, setNewStatus] = useState<ManufacturerOrderStatus>(
     "manufacturing"
   );
   const [isUpdating, setIsUpdating] = useState(false);
@@ -106,27 +100,39 @@ export function ManufacturerOrderDetail({
   const handleStatusUpdate = async () => {
     setIsUpdating(true);
     try {
-      await apiClient(`/manufacturers/${data.manufacturer_id}/order-status`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          status: newStatus,
-          order_item_ids: selectedIds.size > 0 ? Array.from(selectedIds) : undefined,
-        }),
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+      const result = await apiClient<{ updated_count: number; shipments_created: number }>(
+        `/manufacturers/${data.manufacturer_id}/order-status`,
+        {
+          method: "PATCH",
+          body: {
+            status: newStatus,
+            order_item_ids: selectedIds.size > 0 ? Array.from(selectedIds) : undefined,
+          },
+        }
+      );
 
-      // 納入済みの場合、配送リスト追加の通知
-      if (newStatus === "delivered") {
-        const count = selectedIds.size > 0 ? selectedIds.size : data.total;
-        toast.success(`${count}件の配送が配送リストに追加されました`, {
+      const updatedCount = result.updated_count;
+      const shipmentsCreated = result.shipments_created;
+
+      if (updatedCount === 0) {
+        toast.warning("更新対象の明細がありませんでした", {
+          description: "選択した明細は既に同じステータスか、更新対象外です",
+        });
+      } else if (newStatus === "delivered" && shipmentsCreated > 0) {
+        // 納入済みかつShipmentが作成された場合のみ、配送リスト追加の通知
+        toast.success(`${updatedCount}件を納入済みに更新し、${shipmentsCreated}件の配送が配送リストに追加されました`, {
           description: "配送ステータス: 配送準備中",
           action: {
             label: "配送リストを見る",
-            onClick: () => window.location.href = "/shipments",
+            onClick: () => (window.location.href = "/shipments"),
           },
         });
+      } else {
+        // その他のステータス更新（納入済みでもShipmentが作成されなかった場合を含む）
+        const statusLabel = statusUpdateOptions.find(
+          (opt) => opt.value === newStatus
+        )?.label;
+        toast.success(`${updatedCount}件のステータスを「${statusLabel}」に更新しました`);
       }
 
       setIsStatusDialogOpen(false);
@@ -213,7 +219,7 @@ export function ManufacturerOrderDetail({
               <InvoiceDialog
                 manufacturerId={data.manufacturer_id}
                 selectedItemIds={Array.from(selectedIds)}
-                disabled={data.total === 0}
+                disabled={selectedIds.size === 0}
               />
               <Button
                 variant="outline"
@@ -221,26 +227,20 @@ export function ManufacturerOrderDetail({
                 disabled={isDownloading || selectedIds.size === 0}
               >
                 <Download className="h-4 w-4 mr-2" />
-                {isDownloading
-                  ? "ダウンロード中..."
-                  : selectedIds.size > 0
-                    ? `選択した${selectedIds.size}件をダウンロード`
-                    : "ダウンロードする項目を選択"}
+                {isDownloading ? "ダウンロード中..." : "発注資料"}
               </Button>
               <Button
                 onClick={() => setIsStatusDialogOpen(true)}
-                disabled={data.total === 0}
+                disabled={selectedIds.size === 0}
               >
                 <RefreshCw className="h-4 w-4 mr-2" />
-                {selectedIds.size > 0
-                  ? `選択した${selectedIds.size}件を更新`
-                  : "ステータス一括更新"}
+                ステータス更新
               </Button>
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <dl className="grid grid-cols-3 gap-4">
+          <dl className="grid grid-cols-2 gap-4">
             <div>
               <dt className="text-sm text-muted-foreground">発注中明細数</dt>
               <dd className="text-2xl font-bold">{data.total}件</dd>
@@ -248,12 +248,6 @@ export function ManufacturerOrderDetail({
             <div>
               <dt className="text-sm text-muted-foreground">合計数量</dt>
               <dd className="text-2xl font-bold">{data.total_quantity}点</dd>
-            </div>
-            <div>
-              <dt className="text-sm text-muted-foreground">合計金額</dt>
-              <dd className="text-2xl font-bold">
-                ¥{data.total_amount.toLocaleString()}
-              </dd>
             </div>
           </dl>
         </CardContent>
@@ -272,8 +266,10 @@ export function ManufacturerOrderDetail({
           <ManufacturerOrderFilters
             search={search}
             status={status}
+            dateRange={dateRange}
             onSearchChange={onSearchChange}
             onStatusChange={onStatusChange}
+            onDateRangeChange={onDateRangeChange}
             onReset={onFilterReset}
           />
 
@@ -298,7 +294,6 @@ export function ManufacturerOrderDetail({
                   <TableHead>商品タイプ</TableHead>
                   <TableHead>ステータス</TableHead>
                   <TableHead className="text-center">数量</TableHead>
-                  <TableHead className="text-right">金額</TableHead>
                   <TableHead>顧客名</TableHead>
                   <TableHead>受注日</TableHead>
                 </TableRow>
@@ -307,7 +302,7 @@ export function ManufacturerOrderDetail({
                 {isLoading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={10}
+                      colSpan={9}
                       className="h-24 text-center text-muted-foreground"
                     >
                       <div className="flex items-center justify-center gap-2">
@@ -319,7 +314,7 @@ export function ManufacturerOrderDetail({
                 ) : data.items.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={10}
+                      colSpan={9}
                       className="h-24 text-center text-muted-foreground"
                     >
                       発注中の明細がありません
@@ -348,15 +343,10 @@ export function ManufacturerOrderDetail({
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={statusVariants[item.status] || "default"}>
-                          {statusLabels[item.status] || item.status}
-                        </Badge>
+                        <StatusBadge status={item.status} />
                       </TableCell>
                       <TableCell className="text-center">
                         {item.quantity}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        ¥{(item.price * item.quantity).toLocaleString()}
                       </TableCell>
                       <TableCell>{item.customer_name}</TableCell>
                       <TableCell>{formatDate(item.ordered_at)}</TableCell>
@@ -383,9 +373,7 @@ export function ManufacturerOrderDetail({
           <div className="py-4">
             <Select
               value={newStatus}
-              onValueChange={(v) =>
-                setNewStatus(v as "manufacturing" | "delivered")
-              }
+              onValueChange={(v) => setNewStatus(v as ManufacturerOrderStatus)}
             >
               <SelectTrigger>
                 <SelectValue />
