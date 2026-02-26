@@ -28,6 +28,7 @@ import { Pagination } from "@/components/common/pagination";
 import { PageLoading } from "@/components/common/loading-spinner";
 import { ShipmentList } from "@/features/shipments/components/shipment-list";
 import { ShipmentFilters } from "@/features/shipments/components/shipment-filters";
+import { TrackingImport } from "@/features/shipments/components/tracking-import";
 import { useShipments } from "@/features/shipments/hooks/use-shipments";
 import { getShipmentStatusUpdateOptions } from "@/constants/status";
 import type { Shipment, ShipmentStatus } from "@/types/api";
@@ -50,6 +51,17 @@ export default function ShipmentsPage() {
   const [bulkNewStatus, setBulkNewStatus] = useState<ShipmentStatus>("ready");
   const [isUpdating, setIsUpdating] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+
+  // 伝票番号インポート用state
+  const [isTrackingImportDialogOpen, setIsTrackingImportDialogOpen] = useState<boolean>(false);
+  const [trackingImportKey, setTrackingImportKey] = useState<number>(0);
+
+  const handleTrackingImportOpenChange = (open: boolean) => {
+    setIsTrackingImportDialogOpen(open);
+    if (!open) {
+      setTrackingImportKey((prev) => prev + 1);
+    }
+  };
 
   const { shipments, total, isLoading, mutate } = useShipments({
     page,
@@ -169,7 +181,7 @@ export default function ShipmentsPage() {
             <RefreshCw className="h-4 w-4 mr-2" />
             ステータス更新
           </Button>
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => setIsTrackingImportDialogOpen(true)}>
             <Upload className="h-4 w-4" />
             伝票番号インポート
           </Button>
@@ -248,6 +260,24 @@ export default function ShipmentsPage() {
               {isUpdating ? "更新中..." : "一括更新"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 伝票番号インポートダイアログ */}
+      <Dialog open={isTrackingImportDialogOpen} onOpenChange={handleTrackingImportOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>伝票番号インポート</DialogTitle>
+            <DialogDescription>
+              CSV/XLSXファイルから伝票番号を一括インポートします。
+            </DialogDescription>
+          </DialogHeader>
+          <TrackingImport
+            key={trackingImportKey}
+            onImportComplete={() => {
+              mutate();
+            }}
+          />
         </DialogContent>
       </Dialog>
     </PageContainer>
