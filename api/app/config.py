@@ -37,7 +37,10 @@ class Settings(BaseSettings):
     API_KEY_HEADER: str = "X-API-Key"
 
     # CORS
-    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "https://pod-admin-beige.vercel.app",
+    ]
 
     # File Storage
     UPLOAD_DIR: str = "uploads"
