@@ -1,0 +1,122 @@
+id: FEAT-0017
+summary: 管理者が配送CSVエクスポート時に「商品名（処理用）」列（値: 注文番号_商品番号）を含むCSVをダウンロードできる
+
+background:
+  why: |
+    配送CSVエクスポート（POST /api/v1/shipments/export-csv）の出力に、処理用の識別列が必要。
+    現状17列のCSVに「商品名（処理用）」列を追加し、注文番号と商品番号を結合した値
+    （例: ORD-0001_ITEM-001）を出力することで、後続の処理システムで各行を一意に識別可能にする。
+    GitHub Issue #27 での機能リクエスト。
+  who: 管理者（admin）
+  when: |
+    - 配送一覧画面で発送データを選択し、配送CSVエクスポートを実行するとき
+    - エクスポートされたCSVを外部の配送処理システムに取り込むとき
+
+scope:
+  includes:
+    - バックエンド: ShipmentService.export_csv() のCSVヘッダーに「商品名（処理用）」列を追加（18列目）
+    - バックエンド: CSVデータ行に「{注文番号}_{商品番号}」形式の値を出力
+    - バックエンド: ユニットテスト・統合テストの追加
+  excludes:
+    - フロントエンドUI変更（CSVダウンロードのトリガーはフロントエンドだが、列追加はバックエンドのみの変更）
+    - 発注リストCSV（OrderListGenerator）への変更（対象は配送CSVエクスポートのみ）
+    - DBスキーマ変更（既存のorder_number, uid フィールドを結合するだけ）
+    - 既存17列の順序・内容の変更
+  prerequisites:
+    - ShipmentService.export_csv() メソッドが実装済み（api/app/services/shipment_service.py）
+    - OrderItem.uid フィールド（商品番号）が存在する（api/app/models/order.py 163行目）
+    - Order.order_number フィールド（注文番号）が存在する（api/app/models/order.py 115行目）
+    - POST /api/v1/shipments/export-csv エンドポイントが実装済み（api/app/routers/shipments.py）
+
+input_output:
+  inputs:
+    - name: shipment_ids
+      type: list[string]
+      required: true
+      validation: 1件以上のShipment IDリスト（既存のShipmentExportRequestスキーマ）
+  outputs:
+    - name: CSVファイル
+      type: bytes（UTF-8 BOM付き）
+      description: |
+        既存17列の末尾に「商品名（処理用）」列（18列目）を追加したCSVファイル。
+        各行の値は「{Order.order_number}_{OrderItem.uid}」形式。
+        例: "ORD-0001_ITEM-001"
+        OrderItem.uid が null または空文字の場合は、注文番号のみを出力（例: "ORD-0001_"）。
+  state_changes:
+    - なし（読み取り専用のCSVエクスポート処理、データ変更なし）
+
+acceptance_criteria:
+  # --- バックエンド ユニットテスト ---
+  - id: AC-001
+    description: CSVヘッダーの18列目に「商品名（処理用）」が含まれる
+    test_type: unit
+    given: ShipmentService.export_csv() が呼び出される
+    when: CSVヘッダー行を確認する
+    then: ヘッダーの18列目が「商品名（処理用）」である
+
+  - id: AC-002
+    description: CSVデータ行の18列目に「注文番号_商品番号」形式の値が出力される
+    test_type: unit
+    given: |
+      注文番号 "ORD-0001"、商品番号（uid） "ITEM-001" の OrderItem を持つ
+      Shipment が存在する
+    when: ShipmentService.export_csv() でCSVを生成する
+    then: データ行の18列目の値が "ORD-0001_ITEM-001" である
+
+  - id: AC-003
+    description: 複数OrderItemがある場合、各行にそれぞれの「注文番号_商品番号」が出力される
+    test_type: unit
+    given: |
+      1つの注文に2つのOrderItem（uid: "ITEM-001", "ITEM-002"）が含まれるShipmentが存在する
+    when: ShipmentService.export_csv() でCSVを生成する
+    then: |
+      2行のデータ行が出力され、それぞれの18列目が
+      "ORD-0001_ITEM-001" と "ORD-0001_ITEM-002" である
+
+  - id: AC-004
+    description: OrderItem.uid が null の場合、注文番号のみ + アンダースコアが出力される
+    test_type: unit
+    given: OrderItem.uid が None の OrderItem を持つ Shipment が存在する
+    when: ShipmentService.export_csv() でCSVを生成する
+    then: データ行の18列目の値が "ORD-0001_" である
+
+  - id: AC-005
+    description: 既存の17列のヘッダーと値が変更されていない
+    test_type: unit
+    given: ShipmentService.export_csv() が呼び出される
+    when: CSVの1〜17列目を確認する
+    then: 既存の17列のヘッダー名と値が変更前と同一である
+
+  # --- バックエンド 統合テスト ---
+  - id: AC-006
+    description: POST /api/v1/shipments/export-csv が18列のCSVを返す
+    test_type: integration
+    given: 配送データが登録されている
+    when: POST /api/v1/shipments/export-csv を管理者トークンで呼び出す
+    then: |
+      レスポンスのCSVが18列のヘッダーを持ち、
+      18列目に「商品名（処理用）」ヘッダーと「注文番号_商品番号」形式のデータが含まれる
+
+constraints:
+  performance:
+    - CSVエクスポートのレスポンス時間に影響を与えない（文字列結合のみの軽微な処理追加）
+  security:
+    - 管理者（admin）のみアクセス可能（既存の認証・認可を維持）
+  compatibility:
+    - 既存の17列の列順・列名・値は一切変更しない（後方互換性）
+    - 新列は既存列の末尾（18列目）に追加する
+    - UTF-8 BOM付きCSVの出力形式を維持
+
+assumptions:
+  - 「商品番号」は OrderItem.uid フィールドを指す（issue #27 の例 "ITEM-001" と一致）
+  - 「注文番号」は Order.order_number フィールドを指す（issue #27 の例 "ORD-0001" と一致）
+  - 新列は既存17列の末尾（18列目）に追加する（issue の「既存の列順には影響を与えない」要件に合致）
+  - OrderItem.uid が null の場合は空文字として扱い、"注文番号_" の形式で出力する
+  - 変更対象は ShipmentService.export_csv() メソッドのみ（CSVGenerator クラスや OrderListGenerator は対象外）
+
+success_metrics:
+  - POST /api/v1/shipments/export-csv のレスポンスCSVに「商品名（処理用）」列が正しく含まれる
+  - 各行の値が「{注文番号}_{商品番号}」形式で出力される
+  - 既存の17列が完全に維持される
+  - バックエンドのユニット・統合テストが全てパスする
+  - 既存テストが影響を受けず全てパスする
