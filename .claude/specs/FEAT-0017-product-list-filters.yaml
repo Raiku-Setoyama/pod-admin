@@ -1,0 +1,216 @@
+id: FEAT-0017
+summary: 管理者が商品マスター一覧を「種類」「メーカー」「ステータス」で絞り込み、フィルター状態をURLパラメーターで保持できる
+
+background:
+  why: |
+    商品マスター一覧画面（/products）には現在フィルター機能がなく、全件がページネーションで表示されるのみ。
+    商品数が増えると目的の商品を探すのが困難になるため、種類（product_type）・メーカー（manufacturer_id）・
+    ステータス（is_active）の3つのフィルターを追加し、絞り込みを可能にする。
+    また、フィルター状態をURLパラメーターで保持することで、ブックマークやリンク共有が可能になる。
+  who: 管理者（admin）
+  when: |
+    - 商品マスター一覧画面（/products）で特定の種類・メーカー・ステータスの商品を探すとき
+    - フィルター結果をブックマークして後で同じ条件で参照するとき
+    - 他の管理者にフィルター済みURLを共有するとき
+
+scope:
+  includes:
+    - バックエンド: GET /api/v1/products のクエリパラメーター（product_type, manufacturer_id, is_active）は既に実装済み。変更不要。
+    - フロントエンド: 商品マスター一覧ページ（/products）にフィルターUIコンポーネントを追加
+    - フロントエンド: ProductFiltersコンポーネントの新規作成（セレクトボックス3つ + リセットボタン）
+    - フロントエンド: useProductsフックにmanufacturer_id, is_activeパラメーターを追加
+    - フロントエンド: URLパラメーター（searchParams）でフィルター状態を保持
+    - フロントエンド: メーカー一覧をAPIから取得してセレクトボックスの選択肢に表示
+    - フロントエンド: フィルター変更時にページを1にリセット
+  excludes:
+    - バックエンドAPIの変更（product_type, manufacturer_id, is_activeフィルターは既に実装済み）
+    - DBマイグレーション（既存のスキーマで対応可能）
+    - テキスト検索フィルター（searchパラメーターは既にhookに定義されているが、今回のスコープ外）
+    - E2Eテスト（明示的に依頼されていないため）
+  prerequisites:
+    - GET /api/v1/products がproduct_type, manufacturer_id, is_activeクエリパラメーターに対応済み（確認済み: api/app/routers/products.py 27-29行目）
+    - ProductRepositoryのfind_allが3つのフィルターに対応済み（確認済み: api/app/repositories/product_repository.py 39-49行目）
+    - GET /api/v1/manufacturers でメーカー一覧が取得可能（確認済み: useManufacturersフック）
+    - shadcn/ui のSelect, Buttonコンポーネントが利用可能（確認済み: 既存のorder-filters.tsx等で使用）
+
+input_output:
+  inputs:
+    - name: product_type（URLパラメーター "category"）
+      type: string
+      required: false
+      validation: ProductType enum値（acrylic_keychain, acrylic_stand, sticker, tote_bag, tshirt）のいずれか
+    - name: manufacturer_id（URLパラメーター "maker"）
+      type: string
+      required: false
+      validation: UUID文字列（既存メーカーのID）
+    - name: is_active（URLパラメーター "status"）
+      type: string
+      required: false
+      validation: "active" または "inactive"（URLパラメーター上の表現。API呼び出し時にboolean変換）
+  outputs:
+    - name: フィルター済み商品一覧
+      type: ProductListResponse
+      description: |
+        選択したフィルター条件に合致する商品のみが一覧に表示される。
+        フィルター未選択の項目は全件対象（フィルターなし）として扱う。
+    - name: URLパラメーター
+      type: URL search params
+      description: |
+        フィルター状態がURLに反映される。例: /products?category=sticker&maker=uuid&status=active
+        フィルター未選択の項目はURLパラメーターから除外される。
+  state_changes:
+    - なし（読み取り専用のフィルター機能、データ変更なし）
+
+acceptance_criteria:
+  # --- フロントエンド: フィルターコンポーネント ---
+  - id: AC-001
+    description: 商品マスター一覧にフィルターUI（種類・メーカー・ステータスのセレクトボックス）が表示される
+    test_type: unit
+    given: 商品マスター一覧ページを開いている
+    when: ページが描画される
+    then: 種類セレクトボックス、メーカーセレクトボックス、ステータスセレクトボックスの3つが表示される
+
+  - id: AC-002
+    description: 種類フィルターを選択すると、対応するproduct_typeで商品一覧がフィルタリングされる
+    test_type: unit
+    given: 商品マスター一覧が表示されている
+    when: 種類フィルターで「ステッカー」を選択する
+    then: useProductsフックにproduct_type="sticker"が渡され、URLパラメーターにcategory=stickerが設定される
+
+  - id: AC-003
+    description: メーカーフィルターを選択すると、対応するmanufacturer_idで商品一覧がフィルタリングされる
+    test_type: unit
+    given: 商品マスター一覧が表示されている、メーカー一覧がAPIから取得済み
+    when: メーカーフィルターでメーカーAを選択する
+    then: useProductsフックにmanufacturer_id=メーカーAのIDが渡され、URLパラメーターにmaker=メーカーAのIDが設定される
+
+  - id: AC-004
+    description: ステータスフィルターで「有効」を選択すると、is_active=trueの商品のみ表示される
+    test_type: unit
+    given: 商品マスター一覧が表示されている
+    when: ステータスフィルターで「有効」を選択する
+    then: useProductsフックにis_active=trueが渡され、URLパラメーターにstatus=activeが設定される
+
+  - id: AC-005
+    description: ステータスフィルターで「無効」を選択すると、is_active=falseの商品のみ表示される
+    test_type: unit
+    given: 商品マスター一覧が表示されている
+    when: ステータスフィルターで「無効」を選択する
+    then: useProductsフックにis_active=falseが渡され、URLパラメーターにstatus=inactiveが設定される
+
+  - id: AC-006
+    description: フィルター変更時にページが1にリセットされる
+    test_type: unit
+    given: 商品一覧のページ2を表示している
+    when: いずれかのフィルターを変更する
+    then: ページが1にリセットされ、URLパラメーターのpageが1になるか削除される
+
+  - id: AC-007
+    description: リセットボタンを押すとすべてのフィルターがクリアされる
+    test_type: unit
+    given: 種類=ステッカー、ステータス=有効でフィルターが適用されている
+    when: リセットボタンをクリックする
+    then: すべてのフィルターがクリアされ、URLパラメーターからフィルター関連パラメーターが除去され、全商品が表示される
+
+  - id: AC-008
+    description: フィルターが1つも適用されていない場合、リセットボタンは表示されない
+    test_type: unit
+    given: すべてのフィルターが「全て」（未選択）の状態
+    when: フィルターUIを確認する
+    then: リセットボタンが表示されない
+
+  # --- フロントエンド: URLパラメーター保持 ---
+  - id: AC-009
+    description: URLパラメーター付きでページを開くと、対応するフィルターが適用された状態で表示される
+    test_type: unit
+    given: なし
+    when: /products?category=sticker&status=active のURLでページを開く
+    then: 種類フィルターが「ステッカー」、ステータスフィルターが「有効」に設定された状態で商品一覧が表示される
+
+  - id: AC-010
+    description: 無効なURLパラメーター値が指定された場合、そのフィルターは無視される
+    test_type: unit
+    given: なし
+    when: /products?category=invalid_value のURLでページを開く
+    then: 種類フィルターは「全ての種類」（未選択）状態で商品一覧が表示される
+
+  # --- フロントエンド: useProductsフック ---
+  - id: AC-011
+    description: useProductsフックがmanufacturer_idパラメーターをAPIリクエストに含める
+    test_type: unit
+    given: manufacturer_idが指定されている
+    when: useProductsフックが実行される
+    then: APIリクエストURLにmanufacturer_id=指定値が含まれる
+
+  - id: AC-012
+    description: useProductsフックがis_activeパラメーターをAPIリクエストに含める
+    test_type: unit
+    given: is_active=trueが指定されている
+    when: useProductsフックが実行される
+    then: APIリクエストURLにis_active=trueが含まれる
+
+  # --- バックエンド: 統合テスト（既存APIフィルターの動作確認） ---
+  - id: AC-013
+    description: GET /products?product_type=sticker でステッカー商品のみが返される
+    test_type: integration
+    given: product_type=stickerの商品とproduct_type=tshirtの商品がそれぞれ登録されている
+    when: GET /api/v1/products?product_type=sticker を管理者トークンで呼び出す
+    then: レスポンスのitemsにはproduct_type=stickerの商品のみ含まれる
+
+  - id: AC-014
+    description: GET /products?manufacturer_id=xxx でそのメーカーの商品のみが返される
+    test_type: integration
+    given: メーカーA（ID=xxx）の商品とメーカーBの商品がそれぞれ登録されている
+    when: GET /api/v1/products?manufacturer_id=xxx を管理者トークンで呼び出す
+    then: レスポンスのitemsにはmanufacturer_id=xxxの商品のみ含まれる
+
+  - id: AC-015
+    description: GET /products?is_active=true で有効な商品のみが返される
+    test_type: integration
+    given: is_active=trueの商品とis_active=falseの商品がそれぞれ登録されている
+    when: GET /api/v1/products?is_active=true を管理者トークンで呼び出す
+    then: レスポンスのitemsにはis_active=trueの商品のみ含まれる
+
+  - id: AC-016
+    description: 複数フィルターを組み合わせて正しく絞り込みできる
+    test_type: integration
+    given: 複数の種類・メーカー・ステータスの商品が登録されている
+    when: GET /api/v1/products?product_type=sticker&is_active=true を管理者トークンで呼び出す
+    then: レスポンスにはproduct_type=stickerかつis_active=trueの商品のみ含まれる
+
+  - id: AC-017
+    description: フィルター条件に一致する商品がない場合、空配列が返される
+    test_type: integration
+    given: product_type=tshirtの商品は登録されていない
+    when: GET /api/v1/products?product_type=tshirt を管理者トークンで呼び出す
+    then: レスポンスのitemsは空配列、totalは0
+
+constraints:
+  performance:
+    - フィルター適用時のAPI応答は500ms以内（既存要件維持）
+    - メーカー一覧の取得はSWRキャッシュを利用し、不要な再取得を避ける
+  security:
+    - 管理者（admin）のみアクセス可能（既存のget_current_admin依存性を維持）
+  compatibility:
+    - 既存の商品マスター一覧の表示・ページネーション機能を壊さない
+    - URLパラメーターなしでアクセスした場合は従来通り全件表示
+    - Chrome / Safari / Firefox で正常に動作する
+
+assumptions:
+  - バックエンドAPIのフィルターパラメーター（product_type, manufacturer_id, is_active）は既に実装済みのため、バックエンド変更は不要と推測
+  - URLパラメーター名はissueの指定に従い category, maker, status とする（APIパラメーター名と異なるがフロントエンドで変換する）
+  - フィルターUIはセレクトボックス形式とする（既存のorder-filters.tsx, shipment-filters.tsxのパターンに準拠）
+  - メーカーセレクトボックスの選択肢はGET /api/v1/manufacturers APIから動的に取得する（limit=100で全件取得を想定）
+  - 種類セレクトボックスの選択肢はProductTypeのenum値をフロントエンドに静的定義する（既存のproduct-list.tsxのproductTypeLabelsを流用）
+  - ステータスセレクトボックスは「全て」「有効」「無効」の3択
+  - ページネーションのpageもURLパラメーターで保持する（既存のuseStateからsearchParamsベースに変更）
+  - Next.js App RouterのuseSearchParams / useRouter を使用してURLパラメーターを操作する
+
+success_metrics:
+  - 商品マスター一覧画面で種類・メーカー・ステータスの3つのフィルターが正常に動作する
+  - フィルター状態がURLパラメーターに反映され、ブラウザの戻る/進むで正しく復元される
+  - URLパラメーター付きでページを直接開いた場合、フィルターが適用された状態で表示される
+  - フィルターリセットで全件表示に戻る
+  - 既存のページネーション機能が正常に動作する
+  - フロントエンドのユニットテストが全てパスする
+  - バックエンドの統合テスト（フィルター動作確認）が全てパスする
