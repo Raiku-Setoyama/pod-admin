@@ -1,0 +1,147 @@
+id: FEAT-0018
+summary: 管理者が受注一覧で選択した受注に紐づく商品イメージ画像をZIPファイルとしてまとめてダウンロードできる
+
+background:
+  why: |
+    受注処理において、各受注に紐づく商品のデザイン画像（design_image_url）を個別にダウンロードするのは
+    非効率であり、一括でまとめてダウンロードしたいという運用上のニーズがある。
+    ZIPファイルとして一括ダウンロードすることで、製造データの準備や確認作業を効率化する。
+  who: 管理者（admin/staff）
+  when: |
+    - 受注一覧画面で対象の受注を選択し、まとめてイメージ画像をダウンロードしたいとき
+    - 製造用のデザインデータを一括取得したいとき
+
+scope:
+  includes:
+    - 受注一覧画面（/orders）に「イメージ画像ダウンロード」ボタンを追加
+    - 選択された受注IDリストを受け取り、紐づくOrderItemのdesign_image_urlを収集してZIP化するAPIエンドポイントを実装
+    - 画像URLから画像を非同期で取得（httpx等）し、ZIPに格納
+    - 画像が存在しない（URLがnull、または取得失敗）場合はスキップしてログに記録
+    - ZIPファイルのダウンロードレスポンス（StreamingResponse）
+  excludes:
+    - thumbnail_image_urlのダウンロード（design_image_urlのみ対象）
+    - 画像のリサイズ・変換処理（元画像をそのままZIPに格納）
+    - 受注詳細画面からの個別ダウンロード機能（対象外、将来拡張として検討）
+    - CSVインポート画面からのダウンロード機能（受注一覧画面のみ対象）
+  prerequisites:
+    - OrderItemモデルにdesign_image_urlフィールドが存在すること
+    - 受注一覧画面にチェックボックスによる複数選択機能が存在すること
+    - ZipBuilderユーティリティ（api/app/utils/zip_builder.py）が存在すること
+
+input_output:
+  inputs:
+    - name: order_ids
+      type: list[string]
+      required: true
+      validation: 1件以上のUUID文字列リスト
+  outputs:
+    - name: ZIPファイル
+      type: application/zip
+      description: |
+        選択された受注のOrderItemに紐づくdesign_image_urlから取得した画像ファイルを格納したZIPファイル。
+        ファイル名は「受注画像_{YYYYMMDD_HHMMSS}.zip」形式。
+        ZIP内のファイル構成: {注文番号}/{商品名}_{連番}.{拡張子}
+  state_changes:
+    - なし（読み取り専用の操作）
+
+acceptance_criteria:
+  - id: AC-001
+    description: 受注を1件以上選択した状態で「イメージ画像ダウンロード」ボタンが表示される
+    test_type: unit
+    given: 受注一覧画面を開いている
+    when: 1件以上の受注にチェックを入れる
+    then: 「イメージ画像ダウンロード」ボタンが表示される
+
+  - id: AC-002
+    description: 受注が未選択の場合は「イメージ画像ダウンロード」ボタンが表示されない
+    test_type: unit
+    given: 受注一覧画面を開いている
+    when: 受注を1件も選択していない
+    then: 「イメージ画像ダウンロード」ボタンは表示されない
+
+  - id: AC-003
+    description: APIエンドポイントが選択された受注IDに紐づくdesign_image_urlを収集してZIPを返す
+    test_type: integration
+    given: design_image_urlを持つOrderItemが紐づく受注が存在する
+    when: POST /api/v1/orders/download-images に対象のorder_idsを送信する
+    then: 対象画像を含むZIPファイルがレスポンスとして返される
+
+  - id: AC-004
+    description: design_image_urlがnullのOrderItemはスキップされる
+    test_type: unit
+    given: design_image_urlがnullのOrderItemが含まれる受注を選択する
+    when: 画像ZIPダウンロードAPIを呼び出す
+    then: nullのアイテムはスキップされ、画像を持つアイテムのみがZIPに含まれる
+
+  - id: AC-005
+    description: 画像URLからの取得に失敗した場合はスキップしてログに記録する
+    test_type: unit
+    given: 無効な画像URL（404やタイムアウト）を持つOrderItemが含まれる受注を選択する
+    when: 画像ZIPダウンロードAPIを呼び出す
+    then: 取得失敗した画像はスキップされ、ログに警告が記録され、取得できた画像のみがZIPに含まれる
+
+  - id: AC-006
+    description: 全ての画像取得に失敗した場合、またはdesign_image_urlを持つアイテムが0件の場合はエラーを返す
+    test_type: unit
+    given: 選択された受注のOrderItemに有効なdesign_image_urlが存在しない
+    when: 画像ZIPダウンロードAPIを呼び出す
+    then: 404エラー（ダウンロード可能な画像がありません）が返される
+
+  - id: AC-007
+    description: 存在しない受注IDが含まれている場合、存在する受注のみ処理される
+    test_type: unit
+    given: 存在しない受注IDが1件含まれるorder_idsリストを送信する
+    when: 画像ZIPダウンロードAPIを呼び出す
+    then: 存在する受注に紐づく画像のみがZIPに含まれ、存在しない受注はスキップされる
+
+  - id: AC-008
+    description: ZIPファイル内のファイル名が注文番号と商品名で構成される
+    test_type: unit
+    given: 注文番号「ORD-001」、商品名「Tシャツ Mサイズ 白」のOrderItemがある受注を選択する
+    when: 画像ZIPダウンロードAPIを呼び出す
+    then: ZIP内のファイルパスが「ORD-001/Tシャツ Mサイズ 白_1.png」のような形式になっている
+
+  - id: AC-009
+    description: order_idsが空の場合は422エラーを返す
+    test_type: unit
+    given: 空のorder_idsリストを送信する
+    when: POST /api/v1/orders/download-images を呼び出す
+    then: 422バリデーションエラーが返される
+
+  - id: AC-010
+    description: 管理者認証が必要
+    test_type: integration
+    given: 認証されていないユーザー
+    when: POST /api/v1/orders/download-images を呼び出す
+    then: 401 Unauthorizedエラーが返される
+
+  - id: AC-011
+    description: ボタンクリック時にダウンロードが開始される
+    test_type: unit
+    given: 受注一覧画面で1件以上の受注を選択している
+    when: 「イメージ画像ダウンロード」ボタンをクリックする
+    then: ZIPファイルのダウンロードが開始される（ブラウザのダウンロードダイアログまたは自動保存）
+
+constraints:
+  performance:
+    - 画像取得は並列で行い、1画像あたりのタイムアウトは10秒
+    - 全体のリクエストタイムアウトは120秒（大量画像対応）
+    - 同時取得数は最大10並列（外部サーバー負荷軽減のため）
+  security:
+    - 管理者（admin/staff）のみアクセス可能（get_current_admin依存関係使用）
+    - 画像URLはOrderItemのdesign_image_urlフィールドに保存されたもののみ取得（任意URLの指定不可）
+  compatibility:
+    - 既存の受注一覧画面のUI・機能を壊さない
+    - 既存の一括ステータス更新機能と共存する（ボタンが両方表示される）
+
+assumptions:
+  - design_image_urlは外部URL（HTTPS）であり、認証なしでアクセス可能と想定
+  - 画像の拡張子はURLのパスから推定する。推定できない場合はContent-Typeヘッダーから判定し、それでも不明な場合は.pngとする
+  - 同一注文番号内で同名ファイルが発生する場合は連番で区別する（_1, _2, ...）
+  - ZIPファイルのサイズ上限は特に設けない（実運用上、数十件程度の受注を想定）
+  - フロントエンドのボタンは既存の「選択したN件を更新」ボタンの横に配置する
+
+success_metrics:
+  - 受注一覧画面から選択した受注のイメージ画像をZIPで一括ダウンロードできる
+  - 画像がない受注や取得失敗したURLがあっても、エラーにならず取得できた画像のみがダウンロードされる
+  - 既存の受注一覧・ステータス更新機能に影響がない

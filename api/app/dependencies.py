@@ -25,6 +25,7 @@ from app.services.invoice_service import InvoiceService
 from app.services.manufacturer_service import ManufacturerService
 from app.services.manufacturer_order_service import ManufacturerOrderService
 from app.services.manufacturer_portal_service import ManufacturerPortalService
+from app.services.order_image_service import OrderImageService
 from app.services.order_list_service import OrderListService
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
@@ -179,6 +180,13 @@ def get_external_service(
 ) -> ExternalService:
     """Get external service for external sales site APIs."""
     return ExternalService(product_repo, order_repo)
+
+
+def get_order_image_service(
+    order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
+) -> OrderImageService:
+    """Get order image service."""
+    return OrderImageService(order_repo)
 
 
 def get_invoice_service(

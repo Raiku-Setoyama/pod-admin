@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from app.dependencies import (
     get_current_admin,
     get_file_storage,
+    get_order_image_service,
     get_order_service,
     verify_api_key,
 )
@@ -19,10 +20,12 @@ from app.schemas.order import (
     OrderBulkStatusUpdate,
     OrderBulkStatusUpdateResponse,
     OrderCreate,
+    OrderImageDownloadRequest,
     OrderListResponse,
     OrderResponse,
     OrderStatusUpdate,
 )
+from app.services.order_image_service import OrderImageService
 from app.services.order_service import OrderService
 from app.utils.exceptions import OrderNotFoundError, ValidationError
 from app.utils.file_storage import FileStorage
@@ -92,6 +95,33 @@ async def list_orders(
         ordered_from=ordered_from,
         ordered_to=ordered_to,
         search=search,
+    )
+
+
+@router.post("/download-images")
+async def download_order_images(
+    data: OrderImageDownloadRequest,
+    image_service: Annotated[OrderImageService, Depends(get_order_image_service)],
+    current_user: Annotated[User, Depends(get_current_admin)],
+) -> StreamingResponse:
+    """受注イメージ画像をZIPファイルとしてダウンロード."""
+    from urllib.parse import quote
+
+    zip_bytes = await image_service.collect_and_build_zip(data.order_ids)
+    filename = image_service.generate_zip_filename()
+
+    # RFC 5987: Use filename* for non-ASCII filenames
+    encoded_filename = quote(filename)
+    content_disposition = (
+        f"attachment; filename*=UTF-8''{encoded_filename}"
+    )
+
+    return StreamingResponse(
+        iter([zip_bytes]),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": content_disposition,
+        },
     )
 
 

@@ -115,3 +115,21 @@ class ShipmentExportRequest(BaseModel):
     """配送CSVエクスポートリクエスト"""
 
     shipment_ids: list[str] = Field(..., min_length=1)
+
+
+class TrackingFileImportError(BaseModel):
+    """伝票番号ファイルインポートのエラー詳細"""
+
+    row: int
+    order_number: str | None = None
+    message: str
+
+
+class TrackingFileImportResult(BaseModel):
+    """伝票番号ファイルインポートの結果"""
+
+    total_count: int
+    success_count: int
+    error_count: int
+    errors: list[TrackingFileImportError]
+    updated_shipments: list[ShipmentResponse] = []

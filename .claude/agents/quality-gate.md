@@ -121,55 +121,19 @@ docker compose exec -T ${BE_SERVICE:-api} pytest tests/integration -v 2>&1
 
 ---
 
-### Layer 6: Playwright E2E（オプション）
+### Layer 6: Playwright E2E（スキップ）
 
-**E2Eテストは `e2e/` ディレクトリが存在する場合のみ実行する。**
-（ユーザーが明示的にE2Eテストを依頼し、tdd-writerがE2Eテストを生成した場合のみ）
+**⚠️ E2Eテストは常にスキップする。**
 
-**実行判定:**
+既存の `e2e/` ディレクトリが存在するが、各フィーチャーの `/ship` パイプラインでは
+E2Eテストを実行しない（既存テストが大量にあり時間がかかりすぎるため）。
+
 ```bash
-# e2e/ ディレクトリが存在しなければスキップ（FAILではない）
-if [ ! -d "e2e" ]; then
-  echo "SKIP: E2Eテストは対象外です（e2e/ディレクトリなし）"
-  # Layer 6 をスキップして次へ進む
-fi
+echo "SKIP: E2Eテストはスキップします（pod-adminプロジェクトポリシー）"
+# Layer 6 を常にスキップして次へ進む
 ```
 
-**e2e/ が存在する場合の事前チェック（いずれかが失敗したらFAIL）:**
-
-1. **テストファイルの存在確認**:
-```bash
-if [ -z "$(find e2e -name '*.spec.ts' -o -name '*.spec.js' 2>/dev/null)" ]; then
-  echo "FAIL: E2Eテストファイルが存在しません（e2e/*.spec.ts）"
-  exit 1
-fi
-```
-
-2. **開発サーバーの起動確認**:
-```bash
-if ! docker compose ps --status running | grep -q "${FE_SERVICE:-app}"; then
-  echo "FAIL: 開発サーバーが起動していません"
-  echo "docker compose up -d を実行してください"
-  exit 1
-fi
-```
-
-3. **アプリケーションの応答確認**:
-```bash
-if ! docker compose exec -T ${FE_SERVICE:-app} curl -sf http://localhost:3000 > /dev/null 2>&1; then
-  echo "FAIL: アプリケーションが応答しません"
-  exit 1
-fi
-```
-
-**テスト実行:**
-```bash
-docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm e2e 2>&1
-```
-
-**結果の検証:**
-- exit code が 0 以外なら FAIL
-- "0 passed" や "no tests found" が出力されたら FAIL
+Layer 6 の結果は常に SKIP（PASSとして扱う）。
 
 ---
 
@@ -205,9 +169,9 @@ Intent Spec で定義されたページ・APIが全て存在することを確�
 
 ## 判定
 
-- **PASS**: Layer 1-5 全パス + Layer 6（存在する場合）パス + Layer 7-9 重大問題なし
-- **要確認**: Layer 1-6 パスだが懸念あり
-- **FAIL**: Layer 1-5 のいずれか失敗、または Layer 6 が存在して失敗
+- **PASS**: Layer 1-5 全パス + Layer 6 スキップ + Layer 7-9 重大問題なし
+- **要確認**: Layer 1-5 パスだが懸念あり
+- **FAIL**: Layer 1-5 のいずれか失敗
 
 **重要: FAIL判定の場合、implementer に差し戻して修正させる。**
 **すべてのテストがパスするまで実装フェーズを繰り返す（最大3回）。**

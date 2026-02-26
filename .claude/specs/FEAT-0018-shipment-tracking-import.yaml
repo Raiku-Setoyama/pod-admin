@@ -1,0 +1,221 @@
+id: FEAT-0018
+summary: 管理者が注文番号・伝票番号・運送会社名を含むCSV/XLSXファイルをアップロードし、対応する配送レコードの伝票番号・運送会社を一括更新できる
+
+background:
+  why: |
+    現在、伝票番号の登録はテキストエリアに「配送ID,伝票番号」形式で手入力する必要があり、
+    配送業者から受け取ったCSV/XLSXファイルを直接インポートできない。
+    注文番号ベースで伝票番号を一括登録できれば、運用効率が大幅に向上する。
+  who: 管理者（admin）
+  when: |
+    配送業者から伝票番号一覧をCSV/XLSXで受け取った際に、
+    配送管理画面からファイルをアップロードして伝票番号を一括登録する場面。
+
+scope:
+  includes:
+    - "バックエンド: POST /api/v1/shipments/import エンドポイント（CSV/XLSXファイルアップロード対応）"
+    - "バックエンド: CSV/XLSXファイルの解析ロジック（注文番号・伝票番号・運送会社名の3列）"
+    - "バックエンド: 注文番号からshipmentを特定し、tracking_number・carrierを更新する処理"
+    - "バックエンド: 行ごとのバリデーション・エラーハンドリング（エラー行をスキップし結果を返す）"
+    - "バックエンド: サンプルCSVテンプレートダウンロード用エンドポイント GET /api/v1/shipments/import-template"
+    - "フロントエンド: 配送一覧画面にCSV/XLSXインポートダイアログを追加"
+    - "フロントエンド: ファイル選択（ドラッグ&ドロップ対応）UIコンポーネント"
+    - "フロントエンド: インポート結果の表示（成功件数・失敗件数・エラー詳細）"
+    - "フロントエンド: サンプルCSVテンプレートのダウンロードリンク"
+  excludes:
+    - "配送ステータスの自動更新（伝票番号登録時にステータスをshippedに変更する等は対象外）"
+    - "既存のPOST /shipments/import-tracking（JSON形式）エンドポイントの廃止・変更"
+    - "配送レコード自体の新規作成（既存のshipmentに対する更新のみ）"
+  prerequisites:
+    - "shipmentレコードが注文（Order）と紐づいている（ShipmentItem経由）"
+    - "注文番号（order_number）がOrders.order_numberとしてユニーク"
+    - "1つの注文に対して1つのshipmentが紐づく想定"
+
+input_output:
+  inputs:
+    - name: file
+      type: file (CSV or XLSX)
+      required: true
+      validation: |
+        - ファイル拡張子が .csv または .xlsx であること
+        - ファイルサイズが10MB以下であること
+        - CSVの場合: UTF-8（BOM付き可）またはShift-JIS対応
+        - ヘッダー行が存在すること
+        - 必須列「注文番号」「伝票番号」が存在すること
+        - 「運送会社名」列はオプション（省略時はnull）
+  outputs:
+    - name: import_result
+      type: object
+      description: |
+        {
+          "total_count": int,        // 処理対象行数（ヘッダー除く）
+          "success_count": int,      // 更新成功件数
+          "error_count": int,        // エラー件数
+          "errors": [                // エラー詳細配列
+            {
+              "row": int,            // 行番号（1始まり、ヘッダー除く）
+              "order_number": str,   // 注文番号（解析できた場合）
+              "message": str         // エラーメッセージ
+            }
+          ],
+          "updated_shipments": [     // 更新されたshipmentのレスポンス
+            ShipmentResponse
+          ]
+        }
+    - name: template_csv
+      type: file (CSV)
+      description: |
+        サンプルCSVテンプレート。ヘッダー行とサンプルデータ行。
+        列: 注文番号, 伝票番号, 運送会社名
+  state_changes:
+    - "対象shipmentのtracking_numberが更新される"
+    - "対象shipmentのcarrierが更新される（運送会社名列が提供された場合）"
+    - "shipmentのupdated_atが更新される"
+
+acceptance_criteria:
+  - id: AC-001
+    description: CSVファイル（UTF-8）をアップロードすると、注文番号に紐づくshipmentの伝票番号・運送会社が更新される
+    test_type: integration
+    given: shipmentが存在し、注文番号"ORD-001"に紐づいている
+    when: 注文番号"ORD-001"、伝票番号"1234-5678-9012"、運送会社名"ヤマト運輸"のCSVをPOST /api/v1/shipments/importにアップロードする
+    then: 対応するshipmentのtracking_numberが"1234-5678-9012"に、carrierが"ヤマト運輸"に更新される
+
+  - id: AC-002
+    description: XLSXファイルをアップロードしても同様に伝票番号・運送会社が更新される
+    test_type: integration
+    given: shipmentが存在し、注文番号"ORD-002"に紐づいている
+    when: 同内容のXLSXファイルをPOST /api/v1/shipments/importにアップロードする
+    then: CSVと同じ結果になる
+
+  - id: AC-003
+    description: 複数行のCSVで一括更新ができる
+    test_type: integration
+    given: 3件のshipmentが存在する
+    when: 3行のCSVをアップロードする
+    then: 3件すべてのshipmentが更新され、success_count=3が返される
+
+  - id: AC-004
+    description: 存在しない注文番号の行はエラーとして報告され、他の行は正常に処理される
+    test_type: integration
+    given: "ORD-001"は存在するが"ORD-999"は存在しない
+    when: 2行のCSV（ORD-001とORD-999）をアップロードする
+    then: success_count=1、error_count=1、errorsにORD-999のエラーが含まれる
+
+  - id: AC-005
+    description: shipmentが紐づいていない注文番号の行はエラーとして報告される
+    test_type: integration
+    given: 注文"ORD-003"は存在するがshipmentが紐づいていない
+    when: ORD-003を含むCSVをアップロードする
+    then: error_count=1、errorsに「配送レコードが存在しません」エラーが含まれる
+
+  - id: AC-006
+    description: 必須列（注文番号、伝票番号）がないCSVはバリデーションエラーになる
+    test_type: unit
+    given: ヘッダーが「注文番号」列のみのCSV
+    when: ファイルを解析する
+    then: "「伝票番号」列が見つかりません"というバリデーションエラーが返される
+
+  - id: AC-007
+    description: 空行はスキップされる
+    test_type: unit
+    given: データ行の間に空行が含まれるCSV
+    when: ファイルを解析する
+    then: 空行は無視され、有効な行のみが処理される
+
+  - id: AC-008
+    description: 伝票番号が空の行はエラーとして報告される
+    test_type: unit
+    given: 注文番号は入力されているが伝票番号が空の行
+    when: ファイルを解析する
+    then: error_count=1、errorsに「伝票番号が空です」エラーが含まれる
+
+  - id: AC-009
+    description: 運送会社名列が省略されている場合（列自体がない場合）、carrierはnullのまま
+    test_type: unit
+    given: ヘッダーが「注文番号,伝票番号」のみのCSV
+    when: ファイルを解析する
+    then: 正常に処理され、carrierは更新されない（nullのまま）
+
+  - id: AC-010
+    description: CSV/XLSX以外のファイルはバリデーションエラーになる
+    test_type: unit
+    given: .txtファイル
+    when: POST /api/v1/shipments/importにアップロードする
+    then: 422エラー「対応していないファイル形式です。CSVまたはXLSXファイルをアップロードしてください」が返される
+
+  - id: AC-011
+    description: 10MBを超えるファイルはバリデーションエラーになる
+    test_type: unit
+    given: 11MBのCSVファイル
+    when: POST /api/v1/shipments/importにアップロードする
+    then: 422エラー「ファイルサイズが上限（10MB）を超えています」が返される
+
+  - id: AC-012
+    description: GET /api/v1/shipments/import-templateでサンプルCSVテンプレートがダウンロードできる
+    test_type: integration
+    given: 認証済み管理者
+    when: GET /api/v1/shipments/import-templateにリクエストする
+    then: UTF-8 BOM付きCSVファイルが返され、ヘッダー行「注文番号,伝票番号,運送会社名」とサンプルデータ行が含まれる
+
+  - id: AC-013
+    description: Shift-JISエンコードのCSVも正しく解析できる
+    test_type: unit
+    given: Shift-JISでエンコードされたCSV
+    when: ファイルを解析する
+    then: 日本語の注文番号・運送会社名が正しく読み取れる
+
+  - id: AC-014
+    description: フロントエンドのインポートダイアログでファイルを選択してインポートが実行できる
+    test_type: unit
+    given: 配送一覧画面が表示されている
+    when: インポートボタンをクリックし、CSVファイルを選択して「インポート」を実行する
+    then: APIが呼び出され、結果（成功件数・失敗件数・エラー詳細）がダイアログ内に表示される
+
+  - id: AC-015
+    description: インポート成功後に配送一覧が自動リフレッシュされる
+    test_type: unit
+    given: インポートが成功した
+    when: ダイアログを閉じる
+    then: 配送一覧が最新のデータに更新されている
+
+  - id: AC-016
+    description: サンプルテンプレートダウンロードリンクがインポートダイアログ内に表示される
+    test_type: unit
+    given: インポートダイアログが表示されている
+    when: テンプレートダウンロードリンクをクリックする
+    then: CSVテンプレートファイルがダウンロードされる
+
+  - id: AC-017
+    description: 同一注文番号が複数行に存在する場合、最後の行の値で上書きされる
+    test_type: unit
+    given: 同じ注文番号"ORD-001"が2行存在し、伝票番号がそれぞれ異なる
+    when: ファイルを解析・処理する
+    then: 最後の行の伝票番号で更新される（警告なし）
+
+constraints:
+  performance:
+    - "1000行のCSVファイルを10秒以内に処理できること"
+    - "ファイルサイズ上限は10MB"
+  security:
+    - "管理者（admin）のみアクセス可能（get_current_admin依存）"
+    - "アップロードされたファイルはメモリ上で処理し、サーバーに保存しない"
+  compatibility:
+    - "CSVエンコーディング: UTF-8（BOM付き/なし）、Shift-JIS対応"
+    - "XLSXファイル: openpyxlライブラリで解析"
+
+assumptions:
+  - "1つの注文番号に対して複数のshipmentが紐づくケースはないと想定（1:1関係）"
+  - "注文番号は注文テーブルのorder_numberフィールドに対応する"
+  - "CSVの列名は日本語（「注文番号」「伝票番号」「運送会社名」）を想定"
+  - "XLSXの解析にはopenpyxlライブラリを使用する（pyproject.tomlへの追加が必要な場合あり）"
+  - "エラー行はスキップし、他の行は正常に処理する（ロールバックではなく部分成功方式）"
+  - "既存のPOST /shipments/import-tracking（JSON形式）は残し、新しいエンドポイントを追加する"
+  - "既存のTrackingImportコンポーネント（テキストエリア方式）は新しいファイルアップロード方式に置き換える"
+  - "サンプルテンプレートにはヘッダー行に加えてサンプルデータ行1行を含める"
+  - "運送会社名の列ヘッダーは「運送会社名」「運送会社」のいずれも許容する"
+
+success_metrics:
+  - "CSV/XLSXファイルアップロードによる伝票番号一括登録が正常に動作する"
+  - "エラー行がある場合も他の行は正常に処理され、エラー詳細が返される"
+  - "サンプルCSVテンプレートがダウンロードできる"
+  - "フロントエンドのインポートUIが直感的に操作できる"

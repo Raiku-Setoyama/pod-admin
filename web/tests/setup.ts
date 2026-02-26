@@ -1,6 +1,29 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import { afterEach, vi } from 'vitest'
+import Module from 'node:module'
+
+// Patch Node's require to return vitest's ESM mock for dual-package modules.
+// vitest's vi.mock() only intercepts ESM imports (.mjs), but some tests
+// use require() which resolves to CJS (.js). This patch looks up the
+// mock module in vitest's executor cache using the "mock:" prefix.
+const esmPathMap: Record<string, string> = {
+  'swr': '/app/node_modules/swr/dist/index/index.mjs',
+}
+const originalRequire = Module.prototype.require;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(Module.prototype as any).require = function patchedRequire(id: string) {
+  if (id in esmPathMap) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mocker = (globalThis as any).__vitest_mocker__
+    if (mocker?.executor?.moduleCache) {
+      const mockKey = `mock:${esmPathMap[id]}`
+      const cached = mocker.executor.moduleCache.get(mockKey)
+      if (cached?.exports) return cached.exports
+    }
+  }
+  return originalRequire.call(this, id)
+}
 
 // Cleanup after each test
 afterEach(() => {

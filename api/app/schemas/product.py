@@ -47,6 +47,7 @@ class ProductResponse(ProductBase):
 
     id: str
     is_active: bool
+    manufacturer_name: str | None = None
     created_at: datetime
     updated_at: datetime
 

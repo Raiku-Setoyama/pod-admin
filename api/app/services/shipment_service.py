@@ -22,10 +22,15 @@ from app.schemas.shipment import (
     ShipmentListResponse,
     ShipmentResponse,
     ShipmentStatusUpdate,
+    TrackingFileImportError,
+    TrackingFileImportResult,
     TrackingImportRequest,
 )
 from app.utils.exceptions import InvalidStatusTransitionError, NotFoundError, ValidationError
 from app.utils.file_storage import FileStorage
+
+import chardet
+import openpyxl
 
 
 class ShipmentService:
@@ -263,6 +268,204 @@ class ShipmentService:
             failed_ids=failed_ids,
         )
 
+    async def import_tracking_from_file(
+        self, file: UploadFile
+    ) -> TrackingFileImportResult:
+        """CSV/XLSXファイルから伝票番号を一括インポート.
+
+        Args:
+            file: アップロードされたCSVまたはXLSXファイル
+
+        Returns:
+            TrackingFileImportResult: インポート結果
+
+        Raises:
+            ValidationError: ファイル形式やサイズが不正な場合
+        """
+        # ファイル拡張子チェック
+        filename = file.filename or ""
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        if ext not in ("csv", "xlsx"):
+            raise ValidationError(
+                "対応していないファイル形式です。CSVまたはXLSXファイルをアップロードしてください"
+            )
+
+        # ファイルサイズチェック (10MB上限)
+        max_size = 10 * 1024 * 1024
+        if file.size is not None and file.size > max_size:
+            raise ValidationError("ファイルサイズが上限（10MB）を超えています")
+
+        # ファイル内容を読み込み
+        content = await file.read()
+
+        # 読み込んだ内容でもサイズチェック
+        if len(content) > max_size:
+            raise ValidationError("ファイルサイズが上限（10MB）を超えています")
+
+        # ファイル解析
+        if ext == "xlsx":
+            rows = self._parse_xlsx(content)
+        else:
+            rows = self._parse_csv(content)
+
+        # ヘッダーバリデーション
+        if not rows:
+            raise ValidationError("ファイルにデータがありません")
+
+        header = [col.strip() for col in rows[0]]
+
+        # 必須列チェック
+        if "注文番号" not in header:
+            raise ValidationError("「注文番号」列が見つかりません")
+        if "伝票番号" not in header:
+            raise ValidationError("「伝票番号」列が見つかりません")
+
+        order_number_idx = header.index("注文番号")
+        tracking_number_idx = header.index("伝票番号")
+
+        # 運送会社名列（オプション）
+        carrier_idx = None
+        for carrier_name in ("運送会社名", "運送会社"):
+            if carrier_name in header:
+                carrier_idx = header.index(carrier_name)
+                break
+
+        # データ行の解析（空行スキップ、重複はlast-write-wins）
+        # parsed_entries: order_number -> (tracking_number, carrier, row_number)
+        parsed_entries: dict[str, tuple[str, str | None, int]] = {}
+        errors: list[TrackingFileImportError] = []
+        data_rows = rows[1:]
+        valid_row_count = 0
+
+        for i, row in enumerate(data_rows, start=1):
+            # 空行スキップ
+            if not row or all(cell.strip() == "" for cell in row):
+                continue
+
+            valid_row_count += 1
+
+            # 列数が足りない場合
+            order_number = row[order_number_idx].strip() if order_number_idx < len(row) else ""
+            tracking_number = row[tracking_number_idx].strip() if tracking_number_idx < len(row) else ""
+
+            # 注文番号チェック
+            if not order_number:
+                errors.append(TrackingFileImportError(
+                    row=i,
+                    order_number=None,
+                    message="注文番号が空です",
+                ))
+                continue
+
+            # 伝票番号チェック
+            if not tracking_number:
+                errors.append(TrackingFileImportError(
+                    row=i,
+                    order_number=order_number,
+                    message="伝票番号が空です",
+                ))
+                continue
+
+            carrier_value = None
+            if carrier_idx is not None and carrier_idx < len(row):
+                carrier_value = row[carrier_idx].strip() or None
+
+            # last-write-wins
+            parsed_entries[order_number] = (tracking_number, carrier_value, i)
+
+        # 注文番号からshipmentを検索して更新
+        success_count = 0
+        updated_shipments: list[ShipmentResponse] = []
+
+        for order_number, (tracking_number, carrier_value, row_num) in parsed_entries.items():
+            # 注文を検索
+            order = await self._order_repo.find_by_order_number(order_number)
+            if not order:
+                errors.append(TrackingFileImportError(
+                    row=row_num,
+                    order_number=order_number,
+                    message="注文番号が見つかりません",
+                ))
+                continue
+
+            # shipmentを検索
+            order_shipment_map = await self._shipment_repo.find_by_order_ids([order.id])
+            shipment = order_shipment_map.get(order.id)
+            if not shipment:
+                errors.append(TrackingFileImportError(
+                    row=row_num,
+                    order_number=order_number,
+                    message="配送レコードが存在しません",
+                ))
+                continue
+
+            # 更新
+            shipment.tracking_number = tracking_number
+            if carrier_value is not None:
+                shipment.carrier = carrier_value
+            await self._shipment_repo.update(shipment)
+            success_count += 1
+
+        return TrackingFileImportResult(
+            total_count=valid_row_count,
+            success_count=success_count,
+            error_count=len(errors),
+            errors=errors,
+            updated_shipments=updated_shipments,
+        )
+
+    def _parse_csv(self, content: bytes) -> list[list[str]]:
+        """CSVバイトデータを解析する.
+
+        UTF-8 (BOM付き/なし) および Shift-JIS に対応。
+        chardet でエンコーディングを自動検出する。
+        """
+        # BOM付きUTF-8の場合はBOMを除去
+        if content.startswith(b"\xef\xbb\xbf"):
+            text = content[3:].decode("utf-8")
+        else:
+            # chardetでエンコーディングを検出
+            detected = chardet.detect(content)
+            encoding = detected.get("encoding", "utf-8") or "utf-8"
+            # chardetが "SHIFT_JIS" や "Windows-1252" 等を返す場合がある
+            # 日本語のCSVではShift-JIS系のエンコーディングを正しく扱う
+            if encoding.upper() in ("SHIFT_JIS", "SHIFT-JIS", "WINDOWS-31J", "CP932"):
+                encoding = "shift_jis"
+            try:
+                text = content.decode(encoding)
+            except (UnicodeDecodeError, LookupError):
+                text = content.decode("utf-8", errors="replace")
+
+        reader = csv.reader(io.StringIO(text))
+        return list(reader)
+
+    def _parse_xlsx(self, content: bytes) -> list[list[str]]:
+        """XLSXバイトデータを解析する."""
+        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True)
+        ws = wb.active
+        rows: list[list[str]] = []
+        for row in ws.iter_rows(values_only=True):
+            rows.append([str(cell) if cell is not None else "" for cell in row])
+        wb.close()
+        return rows
+
+    async def generate_import_template(self) -> tuple[bytes, str]:
+        """インポート用サンプルCSVテンプレートを生成.
+
+        Returns:
+            Tuple of (CSV content as bytes with UTF-8 BOM, filename).
+        """
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["注文番号", "伝票番号", "運送会社名"])
+        writer.writerow(["ORD-0001", "1234-5678-9012", "ヤマト運輸"])
+
+        csv_content = output.getvalue()
+        csv_bytes = b"\xef\xbb\xbf" + csv_content.encode("utf-8")
+
+        filename = "tracking_import_template.csv"
+        return csv_bytes, filename
+
     def _is_valid_transition(
         self, current: ShipmentStatus, target: ShipmentStatus
     ) -> bool:
@@ -342,7 +545,7 @@ class ShipmentService:
     async def export_csv(self, shipment_ids: list[str]) -> tuple[bytes, str]:
         """Export shipments to CSV for delivery.
 
-        Generates a CSV file with 17 columns for delivery company import.
+        Generates a CSV file with 18 columns for delivery company import.
         Each row represents one order item (not one shipment).
 
         Args:
@@ -395,6 +598,7 @@ class ShipmentService:
                         order_source.address_city if order_source else "",  # 15. 配送元住所2
                         order_source.address_building or "" if order_source else "",  # 16. 配送元住所3
                         order_source.name if order_source else "",  # 17. 配送元氏名
+                        f"{order.order_number}_{item.uid or ''}",  # 18. 商品名（処理用）
                     ]
                     rows.append(row)
 
@@ -421,6 +625,7 @@ class ShipmentService:
             "配送元住所2(市区町村番地以下)",
             "配送元住所3(建物名等)",
             "配送元氏名",
+            "商品名（処理用）",
         ]
         writer.writerow(header)
 

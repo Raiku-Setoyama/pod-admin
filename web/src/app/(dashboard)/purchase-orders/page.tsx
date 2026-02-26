@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { List } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { PageContainer } from "@/components/layout/page-container";
 import { Pagination } from "@/components/common/pagination";
 import { PageLoading } from "@/components/common/loading-spinner";
@@ -27,6 +29,15 @@ export default function PurchaseOrdersPage() {
     <PageContainer
       title="発注一覧"
       description="発注中の商品をメーカー別に表示"
+      actions={
+        <Button
+          variant="outline"
+          onClick={() => router.push("/purchase-orders/all")}
+        >
+          <List className="h-4 w-4 mr-2" />
+          すべての発注を見る
+        </Button>
+      }
     >
       <div className="space-y-4">
         {isLoading ? (

@@ -130,6 +130,36 @@ export interface ManufacturerOrderStatusUpdate {
   note?: string;
 }
 
+// All Manufacturer Order types (全メーカー横断発注明細)
+export interface AllManufacturerOrderItem {
+  id: string;
+  order_id: string;
+  order_number: string;
+  uid: string | null;
+  product_id: string;
+  product_name: string;
+  product_type: ProductType;
+  price: number;
+  quantity: number;
+  size: string | null;
+  position: string | null;
+  color: string | null;
+  design_image_url: string | null;
+  thumbnail_image_url: string | null;
+  ordered_at: string;
+  customer_name: string;
+  status: OrderStatus;
+  manufacturer_id: string;
+  manufacturer_name: string;
+}
+
+export interface AllManufacturerOrderItemListResponse {
+  items: AllManufacturerOrderItem[];
+  total: number;
+  total_quantity: number;
+  total_amount: number;
+}
+
 // Shipment types
 export type ShipmentStatus = "pending" | "ready" | "shipped";
 
@@ -166,6 +196,20 @@ export interface ShipmentListResponse {
   total: number;
   page: number;
   limit: number;
+}
+
+export interface TrackingFileImportError {
+  row: number;
+  order_number: string | null;
+  message: string;
+}
+
+export interface TrackingFileImportResult {
+  total_count: number;
+  success_count: number;
+  error_count: number;
+  errors: TrackingFileImportError[];
+  updated_shipments: Shipment[];
 }
 
 // Manufacturer types
