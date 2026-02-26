@@ -29,7 +29,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/common/status-badge";
 import { PackingPhotoUpload } from "./packing-photo-upload";
-import { Truck, Package, MapPin } from "lucide-react";
+import { Truck, Package, MapPin, Download } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { getShipmentStatusUpdateOptions } from "@/constants/status";
 import type { Shipment, ShipmentStatus } from "@/types/api";
@@ -176,12 +176,12 @@ export function ShipmentDetail({ shipment, onUpdate }: ShipmentDetailProps) {
         onUploadComplete={onUpdate}
       />
 
-      {/* 含まれる注文一覧 */}
+      {/* 含まれる商品一覧 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Package className="h-5 w-5" />
-            含まれる注文 ({shipment.items.length}件)
+            含まれる商品 ({shipment.items.length}件)
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -190,6 +190,8 @@ export function ShipmentDetail({ shipment, onUpdate }: ShipmentDetailProps) {
               <TableRow>
                 <TableHead>注文番号</TableHead>
                 <TableHead>商品名</TableHead>
+                <TableHead>数量</TableHead>
+                <TableHead>画像</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -199,6 +201,27 @@ export function ShipmentDetail({ shipment, onUpdate }: ShipmentDetailProps) {
                     {item.order_number || "-"}
                   </TableCell>
                   <TableCell>{item.product_name || "-"}</TableCell>
+                  <TableCell>{item.quantity != null ? item.quantity : "-"}</TableCell>
+                  <TableCell>
+                    {item.thumbnail_image_url ? (
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={item.thumbnail_image_url}
+                          alt={item.product_name || "商品画像"}
+                          className="h-10 w-10 rounded object-cover"
+                        />
+                        <a
+                          href={item.thumbnail_image_url}
+                          download
+                          className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
+                        >
+                          <Download className="h-4 w-4" />
+                        </a>
+                      </div>
+                    ) : (
+                      "-"
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

@@ -488,26 +488,33 @@ class ShipmentService:
         """Convert shipment model to response schema.
 
         顧客情報は最初の注文 (first_order) から取得します。
+        OrderItem 単位で ShipmentItemResponse を展開します。
         """
         items = []
         first_order = shipment.first_order
         for item in shipment.items:
             order = item.order
-            # order.items から product_name を取得（order.product_name は deprecated）
             if order and order.items:
-                product_name = ", ".join(
-                    oi.product_name for oi in order.items
-                )
-            elif order:
-                product_name = order.product_name  # フォールバック
+                # OrderItem ごとに1行を生成（複合ID: {shipment_item_id}_{order_item_id}）
+                for oi in order.items:
+                    items.append(ShipmentItemResponse(
+                        id=f"{item.id}_{oi.id}",
+                        order_id=item.order_id,
+                        order_number=order.order_number,
+                        product_name=oi.product_name,
+                        quantity=oi.quantity,
+                        thumbnail_image_url=oi.thumbnail_image_url,
+                    ))
             else:
-                product_name = None
-            items.append(ShipmentItemResponse(
-                id=item.id,
-                order_id=item.order_id,
-                order_number=order.order_number if order else None,
-                product_name=product_name,
-            ))
+                # フォールバック: OrderItem がない場合は order.product_name で1行生成
+                items.append(ShipmentItemResponse(
+                    id=item.id,
+                    order_id=item.order_id,
+                    order_number=order.order_number if order else None,
+                    product_name=order.product_name if order else None,
+                    quantity=None,
+                    thumbnail_image_url=None,
+                ))
 
         return ShipmentResponse(
             id=shipment.id,
