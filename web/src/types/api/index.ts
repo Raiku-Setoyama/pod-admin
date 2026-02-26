@@ -193,6 +193,20 @@ export interface ShipmentListResponse {
   limit: number;
 }
 
+export interface TrackingFileImportError {
+  row: number;
+  order_number: string | null;
+  message: string;
+}
+
+export interface TrackingFileImportResult {
+  total_count: number;
+  success_count: number;
+  error_count: number;
+  errors: TrackingFileImportError[];
+  updated_shipments: Shipment[];
+}
+
 // Manufacturer types
 export interface Manufacturer {
   id: string;
