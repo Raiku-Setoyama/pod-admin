@@ -1,0 +1,149 @@
+id: FEAT-0016
+summary: 商品マスター一覧で各商品のメーカー名が正しく表示される
+
+background:
+  why: |
+    商品マスター一覧画面にはメーカー列が存在するが、APIレスポンスにmanufacturer_nameフィールドが含まれていないため
+    常に「-」と表示されてしまう。原因は以下の3点:
+    1. バックエンドのProductResponseスキーマにmanufacturer_nameフィールドが定義されていない
+    2. ProductRepositoryのfind_allクエリでmanufacturerリレーションをeager loadしていない
+    3. ProductServiceでProductResponseを構築する際にmanufacturer.nameを含めていない
+    フロントエンド側は既にmanufacturer_nameを表示する実装が完了しているが（product-list.tsx 67行目）、
+    バックエンドがこのフィールドを返さないためnull/undefinedとなり「-」表示になっている。
+  who: 管理者（admin）
+  when: |
+    - 商品マスター一覧画面（/products）を開いて各商品のメーカーを確認するとき
+    - 商品をメーカー別にフィルタリングして確認するとき
+
+scope:
+  includes:
+    - バックエンド: ProductResponseスキーマにmanufacturer_name（Optional[str]）フィールドを追加
+    - バックエンド: ProductRepositoryのfind_all / find_by_idクエリでmanufacturerリレーションをeager load（selectinloadまたはjoinedload）
+    - バックエンド: ProductServiceでProductResponseを構築する際にmanufacturer_nameを含める
+    - バックエンド: ユニットテスト・統合テストの追加
+    - フロントエンド: TypeScript型定義は既にmanufacturer_nameを含んでいるため変更不要（確認のみ）
+    - フロントエンド: ProductListコンポーネントは既にmanufacturer_nameを表示する実装済みのため変更不要（確認のみ）
+  excludes:
+    - フロントエンドの変更（既にmanufacturer_name表示に対応済み）
+    - DBマイグレーション（Productテーブルにはmanufacturer_idカラムが既に存在し、manufacturersテーブルとのFKリレーションも正常）
+    - メーカーマスターのCRUD機能（既に実装済み）
+  prerequisites:
+    - Productモデルにmanufacturerリレーションが定義されていること（確認済み: app/models/product.py 41行目）
+    - Manufacturerモデルにproductsリレーションが定義されていること（確認済み: app/models/manufacturer.py 51行目）
+    - フロントエンドのProduct型にmanufacturer_nameフィールドが定義されていること（確認済み: web/src/types/api/index.ts 242行目）
+
+input_output:
+  inputs:
+    - name: page
+      type: number
+      required: false
+      validation: 1以上の整数（デフォルト1）
+    - name: limit
+      type: number
+      required: false
+      validation: 1〜100の整数（デフォルト20）
+    - name: product_type
+      type: string
+      required: false
+      validation: ProductTypeのenum値
+    - name: manufacturer_id
+      type: string
+      required: false
+      validation: UUID文字列
+    - name: is_active
+      type: boolean
+      required: false
+      validation: true/false
+  outputs:
+    - name: ProductListResponse
+      type: object
+      description: |
+        items配列の各ProductResponseに manufacturer_name: string | null が追加される。
+        manufacturer_idに対応するメーカーが存在する場合はその名前、存在しない場合はnull。
+    - name: ProductResponse（単体取得時も同様）
+      type: object
+      description: manufacturer_nameフィールドが含まれる
+  state_changes:
+    - なし（読み取り専用の修正、データ変更なし）
+
+acceptance_criteria:
+  # --- バックエンドAPI（統合テスト） ---
+  - id: AC-001
+    description: GET /products のレスポンスに各商品のmanufacturer_nameフィールドが含まれる
+    test_type: integration
+    given: メーカーAに紐づく商品が1件以上登録されている
+    when: GET /api/v1/products を管理者トークンで呼び出す
+    then: レスポンスのitems配列の各要素にmanufacturer_nameフィールドが含まれ、メーカーAの名前が設定されている
+
+  - id: AC-002
+    description: GET /products/{id} のレスポンスにmanufacturer_nameフィールドが含まれる
+    test_type: integration
+    given: メーカーAに紐づく商品が登録されている
+    when: GET /api/v1/products/{id} を管理者トークンで呼び出す
+    then: レスポンスにmanufacturer_nameフィールドが含まれ、メーカーAの名前が設定されている
+
+  - id: AC-003
+    description: POST /products で作成した商品のレスポンスにmanufacturer_nameが含まれる
+    test_type: integration
+    given: メーカーAが存在する
+    when: POST /api/v1/products でメーカーAのIDを指定して商品を作成する
+    then: 201レスポンスのmanufacturer_nameにメーカーAの名前が設定されている
+
+  - id: AC-004
+    description: PATCH /products/{id} で更新した商品のレスポンスにmanufacturer_nameが含まれる
+    test_type: integration
+    given: メーカーAに紐づく商品が登録されている
+    when: PATCH /api/v1/products/{id} で商品を更新する
+    then: レスポンスのmanufacturer_nameにメーカーAの名前が設定されている
+
+  # --- バックエンドサービスロジック（ユニットテスト） ---
+  - id: AC-005
+    description: ProductResponseスキーマにmanufacturer_nameフィールドが定義されている
+    test_type: unit
+    given: ProductResponseスキーマが定義されている
+    when: manufacturer_nameフィールドの存在を確認する
+    then: manufacturer_name: Optional[str]（デフォルトnull）が定義されている
+
+  - id: AC-006
+    description: ProductServiceのlistメソッドがmanufacturer_nameを含むレスポンスを返す
+    test_type: unit
+    given: manufacturer.name = "テストメーカー"のリレーションを持つProductオブジェクトがリポジトリから返される
+    when: ProductService.list()を呼び出す
+    then: 各ProductResponseのmanufacturer_nameに"テストメーカー"が設定されている
+
+  - id: AC-007
+    description: ProductServiceのget_by_idメソッドがmanufacturer_nameを含むレスポンスを返す
+    test_type: unit
+    given: manufacturer.name = "テストメーカー"のリレーションを持つProductオブジェクトがリポジトリから返される
+    when: ProductService.get_by_id()を呼び出す
+    then: ProductResponseのmanufacturer_nameに"テストメーカー"が設定されている
+
+  - id: AC-008
+    description: manufacturerリレーションがNoneの場合、manufacturer_nameはnullになる
+    test_type: unit
+    given: manufacturerリレーションが未ロードまたはNoneのProductオブジェクトがある
+    when: ProductResponseを構築する
+    then: manufacturer_nameがnullになる
+
+constraints:
+  performance:
+    - manufacturerリレーションのeager loadによるN+1問題の回避（selectinloadまたはjoinedloadを使用）
+    - 一覧取得のレスポンスは500ms以内（既存要件維持）
+  security:
+    - 管理者（admin）のみアクセス可能（既存のget_current_admin依存性を維持）
+  compatibility:
+    - 既存のProductResponse消費元（受注画面、メーカー発注画面等）に影響を与えない（フィールド追加のみ、既存フィールドの変更なし）
+    - フロントエンドのProduct型定義との整合性を保つ
+
+assumptions:
+  - manufacturerリレーションのeager loadにはselectinloadを使用する（joinedloadだとページネーションに影響する可能性があるため）
+  - ProductResponseにmanufacturer_nameフィールドを追加する際、Pydanticのmodel_validate時にORMモデルから自動的にリレーション経由で値を取得するため、カスタムバリデータまたはプロパティが必要になる可能性がある
+  - find_by_idでもeager loadを適用し、単体取得時もmanufacturer_nameが返るようにする
+  - 既存のcreate/updateメソッドでも返却時にmanufacturer_nameを含める（リポジトリのrefresh後にリレーションをロードする、またはリポジトリのrefreshでeager loadを適用する）
+
+success_metrics:
+  - 商品マスター一覧画面（/products）で各商品のメーカー列にメーカー名が正しく表示される
+  - 商品詳細取得APIでmanufacturer_nameが正しく返される
+  - 商品作成・更新APIのレスポンスにもmanufacturer_nameが含まれる
+  - バックエンドのユニット・統合テストが全てパスする
+  - 既存テストが影響を受けず全てパスする

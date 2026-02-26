@@ -2,6 +2,7 @@
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.product import Product, ProductType
 
@@ -14,7 +15,11 @@ class ProductRepository:
 
     async def find_by_id(self, product_id: str) -> Product | None:
         """Find a product by ID."""
-        result = await self._db.execute(select(Product).where(Product.id == product_id))
+        result = await self._db.execute(
+            select(Product)
+            .options(selectinload(Product.manufacturer))
+            .where(Product.id == product_id)
+        )
         return result.scalar_one_or_none()
 
     async def find_all(
@@ -51,7 +56,7 @@ class ProductRepository:
 
         # Apply pagination
         offset = (page - 1) * limit
-        query = query.order_by(Product.created_at.desc()).offset(offset).limit(limit)
+        query = query.options(selectinload(Product.manufacturer)).order_by(Product.created_at.desc()).offset(offset).limit(limit)
 
         result = await self._db.execute(query)
         products = list(result.scalars().all())
@@ -63,13 +68,15 @@ class ProductRepository:
         self._db.add(product)
         await self._db.flush()
         await self._db.refresh(product)
-        return product
+        # Re-fetch with manufacturer relation loaded
+        return await self.find_by_id(product.id)  # type: ignore[return-value]
 
     async def update(self, product: Product) -> Product:
         """Update an existing product."""
         await self._db.flush()
         await self._db.refresh(product)
-        return product
+        # Re-fetch with manufacturer relation loaded
+        return await self.find_by_id(product.id)  # type: ignore[return-value]
 
     async def delete(self, product: Product) -> None:
         """Delete a product."""
