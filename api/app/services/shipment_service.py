@@ -342,7 +342,7 @@ class ShipmentService:
     async def export_csv(self, shipment_ids: list[str]) -> tuple[bytes, str]:
         """Export shipments to CSV for delivery.
 
-        Generates a CSV file with 17 columns for delivery company import.
+        Generates a CSV file with 18 columns for delivery company import.
         Each row represents one order item (not one shipment).
 
         Args:
@@ -395,6 +395,7 @@ class ShipmentService:
                         order_source.address_city if order_source else "",  # 15. 配送元住所2
                         order_source.address_building or "" if order_source else "",  # 16. 配送元住所3
                         order_source.name if order_source else "",  # 17. 配送元氏名
+                        f"{order.order_number}_{item.uid or ''}",  # 18. 商品名（処理用）
                     ]
                     rows.append(row)
 
@@ -421,6 +422,7 @@ class ShipmentService:
             "配送元住所2(市区町村番地以下)",
             "配送元住所3(建物名等)",
             "配送元氏名",
+            "商品名（処理用）",
         ]
         writer.writerow(header)
 
