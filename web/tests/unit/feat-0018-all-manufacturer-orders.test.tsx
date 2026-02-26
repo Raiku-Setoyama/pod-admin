@@ -1,14 +1,23 @@
 /**
  * Unit tests for FEAT-0018: 全メーカー横断発注明細一覧「すべての発注」ページ
+ * Updated for FEAT-0020: 金額表示の削除
  *
  * Covers:
  * - AC-012: /purchase-orders/all ページが全メーカーの発注明細を表示する
- * - AC-013: テーブルに必要なカラムが表示される（メーカー名カラム含む）
+ * - AC-013: テーブルに必要なカラムが表示される（メーカー名カラム含む、金額カラムなし）
  * - AC-014: 発注一覧ページに「すべての発注を見る」ボタンが表示される
  * - AC-015: フィルター（ステータス、キーワード検索）が正常に動作する
  * - AC-016: メーカーフィルターで特定メーカーに絞り込みできる
  * - AC-017: 発注明細が0件の場合、空メッセージが表示される
- * - AC-018: サマリーカード（合計明細数、合計数量、合計金額）が表示される
+ * - AC-018: サマリーカード（合計明細数、合計数量）が表示される（合計金額なし）
+ *
+ * FEAT-0020 Acceptance Criteria:
+ * - AC-001: サマリーカードに「合計金額」が表示されない
+ * - AC-002: テーブルヘッダーに「金額」カラムが表示されない（カラム数は9）
+ * - AC-003: テーブル行に金額セルが表示されない
+ * - AC-004: サマリーカードのグリッドが2カラムに変更される
+ * - AC-005: 既存の明細数・合計数量の表示は維持される
+ * - AC-006: page.tsx の displayData フォールバックから total_amount が削除される
  *
  * NOTE: TDD Red phase - tests will fail until implementation is completed.
  */
@@ -234,12 +243,12 @@ describe('AC-012: /purchase-orders/all page displays all manufacturer order item
 // AC-013: テーブルに必要なカラムが表示される
 // ======================================
 
-describe('AC-013: AllManufacturerOrderList table has required columns', () => {
+describe('AC-013: AllManufacturerOrderList table has required columns (FEAT-0020: 金額カラム削除)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('renders table with all required column headers', async () => {
+  it('renders table with all required column headers (金額カラムなし、9カラム)', async () => {
     const { AllManufacturerOrderList } = await import(
       '@/features/purchase-orders/components/all-manufacturer-order-list'
     )
@@ -256,7 +265,7 @@ describe('AC-013: AllManufacturerOrderList table has required columns', () => {
     const headers = screen.getAllByRole('columnheader')
     const headerTexts = headers.map(h => h.textContent)
 
-    // 必要なカラムが全て存在すること
+    // 必要なカラムが全て存在すること（金額以外）
     expect(headerTexts.some(t => t?.includes('メーカー名'))).toBe(true)
     expect(headerTexts.some(t => t?.includes('注文番号'))).toBe(true)
     expect(headerTexts.some(t => t?.includes('製品番号'))).toBe(true)
@@ -264,9 +273,14 @@ describe('AC-013: AllManufacturerOrderList table has required columns', () => {
     expect(headerTexts.some(t => t?.includes('商品タイプ'))).toBe(true)
     expect(headerTexts.some(t => t?.includes('ステータス'))).toBe(true)
     expect(headerTexts.some(t => t?.includes('数量'))).toBe(true)
-    expect(headerTexts.some(t => t?.includes('金額'))).toBe(true)
     expect(headerTexts.some(t => t?.includes('顧客名'))).toBe(true)
     expect(headerTexts.some(t => t?.includes('受注日'))).toBe(true)
+
+    // FEAT-0020: 金額カラムが存在しないこと
+    expect(headerTexts.some(t => t?.includes('金額'))).toBe(false)
+
+    // FEAT-0020: カラム数は9であること
+    expect(headers).toHaveLength(9)
   })
 })
 
@@ -522,12 +536,12 @@ describe('AC-017: Empty message is displayed when no order items exist', () => {
 // AC-018: サマリーカード（合計明細数、合計数量、合計金額）が表示される
 // ======================================
 
-describe('AC-018: Summary cards display total count, total quantity, total amount', () => {
+describe('AC-018: Summary cards display total count, total quantity (FEAT-0020: 合計金額なし)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('renders summary cards with correct values', async () => {
+  it('renders summary cards with correct values (金額なし)', async () => {
     const { AllManufacturerOrderList } = await import(
       '@/features/purchase-orders/components/all-manufacturer-order-list'
     )
@@ -547,11 +561,11 @@ describe('AC-018: Summary cards display total count, total quantity, total amoun
     // 合計数量が表示される（サマリーカード内の "8点"）
     expect(screen.getByText(/8点/)).toBeInTheDocument()
 
-    // 合計金額が表示される（6,500 の表示形式）
-    expect(screen.getByText(/¥6,500/)).toBeInTheDocument()
+    // FEAT-0020: 合計金額が表示されないこと
+    expect(screen.queryByText(/¥6,500/)).not.toBeInTheDocument()
   })
 
-  it('renders summary labels for count, quantity, and amount', async () => {
+  it('renders summary labels for count and quantity only (金額ラベルなし)', async () => {
     const { AllManufacturerOrderList } = await import(
       '@/features/purchase-orders/components/all-manufacturer-order-list'
     )
@@ -565,10 +579,12 @@ describe('AC-018: Summary cards display total count, total quantity, total amoun
       />
     )
 
-    // サマリーのラベルが存在すること
+    // サマリーのラベルが存在すること（明細数、合計数量のみ）
     expect(screen.getByText(/明細数/)).toBeInTheDocument()
     expect(screen.getByText(/合計数量/)).toBeInTheDocument()
-    expect(screen.getByText(/合計金額/)).toBeInTheDocument()
+
+    // FEAT-0020: 合計金額ラベルが存在しないこと
+    expect(screen.queryByText(/合計金額/)).not.toBeInTheDocument()
   })
 })
 
@@ -669,6 +685,167 @@ describe('AllManufacturerOrderItem type includes manufacturer fields', () => {
     expect(typeof mockData.total).toBe('number')
     expect(typeof mockData.total_quantity).toBe('number')
     expect(typeof mockData.total_amount).toBe('number')
+  })
+})
+
+// ======================================
+// FEAT-0020 AC-001: サマリーカードに「合計金額」が表示されない
+// ======================================
+
+describe('FEAT-0020 AC-001: サマリーカードに「合計金額」が表示されない', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('does not display 合計金額 label in summary cards', async () => {
+    const { AllManufacturerOrderList } = await import(
+      '@/features/purchase-orders/components/all-manufacturer-order-list'
+    )
+
+    const mockData = createMockAllOrderItemsData()
+
+    render(
+      <AllManufacturerOrderList
+        data={mockData}
+        isLoading={false}
+      />
+    )
+
+    // 「合計金額」ラベルが表示されない
+    expect(screen.queryByText('合計金額')).not.toBeInTheDocument()
+
+    // 「明細数」「合計数量」のみ表示される
+    expect(screen.getByText('明細数')).toBeInTheDocument()
+    expect(screen.getByText('合計数量')).toBeInTheDocument()
+  })
+})
+
+// ======================================
+// FEAT-0020 AC-002: テーブルヘッダーに「金額」カラムが表示されない
+// ======================================
+
+describe('FEAT-0020 AC-002: テーブルヘッダーに「金額」カラムが表示されない', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('does not have 金額 column header and has exactly 9 columns', async () => {
+    const { AllManufacturerOrderList } = await import(
+      '@/features/purchase-orders/components/all-manufacturer-order-list'
+    )
+
+    const mockData = createMockAllOrderItemsData()
+
+    render(
+      <AllManufacturerOrderList
+        data={mockData}
+        isLoading={false}
+      />
+    )
+
+    const headers = screen.getAllByRole('columnheader')
+    const headerTexts = headers.map(h => h.textContent)
+
+    // テーブルヘッダーに「金額」が存在しない
+    expect(headerTexts.some(t => t?.includes('金額'))).toBe(false)
+
+    // カラム数は9
+    expect(headers).toHaveLength(9)
+  })
+})
+
+// ======================================
+// FEAT-0020 AC-003: テーブル行に金額セルが表示されない
+// ======================================
+
+describe('FEAT-0020 AC-003: テーブル行に金額セルが表示されない', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('does not display ¥ prefixed amount values in table rows', async () => {
+    const { AllManufacturerOrderList } = await import(
+      '@/features/purchase-orders/components/all-manufacturer-order-list'
+    )
+
+    const mockData = createMockAllOrderItemsData()
+
+    render(
+      <AllManufacturerOrderList
+        data={mockData}
+        isLoading={false}
+      />
+    )
+
+    // price * quantity の金額計算結果が表示されない
+    // item-001: 1000 * 2 = ¥2,000, item-002: 2000 * 1 = ¥2,000
+    expect(screen.queryAllByText(/¥2,000/)).toHaveLength(0)
+    // item-003: 500 * 5 = ¥2,500
+    expect(screen.queryAllByText(/¥2,500/)).toHaveLength(0)
+  })
+})
+
+// ======================================
+// FEAT-0020 AC-004: サマリーカードのグリッドが2カラムに変更される
+// ======================================
+
+describe('FEAT-0020 AC-004: サマリーカードのグリッドが2カラムに変更される', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('uses grid-cols-2 class for summary card grid', async () => {
+    const { AllManufacturerOrderList } = await import(
+      '@/features/purchase-orders/components/all-manufacturer-order-list'
+    )
+
+    const mockData = createMockAllOrderItemsData()
+
+    const { container } = render(
+      <AllManufacturerOrderList
+        data={mockData}
+        isLoading={false}
+      />
+    )
+
+    // grid-cols-2 クラスが適用されている
+    const gridElement = container.querySelector('.grid-cols-2')
+    expect(gridElement).toBeInTheDocument()
+
+    // grid-cols-3 クラスが適用されていない
+    const grid3Element = container.querySelector('.grid-cols-3')
+    expect(grid3Element).not.toBeInTheDocument()
+  })
+})
+
+// ======================================
+// FEAT-0020 AC-005: 既存の明細数・合計数量の表示は維持される
+// ======================================
+
+describe('FEAT-0020 AC-005: 既存の明細数・合計数量の表示は維持される', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('displays 3件 and 8点 correctly', async () => {
+    const { AllManufacturerOrderList } = await import(
+      '@/features/purchase-orders/components/all-manufacturer-order-list'
+    )
+
+    const mockData = createMockAllOrderItemsData()
+
+    render(
+      <AllManufacturerOrderList
+        data={mockData}
+        isLoading={false}
+      />
+    )
+
+    // 「3件」が正しく表示される
+    expect(screen.getAllByText(/3件/).length).toBeGreaterThanOrEqual(1)
+
+    // 「8点」が正しく表示される
+    expect(screen.getByText(/8点/)).toBeInTheDocument()
   })
 })
 

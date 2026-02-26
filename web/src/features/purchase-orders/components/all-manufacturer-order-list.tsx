@@ -60,7 +60,7 @@ export function AllManufacturerOrderList({
       {/* サマリーカード */}
       <Card>
         <CardContent className="pt-6">
-          <dl className="grid grid-cols-3 gap-4">
+          <dl className="grid grid-cols-2 gap-4">
             <div>
               <dt className="text-sm text-muted-foreground">明細数</dt>
               <dd className="text-2xl font-bold">{data.total}件</dd>
@@ -68,12 +68,6 @@ export function AllManufacturerOrderList({
             <div>
               <dt className="text-sm text-muted-foreground">合計数量</dt>
               <dd className="text-2xl font-bold">{data.total_quantity}点</dd>
-            </div>
-            <div>
-              <dt className="text-sm text-muted-foreground">合計金額</dt>
-              <dd className="text-2xl font-bold">
-                ¥{data.total_amount.toLocaleString()}
-              </dd>
             </div>
           </dl>
         </CardContent>
@@ -99,7 +93,6 @@ export function AllManufacturerOrderList({
                   <TableHead>商品タイプ</TableHead>
                   <TableHead>ステータス</TableHead>
                   <TableHead className="text-center">数量</TableHead>
-                  <TableHead className="text-right">金額</TableHead>
                   <TableHead>顧客名</TableHead>
                   <TableHead>受注日</TableHead>
                 </TableRow>
@@ -108,7 +101,7 @@ export function AllManufacturerOrderList({
                 {isLoading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={10}
+                      colSpan={9}
                       className="h-24 text-center text-muted-foreground"
                     >
                       <div className="flex items-center justify-center gap-2">
@@ -120,7 +113,7 @@ export function AllManufacturerOrderList({
                 ) : data.items.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={10}
+                      colSpan={9}
                       className="h-24 text-center text-muted-foreground"
                     >
                       発注中の明細がありません
@@ -150,9 +143,6 @@ export function AllManufacturerOrderList({
                       </TableCell>
                       <TableCell className="text-center">
                         {item.quantity}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        ¥{(item.price * item.quantity).toLocaleString()}
                       </TableCell>
                       <TableCell>{item.customer_name}</TableCell>
                       <TableCell>{formatDate(item.ordered_at)}</TableCell>
