@@ -168,6 +168,8 @@ export interface ShipmentItem {
   order_id: string;
   order_number: string | null;
   product_name: string | null;
+  quantity: number | null;
+  thumbnail_image_url: string | null;
 }
 
 export interface Shipment {

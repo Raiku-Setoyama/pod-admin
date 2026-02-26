@@ -46,6 +46,8 @@ class ShipmentItemResponse(BaseModel):
     order_id: str
     order_number: str | None = None
     product_name: str | None = None
+    quantity: int | None = None
+    thumbnail_image_url: str | None = None
 
 
 class ShipmentResponse(BaseModel):
