@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import mimetypes
 from datetime import date, datetime, timezone
+from urllib.parse import urlparse
 
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 
 import csv
 import io
+
+import httpx
 
 from app.models.order import OrderStatus
 from app.models.shipment import Shipment, ShipmentStatus
@@ -28,9 +34,12 @@ from app.schemas.shipment import (
 )
 from app.utils.exceptions import InvalidStatusTransitionError, NotFoundError, ValidationError
 from app.utils.file_storage import FileStorage
+from app.utils.zip_builder import ZipBuilder
 
 import chardet
 import openpyxl
+
+logger = logging.getLogger(__name__)
 
 
 class ShipmentService:
@@ -465,6 +474,161 @@ class ShipmentService:
 
         filename = "tracking_import_template.csv"
         return csv_bytes, filename
+
+    async def download_thumbnails(
+        self, shipment_ids: list[str]
+    ) -> tuple[bytes, str]:
+        """Download thumbnail images from shipments and build a ZIP file.
+
+        Args:
+            shipment_ids: List of shipment IDs to collect thumbnails from.
+
+        Returns:
+            Tuple of (ZIP file bytes, filename).
+
+        Raises:
+            HTTPException: 404 if no thumbnail images could be collected.
+        """
+        # Collect image tasks from shipments
+        image_tasks: list[dict] = []
+
+        for shipment_id in shipment_ids:
+            shipment = await self._shipment_repo.find_by_id(shipment_id)
+            if shipment is None:
+                logger.warning(f"Shipment not found: {shipment_id}")
+                continue
+
+            for shipment_item in shipment.items:
+                order = shipment_item.order
+                if not order:
+                    continue
+
+                item_counter = 0
+                for order_item in order.items:
+                    if order_item.thumbnail_image_url is None:
+                        continue
+                    item_counter += 1
+                    image_tasks.append({
+                        "order_number": order.order_number,
+                        "product_name": order_item.product_name,
+                        "thumbnail_image_url": order_item.thumbnail_image_url,
+                        "index": item_counter,
+                    })
+
+        if not image_tasks:
+            raise HTTPException(
+                status_code=404,
+                detail="ダウンロード対象のサムネイル画像がありません",
+            )
+
+        # Fetch images in parallel with semaphore
+        semaphore = asyncio.Semaphore(10)
+
+        async with httpx.AsyncClient() as client:
+
+            async def fetch_image(task: dict) -> dict | None:
+                async with semaphore:
+                    try:
+                        response = await client.get(
+                            task["thumbnail_image_url"],
+                            timeout=10.0,
+                        )
+                        if response.status_code != 200:
+                            logger.warning(
+                                f"Failed to fetch thumbnail: {task['thumbnail_image_url']} "
+                                f"(status={response.status_code})"
+                            )
+                            return None
+
+                        # Determine file extension
+                        ext = self._get_extension_from_url(task["thumbnail_image_url"])
+                        if not ext:
+                            ext = self._get_extension_from_content_type(
+                                response.headers.get("content-type", "")
+                            )
+                        if not ext:
+                            ext = ".png"
+
+                        return {
+                            "order_number": task["order_number"],
+                            "product_name": task["product_name"],
+                            "index": task["index"],
+                            "content": response.content,
+                            "extension": ext,
+                        }
+                    except Exception as e:
+                        logger.warning(
+                            f"Error fetching thumbnail {task['thumbnail_image_url']}: {e}"
+                        )
+                        return None
+
+            results = await asyncio.gather(
+                *[fetch_image(task) for task in image_tasks]
+            )
+            fetched_images = [r for r in results if r is not None]
+
+        if not fetched_images:
+            raise HTTPException(
+                status_code=404,
+                detail="ダウンロード対象のサムネイル画像がありません",
+            )
+
+        # Build ZIP
+        builder = ZipBuilder()
+        for img in fetched_images:
+            file_path = (
+                f"{img['order_number']}/"
+                f"{img['product_name']}_{img['index']}{img['extension']}"
+            )
+            builder.add_file(file_path, img["content"])
+
+        zip_bytes = builder.build()
+
+        # Generate filename
+        now = datetime.now()
+        timestamp = now.strftime("%Y%m%d_%H%M%S")
+        filename = f"配送サムネイル_{timestamp}.zip"
+
+        return zip_bytes, filename
+
+    @staticmethod
+    def _get_extension_from_url(url: str) -> str | None:
+        """Extract file extension from URL path."""
+        parsed = urlparse(url)
+        path = parsed.path
+        if "." in path:
+            ext = path.rsplit(".", 1)[-1].lower()
+            if ext in ("png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "tiff"):
+                return f".{ext}"
+        return None
+
+    @staticmethod
+    def _get_extension_from_content_type(content_type: str) -> str | None:
+        """Get file extension from Content-Type header."""
+        if not content_type:
+            return None
+        mime_type = content_type.split(";")[0].strip().lower()
+
+        mime_map = {
+            "image/png": ".png",
+            "image/jpeg": ".jpg",
+            "image/jpg": ".jpg",
+            "image/gif": ".gif",
+            "image/webp": ".webp",
+            "image/bmp": ".bmp",
+            "image/svg+xml": ".svg",
+            "image/tiff": ".tiff",
+        }
+
+        ext = mime_map.get(mime_type)
+        if ext:
+            return ext
+
+        guessed_ext = mimetypes.guess_extension(mime_type)
+        if guessed_ext and guessed_ext != ".bin":
+            return guessed_ext
+
+        return None
 
     def _is_valid_transition(
         self, current: ShipmentStatus, target: ShipmentStatus
