@@ -1,6 +1,6 @@
 """Manufacturer schemas."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -131,6 +131,8 @@ class ManufacturerOrderItemResponse(BaseModel):
     customer_name: str
     status: str  # OrderItem.status (ordered, manufacturing, delivered) - 後方互換性のため維持
     item_status: str | None = None  # OrderItem.status (新フィールド、製品単位のステータス)
+    lead_time_days: int  # メーカーのリードタイム（日数）
+    expected_delivery_date: date  # 納品予定日
 
 
 class ManufacturerOrderItemListResponse(BaseModel):
@@ -168,6 +170,8 @@ class AllManufacturerOrderItemResponse(BaseModel):
     status: str  # Order.status (ordered, manufacturing, delivered)
     manufacturer_id: str
     manufacturer_name: str
+    lead_time_days: int  # メーカーのリードタイム（日数）
+    expected_delivery_date: date  # 納品予定日
 
 
 class AllManufacturerOrderItemListResponse(BaseModel):

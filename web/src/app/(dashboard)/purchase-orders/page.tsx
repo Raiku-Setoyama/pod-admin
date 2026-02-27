@@ -35,7 +35,7 @@ export default function PurchaseOrdersPage() {
           onClick={() => router.push("/purchase-orders/all")}
         >
           <List className="h-4 w-4 mr-2" />
-          すべての発注を見る
+          すべての発注
         </Button>
       }
     >

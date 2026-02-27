@@ -21,9 +21,11 @@ interface ManufacturerOrderFiltersProps {
   search: string;
   status: OrderStatus | null;
   dateRange?: DateRange;
+  expectedDeliveryRange?: DateRange;
   onSearchChange: (value: string) => void;
   onStatusChange: (value: OrderStatus | null) => void;
   onDateRangeChange?: (range: DateRange | undefined) => void;
+  onExpectedDeliveryRangeChange?: (range: DateRange | undefined) => void;
   onReset: () => void;
 }
 
@@ -31,12 +33,14 @@ export function ManufacturerOrderFilters({
   search,
   status,
   dateRange,
+  expectedDeliveryRange,
   onSearchChange,
   onStatusChange,
   onDateRangeChange,
+  onExpectedDeliveryRangeChange,
   onReset,
 }: ManufacturerOrderFiltersProps) {
-  const hasActiveFilters = search || status || dateRange?.from;
+  const hasActiveFilters = search || status || dateRange?.from || expectedDeliveryRange?.from;
 
   return (
     <div className="flex flex-wrap items-end gap-4 mb-4">
@@ -78,6 +82,15 @@ export function ManufacturerOrderFilters({
           value={dateRange}
           onChange={onDateRangeChange}
           placeholder="受注日"
+        />
+      )}
+
+      {/* 納品予定日フィルター */}
+      {onExpectedDeliveryRangeChange && (
+        <DateRangePicker
+          value={expectedDeliveryRange}
+          onChange={onExpectedDeliveryRangeChange}
+          placeholder="納品予定日"
         />
       )}
 

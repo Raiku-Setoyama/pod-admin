@@ -41,6 +41,7 @@ def _make_all_order_item(
     customer_name: str = "顧客名",
     manufacturer_id: str | None = None,
     manufacturer_name: str = "テストメーカー",
+    lead_time_days: int = 7,
 ) -> tuple:
     """Create a mock order item tuple matching the repository return format
     for find_all_ordered_items_detail."""
@@ -70,6 +71,7 @@ def _make_all_order_item(
         status,
         mfr_id,
         manufacturer_name,
+        lead_time_days,
     )
 
 
@@ -222,6 +224,8 @@ class TestGetAllOrderItems:
             status="ordered",
             search=None,
             manufacturer_id=None,
+            expected_delivery_from=None,
+            expected_delivery_to=None,
         )
 
     @pytest.mark.asyncio
@@ -247,6 +251,8 @@ class TestGetAllOrderItems:
             status=None,
             search="ORD-001",
             manufacturer_id=None,
+            expected_delivery_from=None,
+            expected_delivery_to=None,
         )
 
     @pytest.mark.asyncio
@@ -272,6 +278,8 @@ class TestGetAllOrderItems:
             status=None,
             search=None,
             manufacturer_id="mfr-001",
+            expected_delivery_from=None,
+            expected_delivery_to=None,
         )
 
     @pytest.mark.asyncio

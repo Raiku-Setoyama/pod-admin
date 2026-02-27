@@ -12,6 +12,8 @@ export interface ManufacturerOrderFilters {
   search?: string;
   ordered_from?: string;
   ordered_to?: string;
+  expected_delivery_from?: string;
+  expected_delivery_to?: string;
 }
 
 export function useManufacturerOrderSummary(page = 1, limit = 20) {
@@ -42,6 +44,8 @@ export function useManufacturerOrderItems(
   if (filters?.search) queryParams.set("search", filters.search);
   if (filters?.ordered_from) queryParams.set("ordered_from", filters.ordered_from);
   if (filters?.ordered_to) queryParams.set("ordered_to", filters.ordered_to);
+  if (filters?.expected_delivery_from) queryParams.set("expected_delivery_from", filters.expected_delivery_from);
+  if (filters?.expected_delivery_to) queryParams.set("expected_delivery_to", filters.expected_delivery_to);
 
   const queryString = queryParams.toString();
   const url = manufacturerId
@@ -70,6 +74,8 @@ export interface AllManufacturerOrderFiltersParams {
   product_type?: string | null;
   ordered_from?: string;
   ordered_to?: string;
+  expected_delivery_from?: string;
+  expected_delivery_to?: string;
 }
 
 export function useAllManufacturerOrderItems(
@@ -83,6 +89,8 @@ export function useAllManufacturerOrderItems(
   if (filters?.product_type) queryParams.set("product_type", filters.product_type);
   if (filters?.ordered_from) queryParams.set("ordered_from", filters.ordered_from);
   if (filters?.ordered_to) queryParams.set("ordered_to", filters.ordered_to);
+  if (filters?.expected_delivery_from) queryParams.set("expected_delivery_from", filters.expected_delivery_from);
+  if (filters?.expected_delivery_to) queryParams.set("expected_delivery_to", filters.expected_delivery_to);
 
   const queryString = queryParams.toString();
   const url = `/manufacturers/all-order-items${queryString ? `?${queryString}` : ""}`;

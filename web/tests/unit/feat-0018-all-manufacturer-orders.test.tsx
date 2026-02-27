@@ -1,23 +1,15 @@
 /**
  * Unit tests for FEAT-0018: 全メーカー横断発注明細一覧「すべての発注」ページ
- * Updated for FEAT-0020: 金額表示の削除
+ * Updated: 顧客名削除、単価・金額・納品予定日カラム追加
  *
  * Covers:
  * - AC-012: /purchase-orders/all ページが全メーカーの発注明細を表示する
- * - AC-013: テーブルに必要なカラムが表示される（メーカー名カラム含む、金額カラムなし）
+ * - AC-013: テーブルに必要なカラムが表示される（メーカー名、単価、金額、納品予定日カラム含む、顧客名なし）
  * - AC-014: 発注一覧ページに「すべての発注を見る」ボタンが表示される
  * - AC-015: フィルター（ステータス、キーワード検索）が正常に動作する
  * - AC-016: メーカーフィルターで特定メーカーに絞り込みできる
  * - AC-017: 発注明細が0件の場合、空メッセージが表示される
- * - AC-018: サマリーカード（合計明細数、合計数量）が表示される（合計金額なし）
- *
- * FEAT-0020 Acceptance Criteria:
- * - AC-001: サマリーカードに「合計金額」が表示されない
- * - AC-002: テーブルヘッダーに「金額」カラムが表示されない（カラム数は9）
- * - AC-003: テーブル行に金額セルが表示されない
- * - AC-004: サマリーカードのグリッドが2カラムに変更される
- * - AC-005: 既存の明細数・合計数量の表示は維持される
- * - AC-006: page.tsx の displayData フォールバックから total_amount が削除される
+ * - AC-018: サマリーカード（合計明細数、合計数量）が表示される
  *
  * NOTE: TDD Red phase - tests will fail until implementation is completed.
  */
@@ -51,6 +43,38 @@ vi.mock('sonner', () => ({
     warning: vi.fn(),
   },
 }))
+
+// Mock use-manufacturer-orders hook
+vi.mock('@/features/purchase-orders/hooks/use-manufacturer-orders', () => ({
+  useAllManufacturerOrderItems: vi.fn(() => ({
+    data: undefined,
+    isLoading: false,
+    isFiltering: false,
+    error: undefined,
+    mutate: vi.fn(),
+  })),
+  useManufacturerOrderSummary: vi.fn(() => ({
+    manufacturers: [],
+    total: 0,
+    isLoading: false,
+    error: undefined,
+    mutate: vi.fn(),
+  })),
+}))
+
+// Mock use-manufacturers hook
+vi.mock('@/features/manufacturers/hooks/use-manufacturers', () => ({
+  useManufacturers: vi.fn(() => ({
+    manufacturers: [],
+    isLoading: false,
+    error: undefined,
+    mutate: vi.fn(),
+  })),
+}))
+
+// Import mocked hooks for use in tests
+import { useAllManufacturerOrderItems } from '@/features/purchase-orders/hooks/use-manufacturer-orders'
+import { useManufacturers } from '@/features/manufacturers/hooks/use-manufacturers'
 
 // Mock next/navigation with controllable values
 const mockPush = vi.fn()
@@ -90,10 +114,11 @@ interface AllManufacturerOrderItem {
   design_image_url: string | null
   thumbnail_image_url: string | null
   ordered_at: string
-  customer_name: string
   status: string
   manufacturer_id: string
   manufacturer_name: string
+  lead_time_days: number
+  expected_delivery_date: string
 }
 
 interface AllManufacturerOrderItemListResponse {
@@ -126,10 +151,11 @@ function createMockAllOrderItemsData(): AllManufacturerOrderItemListResponse {
         design_image_url: null,
         thumbnail_image_url: null,
         ordered_at: '2026-01-15T10:00:00Z',
-        customer_name: '田中太郎',
         status: 'ordered',
         manufacturer_id: 'mfr-001',
         manufacturer_name: 'メーカーA',
+        lead_time_days: 7,
+        expected_delivery_date: '2026-01-22',
       },
       {
         id: 'item-002',
@@ -147,10 +173,11 @@ function createMockAllOrderItemsData(): AllManufacturerOrderItemListResponse {
         design_image_url: null,
         thumbnail_image_url: null,
         ordered_at: '2026-01-14T10:00:00Z',
-        customer_name: '鈴木花子',
         status: 'manufacturing',
         manufacturer_id: 'mfr-001',
         manufacturer_name: 'メーカーA',
+        lead_time_days: 7,
+        expected_delivery_date: '2026-01-21',
       },
       {
         id: 'item-003',
@@ -168,10 +195,11 @@ function createMockAllOrderItemsData(): AllManufacturerOrderItemListResponse {
         design_image_url: null,
         thumbnail_image_url: null,
         ordered_at: '2026-01-13T10:00:00Z',
-        customer_name: '山田一郎',
         status: 'ordered',
         manufacturer_id: 'mfr-002',
         manufacturer_name: 'メーカーB',
+        lead_time_days: 5,
+        expected_delivery_date: '2026-01-18',
       },
     ],
     total: 3,
@@ -243,12 +271,12 @@ describe('AC-012: /purchase-orders/all page displays all manufacturer order item
 // AC-013: テーブルに必要なカラムが表示される
 // ======================================
 
-describe('AC-013: AllManufacturerOrderList table has required columns (FEAT-0020: 金額カラム削除)', () => {
+describe('AC-013: AllManufacturerOrderList table has required columns (顧客名削除、単価・金額・納品予定日追加、チェックボックス追加)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('renders table with all required column headers (金額カラムなし、9カラム)', async () => {
+  it('renders table with all required column headers (12カラム: チェックボックス + 11データカラム)', async () => {
     const { AllManufacturerOrderList } = await import(
       '@/features/purchase-orders/components/all-manufacturer-order-list'
     )
@@ -265,7 +293,7 @@ describe('AC-013: AllManufacturerOrderList table has required columns (FEAT-0020
     const headers = screen.getAllByRole('columnheader')
     const headerTexts = headers.map(h => h.textContent)
 
-    // 必要なカラムが全て存在すること（金額以外）
+    // 必要なカラムが全て存在すること
     expect(headerTexts.some(t => t?.includes('メーカー名'))).toBe(true)
     expect(headerTexts.some(t => t?.includes('注文番号'))).toBe(true)
     expect(headerTexts.some(t => t?.includes('製品番号'))).toBe(true)
@@ -273,35 +301,37 @@ describe('AC-013: AllManufacturerOrderList table has required columns (FEAT-0020
     expect(headerTexts.some(t => t?.includes('商品タイプ'))).toBe(true)
     expect(headerTexts.some(t => t?.includes('ステータス'))).toBe(true)
     expect(headerTexts.some(t => t?.includes('数量'))).toBe(true)
-    expect(headerTexts.some(t => t?.includes('顧客名'))).toBe(true)
+    expect(headerTexts.some(t => t?.includes('単価'))).toBe(true)
+    expect(headerTexts.some(t => t?.includes('金額'))).toBe(true)
+    expect(headerTexts.some(t => t?.includes('納品予定日'))).toBe(true)
     expect(headerTexts.some(t => t?.includes('受注日'))).toBe(true)
 
-    // FEAT-0020: 金額カラムが存在しないこと
-    expect(headerTexts.some(t => t?.includes('金額'))).toBe(false)
+    // 顧客名カラムが存在しないこと
+    expect(headerTexts.some(t => t?.includes('顧客名'))).toBe(false)
 
-    // FEAT-0020: カラム数は9であること
-    expect(headers).toHaveLength(9)
+    // カラム数は12であること（チェックボックス + 11データカラム）
+    expect(headers).toHaveLength(12)
   })
 })
 
 // ======================================
-// AC-014: 発注一覧ページに「すべての発注を見る」ボタンが表示される
+// AC-014: 発注一覧ページに「すべての発注」ボタンが表示される
 // ======================================
 
-describe('AC-014: Purchase orders page has "すべての発注を見る" navigation button', () => {
+describe('AC-014: Purchase orders page has "すべての発注" navigation button', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('renders "すべての発注を見る" button on purchase orders page', async () => {
+  it('renders "すべての発注" button on purchase orders page', async () => {
     const { default: PurchaseOrdersPage } = await import(
       '@/app/(dashboard)/purchase-orders/page'
     )
 
     render(<PurchaseOrdersPage />)
 
-    // 「すべての発注を見る」ボタンが表示される
-    const navButton = screen.getByText(/すべての発注を見る/)
+    // 「すべての発注」ボタンが表示される
+    const navButton = screen.getByText(/すべての発注/)
     expect(navButton).toBeInTheDocument()
   })
 
@@ -315,7 +345,7 @@ describe('AC-014: Purchase orders page has "すべての発注を見る" navigat
     render(<PurchaseOrdersPage />)
 
     // ボタンをクリック
-    const navButton = screen.getByText(/すべての発注を見る/)
+    const navButton = screen.getByText(/すべての発注/)
     await user.click(navButton)
 
     // /purchase-orders/all に遷移する
@@ -351,12 +381,14 @@ describe('AC-015: Filters (status, keyword search) work correctly', () => {
       productType: null as string | null,
       orderedFrom: '',
       orderedTo: '',
+      expectedDeliveryRange: undefined,
       onSearchChange: vi.fn(),
       onStatusChange: vi.fn(),
       onManufacturerIdChange: vi.fn(),
       onProductTypeChange: vi.fn(),
       onOrderedFromChange: vi.fn(),
       onOrderedToChange: vi.fn(),
+      onExpectedDeliveryRangeChange: vi.fn(),
       onReset: vi.fn(),
       manufacturers: [
         { id: 'mfr-001', name: 'メーカーA' },
@@ -388,12 +420,14 @@ describe('AC-015: Filters (status, keyword search) work correctly', () => {
       productType: null as string | null,
       orderedFrom: '',
       orderedTo: '',
+      expectedDeliveryRange: undefined,
       onSearchChange: vi.fn(),
       onStatusChange,
       onManufacturerIdChange: vi.fn(),
       onProductTypeChange: vi.fn(),
       onOrderedFromChange: vi.fn(),
       onOrderedToChange: vi.fn(),
+      onExpectedDeliveryRangeChange: vi.fn(),
       onReset: vi.fn(),
       manufacturers: [],
     }
@@ -438,12 +472,14 @@ describe('AC-016: Manufacturer filter allows filtering by specific manufacturer'
       productType: null as string | null,
       orderedFrom: '',
       orderedTo: '',
+      expectedDeliveryRange: undefined,
       onSearchChange: vi.fn(),
       onStatusChange: vi.fn(),
       onManufacturerIdChange: vi.fn(),
       onProductTypeChange: vi.fn(),
       onOrderedFromChange: vi.fn(),
       onOrderedToChange: vi.fn(),
+      onExpectedDeliveryRangeChange: vi.fn(),
       onReset: vi.fn(),
       manufacturers: [
         { id: 'mfr-001', name: 'メーカーA' },
@@ -474,12 +510,14 @@ describe('AC-016: Manufacturer filter allows filtering by specific manufacturer'
       productType: null as string | null,
       orderedFrom: '',
       orderedTo: '',
+      expectedDeliveryRange: undefined,
       onSearchChange: vi.fn(),
       onStatusChange: vi.fn(),
       onManufacturerIdChange,
       onProductTypeChange: vi.fn(),
       onOrderedFromChange: vi.fn(),
       onOrderedToChange: vi.fn(),
+      onExpectedDeliveryRangeChange: vi.fn(),
       onReset: vi.fn(),
       manufacturers: [
         { id: 'mfr-001', name: 'メーカーA' },
@@ -533,58 +571,57 @@ describe('AC-017: Empty message is displayed when no order items exist', () => {
 })
 
 // ======================================
-// AC-018: サマリーカード（合計明細数、合計数量、合計金額）が表示される
+// AC-018: サマリーカード（合計明細数、合計数量）が表示される
+// NOTE: サマリーはページレベルで表示される（AllManufacturerOrderListではない）
 // ======================================
 
-describe('AC-018: Summary cards display total count, total quantity (FEAT-0020: 合計金額なし)', () => {
+describe('AC-018: Summary cards display total count, total quantity (page-level)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+
+    // Mock useAllManufacturerOrderItems to return mock data
+    const mockData = createMockAllOrderItemsData()
+    vi.mocked(useAllManufacturerOrderItems).mockReturnValue({
+      data: mockData,
+      isLoading: false,
+      isFiltering: false,
+      error: undefined,
+      mutate: vi.fn(),
+    })
+
+    // Mock useManufacturers
+    vi.mocked(useManufacturers).mockReturnValue({
+      manufacturers: [],
+      isLoading: false,
+      error: undefined,
+      mutate: vi.fn(),
+    })
   })
 
-  it('renders summary cards with correct values (金額なし)', async () => {
-    const { AllManufacturerOrderList } = await import(
-      '@/features/purchase-orders/components/all-manufacturer-order-list'
+  it('renders summary cards with correct values at page level', async () => {
+    const { default: AllPurchaseOrdersPage } = await import(
+      '@/app/(dashboard)/purchase-orders/all/page'
     )
 
-    const mockData = createMockAllOrderItemsData()
-
-    render(
-      <AllManufacturerOrderList
-        data={mockData}
-        isLoading={false}
-      />
-    )
+    render(<AllPurchaseOrdersPage />)
 
     // 合計明細数が表示される（サマリーカード内の "3件"）
     expect(screen.getAllByText(/3件/).length).toBeGreaterThanOrEqual(1)
 
     // 合計数量が表示される（サマリーカード内の "8点"）
     expect(screen.getByText(/8点/)).toBeInTheDocument()
-
-    // FEAT-0020: 合計金額が表示されないこと
-    expect(screen.queryByText(/¥6,500/)).not.toBeInTheDocument()
   })
 
-  it('renders summary labels for count and quantity only (金額ラベルなし)', async () => {
-    const { AllManufacturerOrderList } = await import(
-      '@/features/purchase-orders/components/all-manufacturer-order-list'
+  it('renders summary labels for count and quantity at page level', async () => {
+    const { default: AllPurchaseOrdersPage } = await import(
+      '@/app/(dashboard)/purchase-orders/all/page'
     )
 
-    const mockData = createMockAllOrderItemsData()
+    render(<AllPurchaseOrdersPage />)
 
-    render(
-      <AllManufacturerOrderList
-        data={mockData}
-        isLoading={false}
-      />
-    )
-
-    // サマリーのラベルが存在すること（明細数、合計数量のみ）
+    // サマリーのラベルが存在すること
     expect(screen.getByText(/明細数/)).toBeInTheDocument()
     expect(screen.getByText(/合計数量/)).toBeInTheDocument()
-
-    // FEAT-0020: 合計金額ラベルが存在しないこと
-    expect(screen.queryByText(/合計金額/)).not.toBeInTheDocument()
   })
 })
 
@@ -689,47 +726,15 @@ describe('AllManufacturerOrderItem type includes manufacturer fields', () => {
 })
 
 // ======================================
-// FEAT-0020 AC-001: サマリーカードに「合計金額」が表示されない
+// テーブルに単価・金額・納品予定日が表示される
 // ======================================
 
-describe('FEAT-0020 AC-001: サマリーカードに「合計金額」が表示されない', () => {
+describe('テーブルに単価・金額・納品予定日が表示される', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('does not display 合計金額 label in summary cards', async () => {
-    const { AllManufacturerOrderList } = await import(
-      '@/features/purchase-orders/components/all-manufacturer-order-list'
-    )
-
-    const mockData = createMockAllOrderItemsData()
-
-    render(
-      <AllManufacturerOrderList
-        data={mockData}
-        isLoading={false}
-      />
-    )
-
-    // 「合計金額」ラベルが表示されない
-    expect(screen.queryByText('合計金額')).not.toBeInTheDocument()
-
-    // 「明細数」「合計数量」のみ表示される
-    expect(screen.getByText('明細数')).toBeInTheDocument()
-    expect(screen.getByText('合計数量')).toBeInTheDocument()
-  })
-})
-
-// ======================================
-// FEAT-0020 AC-002: テーブルヘッダーに「金額」カラムが表示されない
-// ======================================
-
-describe('FEAT-0020 AC-002: テーブルヘッダーに「金額」カラムが表示されない', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it('does not have 金額 column header and has exactly 9 columns', async () => {
+  it('displays 単価, 金額, 納品予定日 columns in table', async () => {
     const { AllManufacturerOrderList } = await import(
       '@/features/purchase-orders/components/all-manufacturer-order-list'
     )
@@ -746,24 +751,13 @@ describe('FEAT-0020 AC-002: テーブルヘッダーに「金額」カラムが�
     const headers = screen.getAllByRole('columnheader')
     const headerTexts = headers.map(h => h.textContent)
 
-    // テーブルヘッダーに「金額」が存在しない
-    expect(headerTexts.some(t => t?.includes('金額'))).toBe(false)
-
-    // カラム数は9
-    expect(headers).toHaveLength(9)
-  })
-})
-
-// ======================================
-// FEAT-0020 AC-003: テーブル行に金額セルが表示されない
-// ======================================
-
-describe('FEAT-0020 AC-003: テーブル行に金額セルが表示されない', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+    // 単価・金額・納品予定日カラムが存在すること
+    expect(headerTexts.some(t => t?.includes('単価'))).toBe(true)
+    expect(headerTexts.some(t => t?.includes('金額'))).toBe(true)
+    expect(headerTexts.some(t => t?.includes('納品予定日'))).toBe(true)
   })
 
-  it('does not display ¥ prefixed amount values in table rows', async () => {
+  it('displays formatted amount values (price * quantity) in table rows', async () => {
     const { AllManufacturerOrderList } = await import(
       '@/features/purchase-orders/components/all-manufacturer-order-list'
     )
@@ -777,57 +771,14 @@ describe('FEAT-0020 AC-003: テーブル行に金額セルが表示されない'
       />
     )
 
-    // price * quantity の金額計算結果が表示されない
+    // price * quantity の金額計算結果が表示される
     // item-001: 1000 * 2 = ¥2,000, item-002: 2000 * 1 = ¥2,000
-    expect(screen.queryAllByText(/¥2,000/)).toHaveLength(0)
+    expect(screen.getAllByText(/¥2,000/).length).toBeGreaterThanOrEqual(1)
     // item-003: 500 * 5 = ¥2,500
-    expect(screen.queryAllByText(/¥2,500/)).toHaveLength(0)
-  })
-})
-
-// ======================================
-// FEAT-0020 AC-004: サマリーカードのグリッドが2カラムに変更される
-// ======================================
-
-describe('FEAT-0020 AC-004: サマリーカードのグリッドが2カラムに変更される', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+    expect(screen.getByText(/¥2,500/)).toBeInTheDocument()
   })
 
-  it('uses grid-cols-2 class for summary card grid', async () => {
-    const { AllManufacturerOrderList } = await import(
-      '@/features/purchase-orders/components/all-manufacturer-order-list'
-    )
-
-    const mockData = createMockAllOrderItemsData()
-
-    const { container } = render(
-      <AllManufacturerOrderList
-        data={mockData}
-        isLoading={false}
-      />
-    )
-
-    // grid-cols-2 クラスが適用されている
-    const gridElement = container.querySelector('.grid-cols-2')
-    expect(gridElement).toBeInTheDocument()
-
-    // grid-cols-3 クラスが適用されていない
-    const grid3Element = container.querySelector('.grid-cols-3')
-    expect(grid3Element).not.toBeInTheDocument()
-  })
-})
-
-// ======================================
-// FEAT-0020 AC-005: 既存の明細数・合計数量の表示は維持される
-// ======================================
-
-describe('FEAT-0020 AC-005: 既存の明細数・合計数量の表示は維持される', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it('displays 3件 and 8点 correctly', async () => {
+  it('displays expected delivery dates in table rows', async () => {
     const { AllManufacturerOrderList } = await import(
       '@/features/purchase-orders/components/all-manufacturer-order-list'
     )
@@ -840,6 +791,47 @@ describe('FEAT-0020 AC-005: 既存の明細数・合計数量の表示は維持�
         isLoading={false}
       />
     )
+
+    // 納品予定日が表示される（フォーマットは 1/22 など）
+    expect(screen.getByText(/1\/22/)).toBeInTheDocument()
+    expect(screen.getByText(/1\/21/)).toBeInTheDocument()
+    expect(screen.getByText(/1\/18/)).toBeInTheDocument()
+  })
+})
+
+// ======================================
+// 明細数・合計数量の表示（ページレベル）
+// ======================================
+
+describe('明細数・合計数量の表示 (page-level)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    // Mock useAllManufacturerOrderItems to return mock data
+    const mockData = createMockAllOrderItemsData()
+    vi.mocked(useAllManufacturerOrderItems).mockReturnValue({
+      data: mockData,
+      isLoading: false,
+      isFiltering: false,
+      error: undefined,
+      mutate: vi.fn(),
+    })
+
+    // Mock useManufacturers
+    vi.mocked(useManufacturers).mockReturnValue({
+      manufacturers: [],
+      isLoading: false,
+      error: undefined,
+      mutate: vi.fn(),
+    })
+  })
+
+  it('displays 3件 and 8点 correctly at page level', async () => {
+    const { default: AllPurchaseOrdersPage } = await import(
+      '@/app/(dashboard)/purchase-orders/all/page'
+    )
+
+    render(<AllPurchaseOrdersPage />)
 
     // 「3件」が正しく表示される
     expect(screen.getAllByText(/3件/).length).toBeGreaterThanOrEqual(1)

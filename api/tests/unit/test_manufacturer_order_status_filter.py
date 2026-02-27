@@ -57,7 +57,7 @@ class TestGetOrderItemsByManufacturerStatusFilter:
     def mock_order_items_multi_status(self):
         """複数ステータスの受注明細
 
-        タプル構造: (OrderItem, order_number, ordered_at, customer_name, cost, item_status, order_status)
+        タプル構造: (OrderItem, order_number, ordered_at, customer_name, cost, item_status, order_status, lead_time_days)
         """
         items = []
         statuses = [
@@ -90,6 +90,7 @@ class TestGetOrderItemsByManufacturerStatusFilter:
                 500,  # cost
                 status.value,  # item_status (OrderItem.status)
                 status.value,  # order_status (Order.status)
+                7,  # lead_time_days
             ))
         return items
 
