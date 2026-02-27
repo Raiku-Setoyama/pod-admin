@@ -101,6 +101,8 @@ async def get_all_manufacturer_order_items(
     status: str | None = None,
     search: str | None = None,
     manufacturer_id: str | None = None,
+    expected_delivery_from: date | None = None,
+    expected_delivery_to: date | None = None,
 ) -> AllManufacturerOrderItemListResponse:
     """全メーカー横断の受注明細一覧を取得
 
@@ -114,6 +116,8 @@ async def get_all_manufacturer_order_items(
         status: ステータスフィルター（ordered, manufacturing, delivered）
         search: キーワード検索（注文番号、製品番号、商品名）
         manufacturer_id: メーカーIDフィルター
+        expected_delivery_from: 納品予定日From
+        expected_delivery_to: 納品予定日To
     """
     return await service.get_all_order_items(
         ordered_from=ordered_from,
@@ -122,6 +126,8 @@ async def get_all_manufacturer_order_items(
         status=status,
         search=search,
         manufacturer_id=manufacturer_id,
+        expected_delivery_from=expected_delivery_from,
+        expected_delivery_to=expected_delivery_to,
     )
 
 
@@ -208,6 +214,8 @@ async def get_manufacturer_order_items(
     product_type: str | None = None,
     status: str | None = None,
     search: str | None = None,
+    expected_delivery_from: date | None = None,
+    expected_delivery_to: date | None = None,
 ) -> ManufacturerOrderItemListResponse:
     """メーカー別受注明細一覧を取得
 
@@ -221,6 +229,8 @@ async def get_manufacturer_order_items(
         product_type: 商品タイプフィルター
         status: ステータスフィルター（ordered, manufacturing, delivered）
         search: キーワード検索（注文番号、製品番号、商品名）
+        expected_delivery_from: 納品予定日From
+        expected_delivery_to: 納品予定日To
     """
     return await service.get_order_items_by_manufacturer(
         manufacturer_id,
@@ -229,6 +239,8 @@ async def get_manufacturer_order_items(
         product_type=product_type,
         status=status,
         search=search,
+        expected_delivery_from=expected_delivery_from,
+        expected_delivery_to=expected_delivery_to,
     )
 
 

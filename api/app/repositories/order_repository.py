@@ -238,6 +238,8 @@ class OrderRepository:
         ordered_to: date | None = None,
         product_type: str | None = None,
         search: str | None = None,
+        expected_delivery_from: date | None = None,
+        expected_delivery_to: date | None = None,
     ) -> list[tuple]:
         """メーカー別の受注明細を詳細情報付きで取得
 
@@ -248,11 +250,14 @@ class OrderRepository:
             ordered_to: 発注日To
             product_type: 商品タイプ
             search: キーワード検索（注文番号・製品番号・商品名）
+            expected_delivery_from: 納品予定日From
+            expected_delivery_to: 納品予定日To
 
         Returns:
-            受注明細のタプルリスト（OrderItem, order_number, ordered_at, customer_name, cost, item_status, order_status）
+            受注明細のタプルリスト（OrderItem, order_number, ordered_at, customer_name, cost, item_status, order_status, lead_time_days）
         """
         from app.models.product import Product
+        from app.models.manufacturer import Manufacturer
 
         query = (
             select(
@@ -263,9 +268,11 @@ class OrderRepository:
                 Product.cost,
                 OrderItem.status,  # item_status
                 Order.status,  # order_status（後方互換性のため）
+                Manufacturer.lead_time_days,
             )
             .join(Order, OrderItem.order_id == Order.id)
             .join(Product, OrderItem.product_id == Product.id)
+            .join(Manufacturer, Product.manufacturer_id == Manufacturer.id)
             .where(Product.manufacturer_id == manufacturer_id)
         )
 
@@ -292,6 +299,17 @@ class OrderRepository:
             )
             query = query.where(search_filter)
 
+        # 納品予定日フィルター（ordered_at + lead_time_days）
+        if expected_delivery_from:
+            query = query.where(
+                func.date(Order.ordered_at) + Manufacturer.lead_time_days >= expected_delivery_from
+            )
+
+        if expected_delivery_to:
+            query = query.where(
+                func.date(Order.ordered_at) + Manufacturer.lead_time_days <= expected_delivery_to
+            )
+
         query = query.order_by(Order.ordered_at.desc())
 
         result = await self._db.execute(query)
@@ -305,6 +323,8 @@ class OrderRepository:
         product_type: str | None = None,
         search: str | None = None,
         manufacturer_id: str | None = None,
+        expected_delivery_from: date | None = None,
+        expected_delivery_to: date | None = None,
     ) -> list[tuple]:
         """全メーカー横断の受注明細を詳細情報付きで取得
 
@@ -315,9 +335,11 @@ class OrderRepository:
             product_type: 商品タイプ
             search: キーワード検索（注文番号・製品番号・商品名）
             manufacturer_id: メーカーIDフィルター
+            expected_delivery_from: 納品予定日From
+            expected_delivery_to: 納品予定日To
 
         Returns:
-            受注明細のタプルリスト（OrderItem, order_number, ordered_at, customer_name, cost, status, manufacturer_id, manufacturer_name）
+            受注明細のタプルリスト（OrderItem, order_number, ordered_at, customer_name, cost, status, manufacturer_id, manufacturer_name, lead_time_days）
         """
         from app.models.product import Product
         from app.models.manufacturer import Manufacturer
@@ -332,6 +354,7 @@ class OrderRepository:
                 Order.status,
                 Manufacturer.id.label("manufacturer_id"),
                 Manufacturer.name.label("manufacturer_name"),
+                Manufacturer.lead_time_days,
             )
             .join(Order, OrderItem.order_id == Order.id)
             .join(Product, OrderItem.product_id == Product.id)
@@ -367,6 +390,17 @@ class OrderRepository:
                 | OrderItem.product_name.ilike(search_pattern)
             )
             query = query.where(search_filter)
+
+        # 納品予定日フィルター（ordered_at + lead_time_days）
+        if expected_delivery_from:
+            query = query.where(
+                func.date(Order.ordered_at) + Manufacturer.lead_time_days >= expected_delivery_from
+            )
+
+        if expected_delivery_to:
+            query = query.where(
+                func.date(Order.ordered_at) + Manufacturer.lead_time_days <= expected_delivery_to
+            )
 
         query = query.order_by(Order.ordered_at.desc())
 

@@ -1,7 +1,7 @@
 """Manufacturer order service for managing orders by manufacturer."""
 
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from urllib.parse import urlparse
 
 import httpx
@@ -81,6 +81,8 @@ class ManufacturerOrderService:
         product_type: str | None = None,
         status: str | None = None,
         search: str | None = None,
+        expected_delivery_from: date | None = None,
+        expected_delivery_to: date | None = None,
     ) -> ManufacturerOrderItemListResponse:
         """メーカー別受注明細一覧を取得
 
@@ -91,6 +93,8 @@ class ManufacturerOrderService:
             product_type: 商品タイプ
             status: ステータスフィルター（None の場合は shipped 以外の全て）
             search: キーワード検索（注文番号・製品番号・商品名）
+            expected_delivery_from: 納品予定日From
+            expected_delivery_to: 納品予定日To
         """
         manufacturer = await self._manufacturer_repo.find_by_id(manufacturer_id)
         if not manufacturer:
@@ -103,13 +107,18 @@ class ManufacturerOrderService:
             product_type=product_type,
             status=status,
             search=search,
+            expected_delivery_from=expected_delivery_from,
+            expected_delivery_to=expected_delivery_to,
         )
 
         items = []
         total_quantity = 0
         total_amount = 0
 
-        for order_item, order_number, ordered_at, customer_name, cost, item_status, order_status in rows:
+        for order_item, order_number, ordered_at, customer_name, cost, item_status, order_status, lead_time_days in rows:
+            # 納品予定日を計算
+            expected_delivery_date = ordered_at.date() + timedelta(days=lead_time_days)
+
             items.append(
                 ManufacturerOrderItemResponse(
                     id=order_item.id,
@@ -130,6 +139,8 @@ class ManufacturerOrderService:
                     customer_name=customer_name,
                     status=item_status,  # OrderItem.statusを使用
                     item_status=item_status,  # 新フィールド
+                    lead_time_days=lead_time_days,
+                    expected_delivery_date=expected_delivery_date,
                 )
             )
             total_quantity += order_item.quantity
@@ -152,6 +163,8 @@ class ManufacturerOrderService:
         status: str | None = None,
         search: str | None = None,
         manufacturer_id: str | None = None,
+        expected_delivery_from: date | None = None,
+        expected_delivery_to: date | None = None,
     ) -> AllManufacturerOrderItemListResponse:
         """全メーカー横断の受注明細一覧を取得
 
@@ -162,6 +175,8 @@ class ManufacturerOrderService:
             status: ステータスフィルター（None の場合は shipped 以外の全て）
             search: キーワード検索（注文番号・製品番号・商品名）
             manufacturer_id: メーカーIDフィルター
+            expected_delivery_from: 納品予定日From
+            expected_delivery_to: 納品予定日To
         """
         rows = await self._order_repo.find_all_ordered_items_detail(
             ordered_from=ordered_from,
@@ -170,13 +185,18 @@ class ManufacturerOrderService:
             status=status,
             search=search,
             manufacturer_id=manufacturer_id,
+            expected_delivery_from=expected_delivery_from,
+            expected_delivery_to=expected_delivery_to,
         )
 
         items = []
         total_quantity = 0
         total_amount = 0
 
-        for order_item, order_number, ordered_at, customer_name, cost, order_status, mfr_id, mfr_name in rows:
+        for order_item, order_number, ordered_at, customer_name, cost, order_status, mfr_id, mfr_name, lead_time_days in rows:
+            # 納品予定日を計算
+            expected_delivery_date = ordered_at.date() + timedelta(days=lead_time_days)
+
             items.append(
                 AllManufacturerOrderItemResponse(
                     id=order_item.id,
@@ -198,6 +218,8 @@ class ManufacturerOrderService:
                     status=order_status,
                     manufacturer_id=mfr_id,
                     manufacturer_name=mfr_name,
+                    lead_time_days=lead_time_days,
+                    expected_delivery_date=expected_delivery_date,
                 )
             )
             total_quantity += order_item.quantity
@@ -351,7 +373,7 @@ class ManufacturerOrderService:
         # グループキー別にアイテムを整理
         # Tシャツは (product_type, position) でグループ、他は (product_type,) でグループ
         items_by_group: dict[tuple, list[dict]] = {}
-        for order_item, order_number, ordered_at, customer_name, cost, item_status, order_status in rows:
+        for order_item, order_number, ordered_at, customer_name, cost, item_status, order_status, lead_time_days in rows:
             item_product_type = order_item.product_type
             if item_product_type == "tshirt":
                 group_key = (item_product_type, order_item.position or "")

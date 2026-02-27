@@ -113,6 +113,8 @@ export interface ManufacturerOrderItem {
   customer_name: string;
   status: OrderItemStatus;  // 製品単位のステータス
   item_status?: OrderItemStatus | null;  // 新フィールド（製品単位のステータス）
+  lead_time_days: number;  // メーカーのリードタイム（日数）
+  expected_delivery_date: string;  // 納品予定日
 }
 
 export interface ManufacturerOrderItemListResponse {
@@ -151,6 +153,8 @@ export interface AllManufacturerOrderItem {
   status: OrderStatus;
   manufacturer_id: string;
   manufacturer_name: string;
+  lead_time_days: number;  // メーカーのリードタイム（日数）
+  expected_delivery_date: string;  // 納品予定日
 }
 
 export interface AllManufacturerOrderItemListResponse {

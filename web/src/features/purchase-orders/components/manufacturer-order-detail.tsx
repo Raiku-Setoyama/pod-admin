@@ -48,9 +48,11 @@ interface ManufacturerOrderDetailProps {
   search: string;
   status: OrderStatus | null;
   dateRange?: DateRange;
+  expectedDeliveryRange?: DateRange;
   onSearchChange: (value: string) => void;
   onStatusChange: (value: OrderStatus | null) => void;
   onDateRangeChange?: (range: DateRange | undefined) => void;
+  onExpectedDeliveryRangeChange?: (range: DateRange | undefined) => void;
   onFilterReset: () => void;
 }
 
@@ -77,6 +79,19 @@ function formatDate(dateString: string): string {
   });
 }
 
+function formatDateShort(dateString: string): string {
+  const date = new Date(dateString);
+  return date.toLocaleDateString("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+function formatCurrency(amount: number): string {
+  return `¥${amount.toLocaleString("ja-JP")}`;
+}
+
 export function ManufacturerOrderDetail({
   data,
   isLoading = false,
@@ -84,9 +99,11 @@ export function ManufacturerOrderDetail({
   search,
   status,
   dateRange,
+  expectedDeliveryRange,
   onSearchChange,
   onStatusChange,
   onDateRangeChange,
+  onExpectedDeliveryRangeChange,
   onFilterReset,
 }: ManufacturerOrderDetailProps) {
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
@@ -267,9 +284,11 @@ export function ManufacturerOrderDetail({
             search={search}
             status={status}
             dateRange={dateRange}
+            expectedDeliveryRange={expectedDeliveryRange}
             onSearchChange={onSearchChange}
             onStatusChange={onStatusChange}
             onDateRangeChange={onDateRangeChange}
+            onExpectedDeliveryRangeChange={onExpectedDeliveryRangeChange}
             onReset={onFilterReset}
           />
 
@@ -294,7 +313,9 @@ export function ManufacturerOrderDetail({
                   <TableHead>商品タイプ</TableHead>
                   <TableHead>ステータス</TableHead>
                   <TableHead className="text-center">数量</TableHead>
-                  <TableHead>顧客名</TableHead>
+                  <TableHead className="text-right">単価</TableHead>
+                  <TableHead className="text-right">金額</TableHead>
+                  <TableHead>納品予定日</TableHead>
                   <TableHead>受注日</TableHead>
                 </TableRow>
               </TableHeader>
@@ -302,7 +323,7 @@ export function ManufacturerOrderDetail({
                 {isLoading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={9}
+                      colSpan={11}
                       className="h-24 text-center text-muted-foreground"
                     >
                       <div className="flex items-center justify-center gap-2">
@@ -314,7 +335,7 @@ export function ManufacturerOrderDetail({
                 ) : data.items.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={9}
+                      colSpan={11}
                       className="h-24 text-center text-muted-foreground"
                     >
                       発注中の明細がありません
@@ -348,7 +369,13 @@ export function ManufacturerOrderDetail({
                       <TableCell className="text-center">
                         {item.quantity}
                       </TableCell>
-                      <TableCell>{item.customer_name}</TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(item.price)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(item.price * item.quantity)}
+                      </TableCell>
+                      <TableCell>{formatDateShort(item.expected_delivery_date)}</TableCell>
                       <TableCell>{formatDate(item.ordered_at)}</TableCell>
                     </TableRow>
                   ))

@@ -29,7 +29,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/common/status-badge";
 import { PackingPhotoUpload } from "./packing-photo-upload";
-import { Truck, Package, MapPin, Download } from "lucide-react";
+import { Truck, Package, MapPin, Download, Loader2 } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { getShipmentStatusUpdateOptions } from "@/constants/status";
 import type { Shipment, ShipmentStatus } from "@/types/api";
@@ -57,6 +57,29 @@ export function ShipmentDetail({ shipment, onUpdate }: ShipmentDetailProps) {
   const [newStatus, setNewStatus] = useState<ShipmentStatus>(shipment.status);
   const [trackingNumber, setTrackingNumber] = useState(shipment.tracking_number || "");
   const [isUpdating, setIsUpdating] = useState(false);
+  const [downloadingImageId, setDownloadingImageId] = useState<string | null>(null);
+
+  const handleImageDownload = async (imageUrl: string, itemId: string, productName: string | null) => {
+    setDownloadingImageId(itemId);
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      const extension = imageUrl.split(".").pop()?.split("?")[0] || "jpg";
+      link.download = `${productName || "product"}_${itemId.slice(0, 8)}.${extension}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error("Image download failed:", error);
+    } finally {
+      setDownloadingImageId(null);
+    }
+  };
 
   const handleStatusUpdate = async () => {
     setIsUpdating(true);
@@ -210,13 +233,17 @@ export function ShipmentDetail({ shipment, onUpdate }: ShipmentDetailProps) {
                           alt={item.product_name || "商品画像"}
                           className="h-10 w-10 rounded object-cover"
                         />
-                        <a
-                          href={item.thumbnail_image_url}
-                          download
-                          className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
+                        <button
+                          onClick={() => handleImageDownload(item.thumbnail_image_url!, item.id, item.product_name)}
+                          disabled={downloadingImageId === item.id}
+                          className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline disabled:opacity-50"
                         >
-                          <Download className="h-4 w-4" />
-                        </a>
+                          {downloadingImageId === item.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Download className="h-4 w-4" />
+                          )}
+                        </button>
                       </div>
                     ) : (
                       "-"

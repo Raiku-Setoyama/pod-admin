@@ -38,6 +38,7 @@ export default function PurchaseOrderDetailPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<OrderStatus | null>(null);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const [expectedDeliveryRange, setExpectedDeliveryRange] = useState<DateRange | undefined>(undefined);
 
   // デバウンスされた検索値（300ms）
   const debouncedSearch = useDebounce(search, 300);
@@ -49,6 +50,8 @@ export default function PurchaseOrderDetailPage() {
       status,
       ordered_from: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
       ordered_to: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
+      expected_delivery_from: expectedDeliveryRange?.from ? format(expectedDeliveryRange.from, "yyyy-MM-dd") : undefined,
+      expected_delivery_to: expectedDeliveryRange?.to ? format(expectedDeliveryRange.to, "yyyy-MM-dd") : undefined,
     }
   );
 
@@ -56,6 +59,7 @@ export default function PurchaseOrderDetailPage() {
     setSearch("");
     setStatus(null);
     setDateRange(undefined);
+    setExpectedDeliveryRange(undefined);
   };
 
   // 初回ロード時のみ全画面ローディングを表示（dataがない場合）
@@ -109,9 +113,11 @@ export default function PurchaseOrderDetailPage() {
         search={search}
         status={status}
         dateRange={dateRange}
+        expectedDeliveryRange={expectedDeliveryRange}
         onSearchChange={setSearch}
         onStatusChange={setStatus}
         onDateRangeChange={setDateRange}
+        onExpectedDeliveryRangeChange={setExpectedDeliveryRange}
         onFilterReset={handleFilterReset}
       />
     </PageContainer>

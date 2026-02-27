@@ -1,6 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
+import { DateRange } from "react-day-picker";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -10,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { DateRangePicker } from "@/components/common/date-range-picker";
 import type { OrderStatus } from "@/types/api";
 
 const statusOptions: { value: OrderStatus | "all"; label: string }[] = [
@@ -31,12 +33,14 @@ interface AllManufacturerOrderFiltersProps {
   productType: string | null;
   orderedFrom: string;
   orderedTo: string;
+  expectedDeliveryRange?: DateRange;
   onSearchChange: (value: string) => void;
   onStatusChange: (value: string | null) => void;
   onManufacturerIdChange: (value: string | null) => void;
   onProductTypeChange: (value: string | null) => void;
   onOrderedFromChange: (value: string) => void;
   onOrderedToChange: (value: string) => void;
+  onExpectedDeliveryRangeChange?: (range: DateRange | undefined) => void;
   onReset: () => void;
   manufacturers: ManufacturerOption[];
 }
@@ -48,16 +52,18 @@ export function AllManufacturerOrderFilters({
   productType,
   orderedFrom,
   orderedTo,
+  expectedDeliveryRange,
   onSearchChange,
   onStatusChange,
   onManufacturerIdChange,
   onProductTypeChange,
   onOrderedFromChange,
   onOrderedToChange,
+  onExpectedDeliveryRangeChange,
   onReset,
   manufacturers,
 }: AllManufacturerOrderFiltersProps) {
-  const hasActiveFilters = search || status || manufacturerId || productType || orderedFrom || orderedTo;
+  const hasActiveFilters = search || status || manufacturerId || productType || orderedFrom || orderedTo || expectedDeliveryRange?.from;
 
   return (
     <div className="flex flex-wrap items-end gap-4 mb-4">
@@ -114,6 +120,15 @@ export function AllManufacturerOrderFilters({
           </SelectContent>
         </Select>
       </div>
+
+      {/* 納品予定日フィルター */}
+      {onExpectedDeliveryRangeChange && (
+        <DateRangePicker
+          value={expectedDeliveryRange}
+          onChange={onExpectedDeliveryRangeChange}
+          placeholder="納品予定日"
+        />
+      )}
 
       {/* リセットボタン */}
       {hasActiveFilters && (

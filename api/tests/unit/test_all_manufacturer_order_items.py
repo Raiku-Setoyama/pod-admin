@@ -47,6 +47,7 @@ def _make_order_item_tuple(
     status: str = "ordered",
     manufacturer_id: str | None = None,
     manufacturer_name: str = "テストメーカー",
+    lead_time_days: int = 7,
 ) -> tuple:
     """リポジトリの find_all_ordered_items_detail の戻り値形式に合わせたタプルを生成"""
     order_item = MagicMock()
@@ -73,6 +74,7 @@ def _make_order_item_tuple(
         status,
         manufacturer_id or str(uuid4()),
         manufacturer_name,
+        lead_time_days,
     )
 
 
