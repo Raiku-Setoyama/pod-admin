@@ -18,6 +18,7 @@ from app.schemas.shipment import (
     ShipmentListResponse,
     ShipmentResponse,
     ShipmentStatusUpdate,
+    ShipmentThumbnailDownloadRequest,
     TrackingFileImportResult,
     TrackingImportRequest,
 )
@@ -101,6 +102,29 @@ async def export_shipments_csv(
         media_type="text/csv; charset=utf-8",
         headers={
             "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
+        },
+    )
+
+
+@router.post("/download-thumbnails")
+async def download_thumbnails(
+    data: ShipmentThumbnailDownloadRequest,
+    service: Annotated[ShipmentService, Depends(get_shipment_service)],
+    current_user: Annotated[User, Depends(get_current_admin)],
+) -> StreamingResponse:
+    """配送サムネイル画像をZIPファイルとしてダウンロード."""
+    zip_bytes, filename = await service.download_thumbnails(data.shipment_ids)
+
+    encoded_filename = quote(filename)
+    content_disposition = (
+        f"attachment; filename*=UTF-8''{encoded_filename}"
+    )
+
+    return StreamingResponse(
+        iter([zip_bytes]),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": content_disposition,
         },
     )
 

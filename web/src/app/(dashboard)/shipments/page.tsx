@@ -51,6 +51,7 @@ export default function ShipmentsPage() {
   const [bulkNewStatus, setBulkNewStatus] = useState<ShipmentStatus>("ready");
   const [isUpdating, setIsUpdating] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isDownloadingThumbnails, setIsDownloadingThumbnails] = useState(false);
 
   // 伝票番号インポート用state
   const [isTrackingImportDialogOpen, setIsTrackingImportDialogOpen] = useState<boolean>(false);
@@ -160,6 +161,58 @@ export default function ShipmentsPage() {
     }
   };
 
+  const handleDownloadThumbnails = async () => {
+    setIsDownloadingThumbnails(true);
+    try {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+      const response = await fetch(
+        `${apiBaseUrl}/shipments/download-thumbnails`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+          },
+          body: JSON.stringify({
+            shipment_ids: Array.from(selectedIds),
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Download failed");
+      }
+
+      // Get filename from Content-Disposition header
+      const contentDisposition = response.headers.get("Content-Disposition");
+      let filename = "thumbnails.zip";
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename\*=UTF-8''(.+)/);
+        if (filenameMatch) {
+          filename = decodeURIComponent(filenameMatch[1]);
+        }
+      }
+
+      // Download the file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast.success(`${selectedIds.size}件のサムネイル画像をダウンロードしました`);
+    } catch (error) {
+      console.error("Thumbnail download failed:", error);
+      toast.error("サムネイル画像のダウンロードに失敗しました");
+    } finally {
+      setIsDownloadingThumbnails(false);
+    }
+  };
+
   return (
     <PageContainer
       title="配送一覧"
@@ -173,6 +226,14 @@ export default function ShipmentsPage() {
           >
             <Download className="h-4 w-4 mr-2" />
             {isExporting ? "エクスポート中..." : "受注CSV"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleDownloadThumbnails}
+            disabled={isDownloadingThumbnails || selectedIds.size === 0}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            {isDownloadingThumbnails ? "ダウンロード中..." : "商品サムネイル"}
           </Button>
           <Button
             onClick={() => setIsBulkStatusDialogOpen(true)}

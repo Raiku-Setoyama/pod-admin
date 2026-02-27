@@ -119,6 +119,12 @@ class ShipmentExportRequest(BaseModel):
     shipment_ids: list[str] = Field(..., min_length=1)
 
 
+class ShipmentThumbnailDownloadRequest(BaseModel):
+    """配送サムネイル画像ZIPダウンロードリクエスト"""
+
+    shipment_ids: list[str] = Field(..., min_length=1)
+
+
 class TrackingFileImportError(BaseModel):
     """伝票番号ファイルインポートのエラー詳細"""
 
