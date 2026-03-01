@@ -21,6 +21,7 @@ class OrderStatus(str, Enum):
     MANUFACTURING = "manufacturing"  # 製造中
     DELIVERED = "delivered"  # 納入済み
     SHIPPED = "shipped"  # 発送完了（最終ステータス）
+    CANCELLED = "cancelled"  # キャンセル済み
 
 
 class OrderItemStatus(str, Enum):

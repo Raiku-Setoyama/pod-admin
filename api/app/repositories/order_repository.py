@@ -525,8 +525,8 @@ class OrderRepository:
         if not order:
             return None
 
-        # shippedの場合は変更しない
-        if order.status == OrderStatus.SHIPPED.value:
+        # shippedまたはcancelledの場合は変更しない
+        if order.status in (OrderStatus.SHIPPED.value, OrderStatus.CANCELLED.value):
             return order
 
         new_status = self.derive_order_status(order)

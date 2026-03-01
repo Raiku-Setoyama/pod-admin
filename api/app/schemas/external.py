@@ -46,3 +46,11 @@ class OrderStatusResponse(BaseModel):
     status: OrderStatus
     ordered_at: datetime
     updated_at: datetime
+
+
+class OrderCancelResponse(BaseModel):
+    """Response schema for order cancellation."""
+
+    order_number: str
+    status: OrderStatus
+    cancelled_at: datetime

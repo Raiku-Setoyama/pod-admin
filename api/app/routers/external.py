@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from app.dependencies import get_external_service, verify_api_key
 from app.models.product import ProductType
 from app.schemas.external import (
+    OrderCancelResponse,
     OrderStatusResponse,
     PriceCalculationRequest,
     PriceCalculationResponse,
@@ -66,3 +67,17 @@ async def get_order_status(
     Returns 404 if the order is not found.
     """
     return await service.get_order_status_by_order_number(order_number)
+
+
+@router.post(
+    "/orders/{order_number}/cancel",
+    response_model=OrderCancelResponse,
+    status_code=200,
+)
+async def cancel_order(
+    order_number: str,
+    service: Annotated[ExternalService, Depends(get_external_service)],
+    api_key: Annotated[str, Depends(verify_api_key)],
+) -> OrderCancelResponse:
+    """Cancel an order by order number."""
+    return await service.cancel_order(order_number)
