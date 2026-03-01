@@ -11,9 +11,10 @@
 5. [注文ステータス取得API](#注文ステータス取得api)
 6. [商品属性取得API](#商品属性取得api)
 7. [価格取得API](#価格取得api)
-8. [エラーハンドリング](#エラーハンドリング)
-9. [データ定義](#データ定義)
-10. [サンプルコード](#サンプルコード)
+8. [注文取り消しAPI](#注文取り消しapi)
+9. [エラーハンドリング](#エラーハンドリング)
+10. [データ定義](#データ定義)
+11. [サンプルコード](#サンプルコード)
 
 ---
 
@@ -76,6 +77,7 @@ APIキーは事前に発行されたものをご使用ください。
 | `/api/v1/external/orders/{order_number}/status` | GET | 注文ステータス取得 |
 | `/api/v1/external/product-options/{product_type}` | GET | 商品属性取得 |
 | `/api/v1/external/price-calculation` | POST | 価格取得 |
+| `/api/v1/external/orders/{order_number}/cancel` | POST | 注文取り消し |
 
 ---
 
@@ -359,6 +361,78 @@ curl -X GET "https://api.example.com/api/v1/external/orders/0000001/status" \
 
 ---
 
+## 注文取り消しAPI
+
+指定した注文番号の注文を取り消します。発注中（ordered）のステータスの注文のみ取り消し可能です。
+
+```
+POST /api/v1/external/orders/{order_number}/cancel
+```
+
+| 項目 | 内容 |
+|------|------|
+| メソッド | POST |
+| URL | `/api/v1/external/orders/{order_number}/cancel` |
+| 認証 | API Key（`X-API-Key`ヘッダー） |
+| レスポンス | 200 OK（成功時） |
+
+### パスパラメータ
+
+| パラメータ | 型 | 必須 | 説明 |
+|-----------|-----|:---:|------|
+| order_number | string | ○ | 注文番号（受注作成時に指定したもの） |
+
+### レスポンス例
+
+```json
+{
+  "order_number": "0000001",
+  "status": "cancelled",
+  "cancelled_at": "2024-01-15T12:00:00+09:00"
+}
+```
+
+### レスポンスフィールド
+
+| フィールド | 型 | 説明 |
+|-----------|-----|------|
+| order_number | string | 注文番号 |
+| status | string | 取り消し後のステータス（常に`cancelled`） |
+| cancelled_at | datetime | 取り消し日時 |
+
+### エラー例
+
+#### 注文が見つからない（404 Not Found）
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Order with order_number 'ORD-INVALID' not found"
+  }
+}
+```
+
+#### 取り消し不可ステータス（409 Conflict）
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "Order 0000001 cannot be cancelled. Current status: manufacturing"
+  }
+}
+```
+
+### cURL例
+
+```bash
+curl -X POST "https://api.example.com/api/v1/external/orders/0000001/cancel" \
+  -H "X-API-Key: your-api-key-here"
+```
+
+---
+
 ## エラーハンドリング
 
 ### エラーレスポンス形式
@@ -475,6 +549,7 @@ Tシャツに対して、許可されていない値を指定した場合：
 | manufacturing | 製造中 |
 | delivered | 納入済み |
 | shipped | 発送完了 |
+| cancelled | 取り消し済み |
 
 ### Tシャツ属性値
 
@@ -1052,6 +1127,7 @@ if ($statusCode === 201) {
 
 | バージョン | 日付 | 内容 |
 |-----------|------|------|
+| 3.4.0 | 2026-03-01 | 注文取り消しAPI追加 (FEAT-0023) |
 | 3.3.0 | 2026-02-25 | order_numberおよびuidを7桁数字形式に変更。バリデーション追加。 |
 | 3.2.0 | 2026-02-23 | ステッカーのカラーから「クリア」を削除。「ホワイト」のみの単一カラー体制に変更。(FEAT-0007) |
 | 3.1.0 | 2026-02-14 | レスポンスに `source` および `order_source_id` フィールド追加。受注元管理がDB管理に完全移行。 |
