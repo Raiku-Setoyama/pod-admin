@@ -1,6 +1,7 @@
 """Unit tests for shipment thumbnail ZIP download.
 
 FEAT-0022: 配送一覧ページから選択した配送に紐づく商品サムネイル画像をZIPダウンロード
+FEAT-0023: ZIP内画像ファイル名を「{order_number}_{uid}{ext}」のフラット構造に変更
 
 Tests cover:
 - AC-001: ShipmentThumbnailDownloadRequest スキーマのバリデーション
@@ -10,11 +11,8 @@ Tests cover:
 - AC-005: 画像取得失敗時はスキップ+ログ記録
 - AC-006: 全 thumbnail が null / 全取得失敗時は 404 エラー
 - AC-007: 存在しない配送IDはスキップ
-- AC-008: ZIP内のファイルパスが {order_number}/{product_name}_{index}{ext} 形式
+- AC-008: ZIP内のファイルパスが {order_number}_{uid}{ext} 形式（フラット構造、FEAT-0023）
 - AC-009: ZIPファイル名が 配送サムネイル_{YYYYMMDD_HHMMSS}.zip 形式
-
-NOTE: These tests are written in TDD Red phase - the implementation does not exist yet.
-Tests will fail until the implementation is completed.
 """
 
 import io
@@ -77,6 +75,7 @@ def create_mock_order_item(
     product_name: str = "Tshirt M White",
     thumbnail_image_url: str | None = "https://example.com/thumbnails/thumb1.png",
     design_image_url: str | None = None,
+    uid: str | None = None,
 ) -> MagicMock:
     """Create a mock OrderItem."""
     item = MagicMock(spec=OrderItem)
@@ -84,6 +83,7 @@ def create_mock_order_item(
     item.product_name = product_name
     item.thumbnail_image_url = thumbnail_image_url
     item.design_image_url = design_image_url
+    item.uid = uid
     item.quantity = 1
     return item
 
@@ -589,23 +589,25 @@ class TestNonExistentShipmentIdsSkipped:
 
 
 # ======================================
-# AC-008: ZIP内のファイルパスが {order_number}/{product_name}_{index}{ext} 形式
+# AC-008: ZIP内のファイルパスが {order_number}_{uid}{ext} 形式（フラット構造）
+# FEAT-0023: サブディレクトリなし、product_name/index を除去し uid で命名
 # ======================================
 
 
 class TestZipFilePathFormat:
-    """AC-008: ZIP内のファイルパスが「{order_number}/{product_name}_{index}{ext}」形式になっている."""
+    """AC-008: ZIP内のファイルパスが「{order_number}_{uid}{ext}」のフラット形式になっている."""
 
     @pytest.mark.asyncio
-    async def test_zip_file_path_format(
+    async def test_zip_file_path_flat_format_with_uid(
         self, shipment_service, mock_shipment_repo
     ):
-        """ZIP内のファイルパスが正しい形式になっている."""
+        """AC-002: ZIP内ファイルパスが「{order_number}_{uid}{ext}」形式のフラット構造."""
         # Arrange
         order_item = create_mock_order_item(
             item_id="oi-1",
             product_name="Tシャツ Mサイズ 白",
             thumbnail_image_url="https://example.com/thumb1.png",
+            uid="MFG-001",
         )
         order = create_mock_order(
             order_id="order-1",
@@ -637,32 +639,139 @@ class TestZipFilePathFormat:
                 shipment_ids=["shipment-1"]
             )
 
-        # Assert
+        # Assert: flat path "ORD-001_MFG-001.png" (no subdirectory)
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             file_list = zf.namelist()
             assert len(file_list) == 1
             file_path = file_list[0]
-            # Format: ORD-001/Tシャツ Mサイズ 白_1.png
-            assert file_path.startswith("ORD-001/")
-            assert "Tシャツ Mサイズ 白" in file_path
-            assert "_1." in file_path
-            assert file_path.endswith(".png")
+            assert file_path == "ORD-001_MFG-001.png"
+            # Must NOT contain "/" (no subdirectory)
+            assert "/" not in file_path
 
     @pytest.mark.asyncio
-    async def test_zip_file_path_with_multiple_items_has_sequential_numbers(
+    async def test_zip_file_path_no_product_name_or_index(
         self, shipment_service, mock_shipment_repo
     ):
-        """同一注文の複数アイテムには連番が振られる."""
+        """AC-001: image_tasks に uid が含まれ、product_name と index が含まれない.
+
+        ファイルパスに product_name や連番 index が使われていないことを確認する。
+        """
+        # Arrange
+        order_item = create_mock_order_item(
+            item_id="oi-1",
+            product_name="Tシャツ Mサイズ 白",
+            thumbnail_image_url="https://example.com/thumb1.png",
+            uid="MFG-ABC",
+        )
+        order = create_mock_order(
+            order_id="order-1",
+            order_number="ORD-001",
+            items=[order_item],
+        )
+        shipment_item = create_mock_shipment_item(
+            item_id="si-1", order_id="order-1", order=order
+        )
+        shipment = create_mock_shipment(
+            shipment_id="shipment-1", items=[shipment_item]
+        )
+        mock_shipment_repo.find_by_id.return_value = shipment
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"image-data"
+        mock_response.headers = {"content-type": "image/png"}
+
+        with patch("app.services.shipment_service.httpx.AsyncClient") as MockClient:
+            mock_client_instance = AsyncMock()
+            mock_client_instance.get.return_value = mock_response
+            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = mock_client_instance
+
+            # Act
+            zip_bytes, _ = await shipment_service.download_thumbnails(
+                shipment_ids=["shipment-1"]
+            )
+
+        # Assert: file path must NOT contain product_name or sequential index
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            file_list = zf.namelist()
+            assert len(file_list) == 1
+            file_path = file_list[0]
+            # product_name must not appear in the path
+            assert "Tシャツ" not in file_path
+            # Sequential index pattern (_1.) must not appear
+            assert "_1." not in file_path
+            # uid must appear
+            assert "MFG-ABC" in file_path
+
+    @pytest.mark.asyncio
+    async def test_zip_file_path_uid_none_uses_empty_string(
+        self, shipment_service, mock_shipment_repo
+    ):
+        """AC-003: uid が None の場合は空文字として扱われ「{order_number}_{ext}」形式になる."""
+        # Arrange
+        order_item = create_mock_order_item(
+            item_id="oi-1",
+            product_name="Product",
+            thumbnail_image_url="https://example.com/thumb1.png",
+            uid=None,
+        )
+        order = create_mock_order(
+            order_id="order-1",
+            order_number="ORD-001",
+            items=[order_item],
+        )
+        shipment_item = create_mock_shipment_item(
+            item_id="si-1", order_id="order-1", order=order
+        )
+        shipment = create_mock_shipment(
+            shipment_id="shipment-1", items=[shipment_item]
+        )
+        mock_shipment_repo.find_by_id.return_value = shipment
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"image-data"
+        mock_response.headers = {"content-type": "image/png"}
+
+        with patch("app.services.shipment_service.httpx.AsyncClient") as MockClient:
+            mock_client_instance = AsyncMock()
+            mock_client_instance.get.return_value = mock_response
+            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = mock_client_instance
+
+            # Act
+            zip_bytes, _ = await shipment_service.download_thumbnails(
+                shipment_ids=["shipment-1"]
+            )
+
+        # Assert: "ORD-001_.png" (uid part is empty string)
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            file_list = zf.namelist()
+            assert len(file_list) == 1
+            file_path = file_list[0]
+            assert file_path == "ORD-001_.png"
+            assert "/" not in file_path
+
+    @pytest.mark.asyncio
+    async def test_zip_file_path_multiple_items_with_individual_uids(
+        self, shipment_service, mock_shipment_repo
+    ):
+        """AC-004: 複数アイテムがある場合、各ファイルが個別のuidで命名される."""
         # Arrange
         item_1 = create_mock_order_item(
             item_id="oi-1",
             product_name="Tシャツ",
             thumbnail_image_url="https://example.com/thumb1.png",
+            uid="MFG-001",
         )
         item_2 = create_mock_order_item(
             item_id="oi-2",
             product_name="Tシャツ",
             thumbnail_image_url="https://example.com/thumb2.png",
+            uid="MFG-002",
         )
         order = create_mock_order(
             order_id="order-1",
@@ -694,12 +803,15 @@ class TestZipFilePathFormat:
                 shipment_ids=["shipment-1"]
             )
 
-        # Assert: Two files with sequential numbers
+        # Assert: Two files with individual uid naming
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             file_list = sorted(zf.namelist())
             assert len(file_list) == 2
-            assert "_1." in file_list[0]
-            assert "_2." in file_list[1]
+            assert "ORD-001_MFG-001.png" in file_list
+            assert "ORD-001_MFG-002.png" in file_list
+            # No subdirectories
+            for f in file_list:
+                assert "/" not in f
 
     @pytest.mark.asyncio
     async def test_zip_file_extension_from_url(
@@ -711,6 +823,7 @@ class TestZipFilePathFormat:
             item_id="oi-1",
             product_name="Product",
             thumbnail_image_url="https://example.com/images/photo.jpg",
+            uid="MFG-001",
         )
         order = create_mock_order(
             order_id="order-1",
@@ -742,11 +855,11 @@ class TestZipFilePathFormat:
                 shipment_ids=["shipment-1"]
             )
 
-        # Assert: Extension should be .jpg from URL
+        # Assert: Extension should be .jpg from URL, flat path format
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             file_list = zf.namelist()
             assert len(file_list) == 1
-            assert file_list[0].endswith(".jpg")
+            assert file_list[0] == "ORD-001_MFG-001.jpg"
 
     @pytest.mark.asyncio
     async def test_zip_file_extension_fallback_to_png(
@@ -758,6 +871,7 @@ class TestZipFilePathFormat:
             item_id="oi-1",
             product_name="Product",
             thumbnail_image_url="https://example.com/image?id=123",
+            uid="MFG-001",
         )
         order = create_mock_order(
             order_id="order-1",
@@ -789,11 +903,11 @@ class TestZipFilePathFormat:
                 shipment_ids=["shipment-1"]
             )
 
-        # Assert: Fallback to .png
+        # Assert: Fallback to .png, flat path format
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             file_list = zf.namelist()
             assert len(file_list) == 1
-            assert file_list[0].endswith(".png")
+            assert file_list[0] == "ORD-001_MFG-001.png"
 
 
 # ======================================
