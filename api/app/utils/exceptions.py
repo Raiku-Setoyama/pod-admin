@@ -117,6 +117,13 @@ class DuplicateProductError(AppException):
         )
 
 
+class ConflictError(AppException):
+    """Conflict error - resource state conflict."""
+
+    def __init__(self, message: str):
+        super().__init__(409, "CONFLICT", message)
+
+
 class InvalidStatusTransitionError(AppException):
     """Invalid status transition error."""
 

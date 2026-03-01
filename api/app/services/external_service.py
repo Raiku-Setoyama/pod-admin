@@ -19,12 +19,13 @@ from app.models.product import ProductType
 from app.repositories.order_repository import OrderRepository
 from app.repositories.product_repository import ProductRepository
 from app.schemas.external import (
+    OrderCancelResponse,
     OrderStatusResponse,
     PriceCalculationRequest,
     PriceCalculationResponse,
     ProductOptionsResponse,
 )
-from app.utils.exceptions import NotFoundError, ValidationError
+from app.utils.exceptions import ConflictError, NotFoundError, ValidationError
 
 # 価格マッピング
 ACRYLIC_KEYCHAIN_PRICES = {
@@ -326,4 +327,36 @@ class ExternalService:
             status=OrderStatus(order.status),
             ordered_at=order.ordered_at,
             updated_at=order.updated_at,
+        )
+
+    async def cancel_order(self, order_number: str) -> OrderCancelResponse:
+        """Cancel an order by order number.
+
+        Only orders in 'ordered' status can be cancelled.
+
+        Args:
+            order_number: The order number to cancel.
+
+        Returns:
+            OrderCancelResponse with cancellation details.
+
+        Raises:
+            NotFoundError: If the order does not exist.
+            ConflictError: If the order is not in 'ordered' status.
+        """
+        order = await self._order_repo.find_by_order_number(order_number)
+        if not order:
+            raise NotFoundError("order", order_number)
+
+        if order.status != OrderStatus.ORDERED.value:
+            raise ConflictError("発注中の注文のみ取り消せます")
+
+        updated_order = await self._order_repo.update_status(
+            order.id, OrderStatus.CANCELLED
+        )
+
+        return OrderCancelResponse(
+            order_number=updated_order.order_number,
+            status=OrderStatus.CANCELLED,
+            cancelled_at=updated_order.updated_at,
         )
