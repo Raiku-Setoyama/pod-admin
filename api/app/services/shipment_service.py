@@ -503,16 +503,13 @@ class ShipmentService:
                 if not order:
                     continue
 
-                item_counter = 0
                 for order_item in order.items:
                     if order_item.thumbnail_image_url is None:
                         continue
-                    item_counter += 1
                     image_tasks.append({
                         "order_number": order.order_number,
-                        "product_name": order_item.product_name,
+                        "uid": order_item.uid or "",
                         "thumbnail_image_url": order_item.thumbnail_image_url,
-                        "index": item_counter,
                     })
 
         if not image_tasks:
@@ -551,8 +548,7 @@ class ShipmentService:
 
                         return {
                             "order_number": task["order_number"],
-                            "product_name": task["product_name"],
-                            "index": task["index"],
+                            "uid": task["uid"],
                             "content": response.content,
                             "extension": ext,
                         }
@@ -576,10 +572,7 @@ class ShipmentService:
         # Build ZIP
         builder = ZipBuilder()
         for img in fetched_images:
-            file_path = (
-                f"{img['order_number']}/"
-                f"{img['product_name']}_{img['index']}{img['extension']}"
-            )
+            file_path = f"{img['order_number']}_{img['uid']}{img['extension']}"
             builder.add_file(file_path, img["content"])
 
         zip_bytes = builder.build()
