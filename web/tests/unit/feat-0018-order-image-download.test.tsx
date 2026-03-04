@@ -14,6 +14,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
+// Mock SWR - use vi.hoisted to create a spy function that can be referenced in vi.mock
+const { mockUseSWR } = vi.hoisted(() => ({
+  mockUseSWR: vi.fn(() => ({
+    data: undefined,
+    error: undefined,
+    isLoading: false,
+    mutate: vi.fn(),
+    isValidating: false,
+  })),
+}))
+
 // Mock the API client
 vi.mock('@/lib/api/client', () => ({
   apiClient: vi.fn(),
@@ -30,14 +41,8 @@ vi.mock('sonner', () => ({
   },
 }))
 
-// Mock SWR
 vi.mock('swr', () => ({
-  default: vi.fn(() => ({
-    data: undefined,
-    error: undefined,
-    isLoading: false,
-    mutate: vi.fn(),
-  })),
+  default: mockUseSWR,
 }))
 
 // Mock next/navigation
@@ -105,11 +110,7 @@ const createMockOrder = (overrides: Partial<Order> = {}): Order => ({
 // ======================================
 
 function setupOrdersMock(orders: Order[]) {
-  const useSWR = vi.mocked(
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    require('swr').default
-  )
-  useSWR.mockReturnValue({
+  mockUseSWR.mockReturnValue({
     data: {
       items: orders,
       total: orders.length,
@@ -142,11 +143,9 @@ describe('AC-001: Image download button shown when orders selected', () => {
 
     render(<OrdersPage />)
 
-    // Select the first order by clicking its checkbox
-    const checkboxes = screen.getAllByRole('checkbox').filter(
-      cb => !cb.getAttribute('aria-label')?.includes('全選択')
-    )
-    await user.click(checkboxes[0])
+    // Select the first order by clicking its checkbox (aria-label = "ORD-001を選択")
+    const firstOrderCheckbox = screen.getByRole('checkbox', { name: /ORD-001を選択/ })
+    await user.click(firstOrderCheckbox)
 
     // "イメージ画像ダウンロード" button should appear
     await waitFor(() => {
@@ -166,8 +165,8 @@ describe('AC-001: Image download button shown when orders selected', () => {
 
     render(<OrdersPage />)
 
-    // Select all by clicking header checkbox
-    const selectAllCheckbox = screen.getByRole('checkbox', { name: /全選択/ })
+    // Select all by clicking header checkbox (aria-label = "すべて選択")
+    const selectAllCheckbox = screen.getByRole('checkbox', { name: /すべて選択/ })
     await user.click(selectAllCheckbox)
 
     // "イメージ画像ダウンロード" button should appear
@@ -210,11 +209,9 @@ describe('AC-002: Image download button hidden when no orders selected', () => {
 
     render(<OrdersPage />)
 
-    // Select the first order
-    const checkboxes = screen.getAllByRole('checkbox').filter(
-      cb => !cb.getAttribute('aria-label')?.includes('全選択')
-    )
-    await user.click(checkboxes[0])
+    // Select the first order (aria-label = "ORD-001を選択")
+    const firstOrderCheckbox = screen.getByRole('checkbox', { name: /ORD-001を選択/ })
+    await user.click(firstOrderCheckbox)
 
     // Button should appear
     await waitFor(() => {
@@ -222,7 +219,7 @@ describe('AC-002: Image download button hidden when no orders selected', () => {
     })
 
     // Deselect the order
-    await user.click(checkboxes[0])
+    await user.click(firstOrderCheckbox)
 
     // Button should disappear
     await waitFor(() => {
@@ -252,8 +249,8 @@ describe('AC-011: Download starts when button is clicked', () => {
 
     render(<OrdersPage />)
 
-    // Select both orders
-    const selectAllCheckbox = screen.getByRole('checkbox', { name: /全選択/ })
+    // Select both orders using the "すべて選択" checkbox
+    const selectAllCheckbox = screen.getByRole('checkbox', { name: /すべて選択/ })
     await user.click(selectAllCheckbox)
 
     // Click the download button
@@ -284,11 +281,9 @@ describe('AC-011: Download starts when button is clicked', () => {
 
     render(<OrdersPage />)
 
-    // Select the order
-    const checkboxes = screen.getAllByRole('checkbox').filter(
-      cb => !cb.getAttribute('aria-label')?.includes('全選択')
-    )
-    await user.click(checkboxes[0])
+    // Select the order (aria-label = "ORD-001を選択")
+    const firstOrderCheckbox = screen.getByRole('checkbox', { name: /ORD-001を選択/ })
+    await user.click(firstOrderCheckbox)
 
     // Click the download button
     await waitFor(() => {
@@ -299,7 +294,7 @@ describe('AC-011: Download starts when button is clicked', () => {
 
     // Error toast should be shown
     await waitFor(() => {
-      expect(mockToast.error).toHaveBeenCalled()
+      expect(mockToast.error).toHaveBeenCalledWith('画像のダウンロードに失敗しました')
     })
   })
 })

@@ -20,12 +20,17 @@ from app.models.shipment import Shipment, ShipmentStatus
 from app.repositories.order_repository import OrderRepository
 from app.repositories.order_source_repository import OrderSourceRepository
 from app.repositories.shipment_repository import ShipmentRepository
+from app.models.order import OrderItemStatus
 from app.schemas.shipment import (
+    OrderItemSummary,
+    PendingOrderResponse,
+    PendingOrderStatus,
     ShipmentBulkStatusUpdate,
     ShipmentBulkStatusUpdateResponse,
     ShipmentCreate,
     ShipmentItemResponse,
     ShipmentListResponse,
+    ShipmentListWithPendingResponse,
     ShipmentResponse,
     ShipmentStatusUpdate,
     TrackingFileImportError,
@@ -124,6 +129,126 @@ class ShipmentService:
             total=total,
             page=page,
             limit=limit,
+        )
+
+    async def list_with_pending_orders(
+        self,
+        page: int = 1,
+        limit: int = 20,
+        status: ShipmentStatus | None = None,
+        created_from: date | None = None,
+        created_to: date | None = None,
+        search: str | None = None,
+        tracking_number: str | None = None,
+        carrier: str | None = None,
+        shipped_from: date | None = None,
+        shipped_to: date | None = None,
+        delivered_from: date | None = None,
+        delivered_to: date | None = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+    ) -> ShipmentListWithPendingResponse:
+        """List shipments with pending orders.
+
+        Returns both existing shipments and orders without shipments (pending orders).
+        Pending orders are displayed as "preparing" or "awaiting_shipment" status.
+        """
+        # Get shipments
+        shipments, shipment_total = await self._shipment_repo.find_all(
+            page=page,
+            limit=limit,
+            status=status,
+            created_from=created_from,
+            created_to=created_to,
+            search=search,
+            tracking_number=tracking_number,
+            carrier=carrier,
+            shipped_from=shipped_from,
+            shipped_to=shipped_to,
+            delivered_from=delivered_from,
+            delivered_to=delivered_to,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+
+        # Get pending orders (orders without shipments)
+        pending_orders, pending_total = await self._order_repo.find_pending_orders(
+            page=page,
+            limit=limit,
+        )
+
+        # Convert shipments to responses
+        items: list = [self._to_response(shipment) for shipment in shipments]
+
+        # Convert pending orders to responses
+        for order in pending_orders:
+            items.append(self._to_pending_order_response(order))
+
+        # Calculate total
+        total = shipment_total + pending_total
+
+        return ShipmentListWithPendingResponse(
+            items=items,
+            total=total,
+            page=page,
+            limit=limit,
+        )
+
+    def _to_pending_order_response(self, order) -> PendingOrderResponse:
+        """Convert Order to PendingOrderResponse.
+
+        Derives the status from OrderItem statuses:
+        - 'preparing' if not all items are DELIVERED
+        - 'awaiting_shipment' if all items are DELIVERED
+        """
+        # Count items and delivered items
+        item_count = len(order.items) if order.items else 0
+        items_delivered = sum(
+            1 for item in (order.items or [])
+            if item.status == OrderItemStatus.DELIVERED.value
+        )
+
+        # Derive status
+        all_delivered = item_count > 0 and items_delivered == item_count
+        status = (
+            PendingOrderStatus.AWAITING_SHIPMENT
+            if all_delivered
+            else PendingOrderStatus.PREPARING
+        )
+
+        # Build customer address
+        address_parts = [
+            order.customer_postal_code or "",
+            order.customer_address_prefecture or "",
+            order.customer_address_city or "",
+            order.customer_address_building or "",
+        ]
+        customer_address = " ".join(p for p in address_parts if p)
+
+        # Build order items summary
+        order_items_summary = [
+            OrderItemSummary(
+                id=item.id,
+                product_name=item.product_name,
+                product_type=item.product_type,
+                quantity=item.quantity,
+                status=item.status,
+                thumbnail_image_url=item.thumbnail_image_url,
+            )
+            for item in (order.items or [])
+        ]
+
+        return PendingOrderResponse(
+            type="pending_order",
+            order_id=order.id,
+            order_number=order.order_number,
+            customer_name=order.customer_name,
+            customer_address=customer_address,
+            item_count=item_count,
+            items_delivered=items_delivered,
+            status=status,
+            created_at=order.ordered_at,
+            order_items=order_items_summary,
         )
 
     async def update_status(

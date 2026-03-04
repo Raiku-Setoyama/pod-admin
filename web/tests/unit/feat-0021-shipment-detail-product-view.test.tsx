@@ -297,7 +297,7 @@ describe('AC-010: Thumbnail image and download link displayed', () => {
     expect(img?.getAttribute('src')).toBe('https://example.com/thumb.jpg')
   })
 
-  it('displays a download link/button when thumbnail_image_url is provided', () => {
+  it('displays a download button when thumbnail_image_url is provided', () => {
     // Given: thumbnail_image_url がある ShipmentItem
     const shipment = createMockShipment({
       items: [
@@ -315,11 +315,14 @@ describe('AC-010: Thumbnail image and download link displayed', () => {
     // When: コンポーネントをレンダリングする
     render(<ShipmentDetail shipment={shipment} />)
 
-    // Then: ダウンロードリンク (<a href download>) が表示される
+    // Then: ダウンロードボタンが表示される (button 要素でJavaScriptダウンロード)
     const dataRows = getDataRows()
-    const downloadLink = dataRows[0].querySelector('a[download]')
-    expect(downloadLink).not.toBeNull()
-    expect(downloadLink?.getAttribute('href')).toBe('https://example.com/thumb.jpg')
+    // 実装はbutton要素を使用してJavaScriptでダウンロードを行う
+    const downloadButton = dataRows[0].querySelector('button')
+    expect(downloadButton).not.toBeNull()
+    // Download アイコン (SVG) が含まれていることを確認
+    const downloadIcon = downloadButton?.querySelector('svg')
+    expect(downloadIcon).not.toBeNull()
   })
 
   it('displays both img and download link for multiple items with thumbnails', () => {

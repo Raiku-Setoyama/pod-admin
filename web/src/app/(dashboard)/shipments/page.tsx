@@ -31,7 +31,8 @@ import { ShipmentFilters } from "@/features/shipments/components/shipment-filter
 import { TrackingImport } from "@/features/shipments/components/tracking-import";
 import { useShipments } from "@/features/shipments/hooks/use-shipments";
 import { getShipmentStatusUpdateOptions } from "@/constants/status";
-import type { Shipment, ShipmentStatus } from "@/types/api";
+import type { ShipmentStatus, ShipmentOrPendingOrder } from "@/types/api";
+import { isPendingOrder, isShipment } from "@/types/api";
 
 const statusOptions = getShipmentStatusUpdateOptions();
 
@@ -73,8 +74,29 @@ export default function ShipmentsPage() {
     created_to: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
   });
 
-  const handleRowClick = (shipment: Shipment) => {
-    router.push(`/shipments/${shipment.id}`);
+  // Helper functions to separate selected IDs by type
+  const getSelectedShipmentIds = (): string[] => {
+    return Array.from(selectedIds)
+      .filter((id) => !id.startsWith("pending_"));
+  };
+
+  const getSelectedOrderIds = (): string[] => {
+    return Array.from(selectedIds)
+      .filter((id) => id.startsWith("pending_"))
+      .map((id) => id.replace("pending_", ""));
+  };
+
+  // Check if any shipments are selected (for bulk status update)
+  const hasSelectedShipments = getSelectedShipmentIds().length > 0;
+
+  const handleRowClick = (item: ShipmentOrPendingOrder) => {
+    // Only navigate to detail page for actual shipments
+    if (isShipment(item)) {
+      router.push(`/shipments/${item.id}`);
+    } else {
+      // For pending orders, navigate to order detail page
+      router.push(`/orders/${item.order_id}`);
+    }
   };
 
   const handleReset = () => {
@@ -85,12 +107,18 @@ export default function ShipmentsPage() {
   };
 
   const handleBulkStatusUpdate = async () => {
+    const shipmentIds = getSelectedShipmentIds();
+    if (shipmentIds.length === 0) {
+      toast.warning("配送ステータスを更新できるのは配送レコードのみです");
+      return;
+    }
+
     setIsUpdating(true);
     try {
       const response = await apiClient("/shipments/bulk-status", {
         method: "PATCH",
         body: {
-          shipment_ids: Array.from(selectedIds),
+          shipment_ids: shipmentIds,
           status: bulkNewStatus,
         },
       }) as { updated_count: number; failed_count: number };
@@ -110,49 +138,78 @@ export default function ShipmentsPage() {
   };
 
   const handleExportCsv = async () => {
+    const shipmentIds = getSelectedShipmentIds();
+    const orderIds = getSelectedOrderIds();
+
+    if (shipmentIds.length === 0 && orderIds.length === 0) {
+      toast.warning("エクスポートする対象を選択してください");
+      return;
+    }
+
     setIsExporting(true);
     try {
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-      const response = await fetch(
-        `${apiBaseUrl}/shipments/export-csv`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${localStorage.getItem("access_token")}`,
-          },
-          body: JSON.stringify({
-            shipment_ids: Array.from(selectedIds),
-          }),
-        }
-      );
+      const requests: Promise<Response>[] = [];
 
-      if (!response.ok) {
-        throw new Error("Export failed");
+      // Export shipments
+      if (shipmentIds.length > 0) {
+        requests.push(
+          fetch(`${apiBaseUrl}/shipments/export-csv`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+            },
+            body: JSON.stringify({ shipment_ids: shipmentIds }),
+          })
+        );
       }
 
-      // Get filename from Content-Disposition header
-      const contentDisposition = response.headers.get("Content-Disposition");
-      let filename = "shipments_export.csv";
-      if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename\*=UTF-8''(.+)/);
-        if (filenameMatch) {
-          filename = decodeURIComponent(filenameMatch[1]);
-        }
+      // Export pending orders (orders without shipments)
+      if (orderIds.length > 0) {
+        requests.push(
+          fetch(`${apiBaseUrl}/orders/export-csv`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+            },
+            body: JSON.stringify({ order_ids: orderIds }),
+          })
+        );
       }
 
-      // Download the file
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      const responses = await Promise.all(requests);
 
-      toast.success(`${selectedIds.size}件の配送データをエクスポートしました`);
+      // Download each response
+      for (const response of responses) {
+        if (!response.ok) {
+          throw new Error("Export failed");
+        }
+
+        // Get filename from Content-Disposition header
+        const contentDisposition = response.headers.get("Content-Disposition");
+        let filename = "export.csv";
+        if (contentDisposition) {
+          const filenameMatch = contentDisposition.match(/filename\*=UTF-8''(.+)/);
+          if (filenameMatch) {
+            filename = decodeURIComponent(filenameMatch[1]);
+          }
+        }
+
+        // Download the file
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }
+
+      toast.success(`${selectedIds.size}件のデータをエクスポートしました`);
     } catch (error) {
       console.error("Export failed:", error);
       toast.error("CSVエクスポートに失敗しました");
@@ -162,47 +219,76 @@ export default function ShipmentsPage() {
   };
 
   const handleDownloadThumbnails = async () => {
+    const shipmentIds = getSelectedShipmentIds();
+    const orderIds = getSelectedOrderIds();
+
+    if (shipmentIds.length === 0 && orderIds.length === 0) {
+      toast.warning("ダウンロードする対象を選択してください");
+      return;
+    }
+
     setIsDownloadingThumbnails(true);
     try {
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-      const response = await fetch(
-        `${apiBaseUrl}/shipments/download-thumbnails`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${localStorage.getItem("access_token")}`,
-          },
-          body: JSON.stringify({
-            shipment_ids: Array.from(selectedIds),
-          }),
-        }
-      );
+      const requests: Promise<Response>[] = [];
 
-      if (!response.ok) {
-        throw new Error("Download failed");
+      // Download from shipments
+      if (shipmentIds.length > 0) {
+        requests.push(
+          fetch(`${apiBaseUrl}/shipments/download-thumbnails`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+            },
+            body: JSON.stringify({ shipment_ids: shipmentIds }),
+          })
+        );
       }
 
-      // Get filename from Content-Disposition header
-      const contentDisposition = response.headers.get("Content-Disposition");
-      let filename = "thumbnails.zip";
-      if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename\*=UTF-8''(.+)/);
-        if (filenameMatch) {
-          filename = decodeURIComponent(filenameMatch[1]);
-        }
+      // Download from pending orders
+      if (orderIds.length > 0) {
+        requests.push(
+          fetch(`${apiBaseUrl}/orders/download-thumbnails`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+            },
+            body: JSON.stringify({ order_ids: orderIds }),
+          })
+        );
       }
 
-      // Download the file
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      const responses = await Promise.all(requests);
+
+      // Download each response
+      for (const response of responses) {
+        if (!response.ok) {
+          throw new Error("Download failed");
+        }
+
+        // Get filename from Content-Disposition header
+        const contentDisposition = response.headers.get("Content-Disposition");
+        let filename = "thumbnails.zip";
+        if (contentDisposition) {
+          const filenameMatch = contentDisposition.match(/filename\*=UTF-8''(.+)/);
+          if (filenameMatch) {
+            filename = decodeURIComponent(filenameMatch[1]);
+          }
+        }
+
+        // Download the file
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }
 
       toast.success(`${selectedIds.size}件のサムネイル画像をダウンロードしました`);
     } catch (error) {
@@ -237,7 +323,7 @@ export default function ShipmentsPage() {
           </Button>
           <Button
             onClick={() => setIsBulkStatusDialogOpen(true)}
-            disabled={selectedIds.size === 0}
+            disabled={!hasSelectedShipments}
           >
             <RefreshCw className="h-4 w-4 mr-2" />
             ステータス更新

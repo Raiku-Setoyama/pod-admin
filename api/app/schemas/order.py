@@ -184,3 +184,15 @@ class OrderImageDownloadRequest(BaseModel):
     """受注イメージ画像ZIPダウンロードリクエスト"""
 
     order_ids: list[str] = Field(..., min_length=1)
+
+
+class OrderExportCsvRequest(BaseModel):
+    """受注CSVエクスポートリクエスト（pending_order向け）"""
+
+    order_ids: list[str] = Field(..., min_length=1)
+
+
+class OrderThumbnailDownloadRequest(BaseModel):
+    """受注サムネイル画像ZIPダウンロードリクエスト"""
+
+    order_ids: list[str] = Field(..., min_length=1)

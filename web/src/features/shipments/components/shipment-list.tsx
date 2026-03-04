@@ -10,13 +10,54 @@ import {
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { StatusBadge } from "@/components/common/status-badge";
-import type { Shipment } from "@/types/api";
+import type { ShipmentOrPendingOrder } from "@/types/api";
+import { isPendingOrder, isShipment } from "@/types/api";
 
 interface ShipmentListProps {
-  shipments: Shipment[];
-  onRowClick?: (shipment: Shipment) => void;
+  shipments: ShipmentOrPendingOrder[];
+  onRowClick?: (item: ShipmentOrPendingOrder) => void;
   selectedIds: Set<string>;
   onSelectChange: (ids: Set<string>) => void;
+}
+
+// Helper to get the unique ID for each item
+function getItemId(item: ShipmentOrPendingOrder): string {
+  if (isPendingOrder(item)) {
+    return `pending_${item.order_id}`;
+  }
+  return item.id;
+}
+
+// Helper to get customer info
+function getCustomerInfo(item: ShipmentOrPendingOrder): { name: string; address: string } {
+  if (isPendingOrder(item)) {
+    return { name: item.customer_name, address: item.customer_address };
+  }
+  return { name: item.customer_name, address: item.customer_full_address };
+}
+
+// Helper to get item count
+function getItemCount(item: ShipmentOrPendingOrder): number {
+  if (isPendingOrder(item)) {
+    return item.item_count;
+  }
+  return item.items.length;
+}
+
+// Helper to get tracking number (only for shipments)
+function getTrackingNumber(item: ShipmentOrPendingOrder): string {
+  if (isPendingOrder(item)) {
+    return "-";
+  }
+  return item.tracking_number || "-";
+}
+
+// Helper to get display ID
+function getDisplayId(item: ShipmentOrPendingOrder): string {
+  if (isPendingOrder(item)) {
+    return item.order_number;
+  }
+  return item.id.slice(0, 8);
 }
 
 function formatDate(dateString: string): string {
@@ -38,7 +79,7 @@ export function ShipmentList({
 }: ShipmentListProps) {
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      onSelectChange(new Set(shipments.map((s) => s.id)));
+      onSelectChange(new Set(shipments.map((item) => getItemId(item))));
     } else {
       onSelectChange(new Set());
     }
@@ -89,37 +130,41 @@ export function ShipmentList({
               </TableCell>
             </TableRow>
           ) : (
-            shipments.map((shipment) => (
-              <TableRow
-                key={shipment.id}
-                className="cursor-pointer hover:bg-accent/50"
-                onClick={() => onRowClick?.(shipment)}
-              >
-                <TableCell onClick={(e) => e.stopPropagation()}>
-                  <Checkbox
-                    checked={selectedIds.has(shipment.id)}
-                    onCheckedChange={(checked) =>
-                      handleItemSelect(shipment.id, !!checked)
-                    }
-                  />
-                </TableCell>
-                <TableCell>
-                  <div className="font-medium">{shipment.id.slice(0, 8)}</div>
-                </TableCell>
-                <TableCell>
-                  <div>{shipment.customer_name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {shipment.customer_full_address}
-                  </div>
-                </TableCell>
-                <TableCell>{shipment.items.length}点</TableCell>
-                <TableCell>{shipment.tracking_number || "-"}</TableCell>
-                <TableCell>{formatDate(shipment.created_at)}</TableCell>
-                <TableCell>
-                  <StatusBadge status={shipment.status} />
-                </TableCell>
-              </TableRow>
-            ))
+            shipments.map((item) => {
+              const itemId = getItemId(item);
+              const customerInfo = getCustomerInfo(item);
+              return (
+                <TableRow
+                  key={itemId}
+                  className="cursor-pointer hover:bg-accent/50"
+                  onClick={() => onRowClick?.(item)}
+                >
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedIds.has(itemId)}
+                      onCheckedChange={(checked) =>
+                        handleItemSelect(itemId, !!checked)
+                      }
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <div className="font-medium">{getDisplayId(item)}</div>
+                  </TableCell>
+                  <TableCell>
+                    <div>{customerInfo.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {customerInfo.address}
+                    </div>
+                  </TableCell>
+                  <TableCell>{getItemCount(item)}点</TableCell>
+                  <TableCell>{getTrackingNumber(item)}</TableCell>
+                  <TableCell>{formatDate(item.created_at)}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={item.status} />
+                  </TableCell>
+                </TableRow>
+              );
+            })
           )}
         </TableBody>
       </Table>

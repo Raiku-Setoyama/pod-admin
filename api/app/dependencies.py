@@ -119,9 +119,10 @@ def get_order_service(
     order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
     product_repo: Annotated[ProductRepository, Depends(get_product_repository)],
     shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
+    order_source_repo: Annotated[OrderSourceRepository, Depends(get_order_source_repository)],
 ) -> OrderService:
     """Get order service."""
-    return OrderService(order_repo, product_repo, shipment_repo)
+    return OrderService(order_repo, product_repo, shipment_repo, order_source_repo)
 
 
 def get_shipment_service(
