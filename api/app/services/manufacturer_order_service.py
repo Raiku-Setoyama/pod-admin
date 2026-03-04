@@ -435,9 +435,18 @@ class ManufacturerOrderService:
             for item in group_items:
                 order_number = item["order_number"]
                 uid = item.get("uid") or "unknown"
-                product_name = item["product_name"]
                 quantity = item["quantity"]
                 ordered_date = item.get("ordered_date")
+
+                # Build product detail: {商品種類} - {サイズ} - {位置} - {色}
+                detail_parts = [product_type_name]
+                if item.get("size"):
+                    detail_parts.append(item["size"])
+                if item.get("position"):
+                    detail_parts.append(item["position"])
+                if item.get("color"):
+                    detail_parts.append(item["color"])
+                product_detail = " - ".join(detail_parts)
 
                 # MMDDを注文日から計算
                 mmdd = ordered_date.strftime("%m%d") if ordered_date else ""
@@ -445,7 +454,7 @@ class ManufacturerOrderService:
                 # 製造データ①のファイル名
                 ext = self._MANUFACTURING_EXT.get(item_product_type, ".ai")
                 mfg_filename = (
-                    f"{product_name}【個数】{quantity}個"
+                    f"{product_detail}【個数】{quantity}個"
                     f"_{order_number}_{uid}_{mmdd}{ext}"
                 )
 
@@ -476,7 +485,7 @@ class ManufacturerOrderService:
                     # スタンドファイルの内容を読み込む（静的サンプル）
                     stand_content = self._load_stand_file(stand_path)
                     stand_filename = (
-                        f"{product_name}【個数】{quantity}個"
+                        f"{product_detail}【個数】{quantity}個"
                         f"_{order_number}_{uid}_{mmdd}_stand.ai"
                     )
                     zip_builder.add_file(

@@ -948,6 +948,9 @@ class TestFeat0012NamingRules:
                 order_number="POD-20260101-0002",
                 uid="def456",
                 quantity=2,
+                size="50x50 (mm)",
+                position="",
+                color="アクリル",
             ),
         ]
 
@@ -979,6 +982,8 @@ class TestFeat0012NamingRules:
                 uid="ghi789",
                 quantity=1,
                 size="70x70mm",
+                position="",
+                color="アクリル",
             ),
         ]
 
@@ -1047,6 +1052,8 @@ class TestFeat0012NamingRules:
                 uid="ghi789",
                 quantity=1,
                 size="70x70mm",
+                position="",
+                color="アクリル",
             ),
         ]
 
@@ -1228,6 +1235,9 @@ class TestFeat0012NamingRules:
                 order_number="POD-20260101-0002",
                 uid="def456",
                 quantity=2,
+                size="50x50 (mm)",
+                position="",
+                color="アクリル",
                 thumbnail_image_url="https://example.com/thumb.png",
                 design_image_url="https://example.com/design.ai",
             ),
@@ -1277,6 +1287,8 @@ class TestFeat0012NamingRules:
                 uid="ghi789",
                 quantity=1,
                 size="70x70mm",
+                position="",
+                color="アクリル",
                 thumbnail_image_url="https://example.com/thumb.png",
                 design_image_url="https://example.com/design.ai",
             ),
