@@ -404,32 +404,32 @@ class ManufacturerOrderService:
         now = datetime.now()
         zip_builder = ZipBuilder()
         date_str = now.strftime("%Y%m%d")
-        mmdd = now.strftime("%m%d")
 
         # タイプフォルダ名を収集（ZIP名に使う）
+        # RKSYO_ プレフィックスを付与
         type_folder_names: list[str] = []
 
         for group_key, group_items in items_by_group.items():
             item_product_type = group_key[0]
             product_type_name = get_product_type_name(item_product_type)
 
-            # タイプフォルダ名の決定
+            # タイプフォルダ名の決定（RKSYO_プレフィックス付き）
             if item_product_type == "tshirt":
                 position = group_key[1]
-                type_folder = f"Tシャツ- {position} -_{date_str}"
+                type_folder = f"RKSYO_Tシャツ- {position} -_{date_str}"
                 folder_prefix = f"Tシャツ- {position} -"
             else:
-                type_folder = f"{product_type_name}_{date_str}"
+                type_folder = f"RKSYO_{product_type_name}_{date_str}"
                 folder_prefix = product_type_name
 
             type_folder_names.append(type_folder)
 
-            # CSV追加
-            csv_filename = f"{folder_prefix}発注リスト_{date_str}.csv"
-            csv_content = self._order_list_gen.generate_order_list_csv(
+            # Excel追加（CSV→XLSX変更）
+            xlsx_filename = f"{folder_prefix}発注リスト_{date_str}.xlsx"
+            xlsx_content = self._order_list_gen.generate_order_list_xlsx(
                 group_items, product_type=item_product_type
             )
-            zip_builder.add_csv(f"{type_folder}/{csv_filename}", csv_content)
+            zip_builder.add_excel(f"{type_folder}/{xlsx_filename}", xlsx_content)
 
             # 各アイテムのファイルをフラット配置
             for item in group_items:
@@ -437,11 +437,15 @@ class ManufacturerOrderService:
                 uid = item.get("uid") or "unknown"
                 product_name = item["product_name"]
                 quantity = item["quantity"]
+                ordered_date = item.get("ordered_date")
+
+                # MMDDを注文日から計算
+                mmdd = ordered_date.strftime("%m%d") if ordered_date else ""
 
                 # 製造データ①のファイル名
                 ext = self._MANUFACTURING_EXT.get(item_product_type, ".ai")
                 mfg_filename = (
-                    f"{product_name}【{quantity}個】"
+                    f"{product_name}【個数】{quantity}個"
                     f"_{order_number}_{uid}_{mmdd}{ext}"
                 )
 
@@ -472,7 +476,7 @@ class ManufacturerOrderService:
                     # スタンドファイルの内容を読み込む（静的サンプル）
                     stand_content = self._load_stand_file(stand_path)
                     stand_filename = (
-                        f"{product_name}【{quantity}個】"
+                        f"{product_name}【個数】{quantity}個"
                         f"_{order_number}_{uid}_{mmdd}_stand.ai"
                     )
                     zip_builder.add_file(
