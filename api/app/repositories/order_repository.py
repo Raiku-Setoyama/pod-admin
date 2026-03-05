@@ -551,7 +551,7 @@ class OrderRepository:
         Args:
             page: Page number (1-indexed)
             limit: Number of items per page
-            status: Filter by PendingOrderStatus (preparing or awaiting_shipment)
+            status: Filter by PendingOrderStatus (preparing)
 
         Returns:
             Tuple of (orders, total_count)
@@ -569,6 +569,8 @@ class OrderRepository:
         ]
 
         # Apply status filter based on OrderItem statuses
+        # Note: Only PREPARING status exists now since AWAITING_SHIPMENT orders
+        # automatically get a Shipment created when all items are DELIVERED
         if status == PendingOrderStatus.PREPARING:
             # Orders where NOT all items are DELIVERED
             # (i.e., at least one item is not DELIVERED)
@@ -578,15 +580,6 @@ class OrderRepository:
                 .distinct()
             )
             base_conditions.append(Order.id.in_(non_delivered_items))
-        elif status == PendingOrderStatus.AWAITING_SHIPMENT:
-            # Orders where ALL items are DELIVERED
-            # (i.e., no items are not DELIVERED)
-            non_delivered_items = (
-                select(OrderItem.order_id)
-                .where(OrderItem.status != OrderItemStatus.DELIVERED.value)
-                .distinct()
-            )
-            base_conditions.append(Order.id.notin_(non_delivered_items))
 
         # Query for orders without shipments
         query = (

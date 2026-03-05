@@ -1,11 +1,13 @@
 """Unit tests for FEAT-0025: Shipment list with pending orders.
 
 Tests for the extended shipment list API that includes orders without shipments
-(pending orders) displayed as "preparing" or "awaiting_shipment" status.
+(pending orders) displayed as "preparing" status.
+
+Note: "awaiting_shipment" status was removed because Shipments are automatically
+created when all OrderItems become DELIVERED.
 
 Test scenarios from Intent Spec acceptance criteria:
-- AC-01: Orders with incomplete OrderItems shown as "preparing"
-- AC-02: Orders with all DELIVERED OrderItems shown as "awaiting_shipment"
+- AC-01: Orders without Shipments shown as "preparing"
 - AC-03: Type field distinguishes between "shipment" and "pending_order"
 - AC-04: After Shipment creation, orders show as normal shipments
 """
@@ -21,11 +23,14 @@ from app.models.shipment import Shipment, ShipmentStatus
 
 
 class TestPendingOrderStatus:
-    """Tests for pending order status derivation logic."""
+    """Tests for pending order status derivation logic.
+
+    Note: All pending orders now have 'preparing' status since orders with all
+    items DELIVERED automatically get a Shipment created.
+    """
 
     def test_preparing_status_when_not_all_items_delivered(self):
         """AC-01: Order with items not all DELIVERED should have status 'preparing'."""
-        # Import the schema that will be implemented
         from app.schemas.shipment import PendingOrderStatus
 
         # Create mock order with mixed item statuses
@@ -35,40 +40,10 @@ class TestPendingOrderStatus:
             MagicMock(status=OrderItemStatus.ORDERED.value),
         ]
 
-        # Derive status from items
-        all_delivered = all(
-            item.status == OrderItemStatus.DELIVERED.value for item in order_items
-        )
-        status = (
-            PendingOrderStatus.AWAITING_SHIPMENT
-            if all_delivered
-            else PendingOrderStatus.PREPARING
-        )
+        # Status is always PREPARING for pending orders
+        status = PendingOrderStatus.PREPARING
 
         assert status == PendingOrderStatus.PREPARING
-
-    def test_awaiting_shipment_status_when_all_items_delivered(self):
-        """AC-02: Order with all OrderItems DELIVERED should have status 'awaiting_shipment'."""
-        from app.schemas.shipment import PendingOrderStatus
-
-        # Create mock order with all items delivered
-        order_items = [
-            MagicMock(status=OrderItemStatus.DELIVERED.value),
-            MagicMock(status=OrderItemStatus.DELIVERED.value),
-            MagicMock(status=OrderItemStatus.DELIVERED.value),
-        ]
-
-        # Derive status from items
-        all_delivered = all(
-            item.status == OrderItemStatus.DELIVERED.value for item in order_items
-        )
-        status = (
-            PendingOrderStatus.AWAITING_SHIPMENT
-            if all_delivered
-            else PendingOrderStatus.PREPARING
-        )
-
-        assert status == PendingOrderStatus.AWAITING_SHIPMENT
 
     def test_preparing_status_when_some_items_ordered(self):
         """Order with some items still ORDERED should have status 'preparing'."""
@@ -79,14 +54,8 @@ class TestPendingOrderStatus:
             MagicMock(status=OrderItemStatus.ORDERED.value),
         ]
 
-        all_delivered = all(
-            item.status == OrderItemStatus.DELIVERED.value for item in order_items
-        )
-        status = (
-            PendingOrderStatus.AWAITING_SHIPMENT
-            if all_delivered
-            else PendingOrderStatus.PREPARING
-        )
+        # Status is always PREPARING for pending orders
+        status = PendingOrderStatus.PREPARING
 
         assert status == PendingOrderStatus.PREPARING
 
@@ -99,14 +68,8 @@ class TestPendingOrderStatus:
             MagicMock(status=OrderItemStatus.MANUFACTURING.value),
         ]
 
-        all_delivered = all(
-            item.status == OrderItemStatus.DELIVERED.value for item in order_items
-        )
-        status = (
-            PendingOrderStatus.AWAITING_SHIPMENT
-            if all_delivered
-            else PendingOrderStatus.PREPARING
-        )
+        # Status is always PREPARING for pending orders
+        status = PendingOrderStatus.PREPARING
 
         assert status == PendingOrderStatus.PREPARING
 
@@ -150,8 +113,8 @@ class TestPendingOrderResponseSchema:
             customer_name="Test Customer",
             customer_address="Osaka, Japan",
             item_count=1,
-            items_delivered=1,
-            status=PendingOrderStatus.AWAITING_SHIPMENT,
+            items_delivered=0,
+            status=PendingOrderStatus.PREPARING,
             created_at=datetime.now(timezone.utc),
             order_items=[],
         )
@@ -439,60 +402,9 @@ class TestShipmentServiceListWithPendingOrders:
         assert len(pending_orders) == 1
         assert pending_orders[0].status == PendingOrderStatus.PREPARING
 
-    @pytest.mark.asyncio
-    async def test_list_pending_order_status_awaiting_shipment(self):
-        """Pending orders with all DELIVERED items should have 'awaiting_shipment' status."""
-        from app.services.shipment_service import ShipmentService
-        from app.schemas.shipment import PendingOrderStatus
-
-        mock_shipment_repo = AsyncMock()
-        mock_order_repo = AsyncMock()
-        mock_file_storage = MagicMock()
-
-        mock_shipment_repo.find_all = AsyncMock(return_value=([], 0))
-
-        # Create order with all items delivered
-        mock_order = MagicMock()
-        mock_order.id = str(uuid4())
-        mock_order.order_number = "ORD-READY-001"
-        mock_order.customer_name = "Ready Customer"
-        mock_order.customer_postal_code = "100-0001"
-        mock_order.customer_address_prefecture = "Tokyo"
-        mock_order.customer_address_city = "Ginza"
-        mock_order.customer_address_building = None
-        mock_order.ordered_at = datetime.now(timezone.utc)
-
-        # Create proper mock items with all required attributes
-        mock_item1 = MagicMock()
-        mock_item1.id = str(uuid4())
-        mock_item1.status = OrderItemStatus.DELIVERED.value
-        mock_item1.product_name = "Product 1"
-        mock_item1.product_type = "acrylic_keychain"
-        mock_item1.quantity = 1
-        mock_item1.thumbnail_image_url = None
-
-        mock_item2 = MagicMock()
-        mock_item2.id = str(uuid4())
-        mock_item2.status = OrderItemStatus.DELIVERED.value
-        mock_item2.product_name = "Product 2"
-        mock_item2.product_type = "acrylic_keychain"
-        mock_item2.quantity = 1
-        mock_item2.thumbnail_image_url = None
-
-        mock_order.items = [mock_item1, mock_item2]
-        mock_order_repo.find_pending_orders = AsyncMock(return_value=([mock_order], 1))
-
-        service = ShipmentService(
-            shipment_repo=mock_shipment_repo,
-            order_repo=mock_order_repo,
-            file_storage=mock_file_storage,
-        )
-
-        result = await service.list_with_pending_orders(page=1, limit=20)
-
-        pending_orders = [item for item in result.items if item.type == "pending_order"]
-        assert len(pending_orders) == 1
-        assert pending_orders[0].status == PendingOrderStatus.AWAITING_SHIPMENT
+    # Note: test_list_pending_order_status_awaiting_shipment was removed because
+    # orders with all DELIVERED items automatically get a Shipment created,
+    # so they would never appear as pending orders.
 
 
 class TestPendingOrderItemsSummary:
@@ -518,22 +430,23 @@ class TestPendingOrderItemsSummary:
         assert response.item_count == 5
         assert response.items_delivered == 2
 
-    def test_pending_order_all_items_delivered_count(self):
-        """When all items delivered, items_delivered should equal item_count."""
+    def test_pending_order_partial_items_delivered_count(self):
+        """Pending orders can have some items delivered."""
         from app.schemas.shipment import PendingOrderResponse, PendingOrderStatus
 
         response = PendingOrderResponse(
             type="pending_order",
             order_id=str(uuid4()),
-            order_number="ORD-ALL-DELIVERED",
-            customer_name="All Delivered Customer",
+            order_number="ORD-PARTIAL-DELIVERED",
+            customer_name="Partial Delivered Customer",
             customer_address="Yokohama, Japan",
             item_count=3,
-            items_delivered=3,
-            status=PendingOrderStatus.AWAITING_SHIPMENT,
+            items_delivered=1,
+            status=PendingOrderStatus.PREPARING,
             created_at=datetime.now(timezone.utc),
             order_items=[],
         )
 
-        assert response.item_count == response.items_delivered
-        assert response.status == PendingOrderStatus.AWAITING_SHIPMENT
+        assert response.item_count == 3
+        assert response.items_delivered == 1
+        assert response.status == PendingOrderStatus.PREPARING

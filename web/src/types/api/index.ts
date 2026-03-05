@@ -168,7 +168,7 @@ export interface AllManufacturerOrderItemListResponse {
 export type ShipmentStatus = "pending" | "ready" | "shipped";
 
 // Pending order status (orders without shipments)
-export type PendingOrderStatus = "preparing" | "awaiting_shipment";
+export type PendingOrderStatus = "preparing";
 
 // Order item summary for pending orders
 export interface OrderItemSummary {

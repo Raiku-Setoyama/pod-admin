@@ -36,7 +36,7 @@ async def list_shipments(
     current_user: Annotated[User, Depends(get_current_admin)],
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-    status: str | None = Query(None, description="Status filter: pending, ready, shipped, preparing, awaiting_shipment"),
+    status: str | None = Query(None, description="Status filter: pending, ready, shipped, preparing"),
     created_from: date | None = None,
     created_to: date | None = None,
     search: str | None = None,
@@ -56,7 +56,7 @@ async def list_shipments(
 
     Status filter accepts:
     - ShipmentStatus: pending, ready, shipped
-    - PendingOrderStatus: preparing, awaiting_shipment
+    - PendingOrderStatus: preparing
     """
     # Parse status into ShipmentStatus or PendingOrderStatus
     shipment_status: ShipmentStatus | None = None

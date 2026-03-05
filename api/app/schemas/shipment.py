@@ -12,8 +12,7 @@ from app.models.shipment import ShipmentStatus
 class PendingOrderStatus(str, Enum):
     """Pending order status - derived from OrderItem statuses."""
 
-    PREPARING = "preparing"  # 商品準備中（全OrderItemがDELIVEREDでない）
-    AWAITING_SHIPMENT = "awaiting_shipment"  # 配送準備待ち（全OrderItemがDELIVERED）
+    PREPARING = "preparing"  # 商品準備中（まだShipmentが作成されていない注文）
 
 
 class OrderItemSummary(BaseModel):

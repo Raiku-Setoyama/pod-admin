@@ -152,12 +152,12 @@ class ShipmentService:
         """List shipments with pending orders.
 
         Returns both existing shipments and orders without shipments (pending orders).
-        Pending orders are displayed as "preparing" or "awaiting_shipment" status.
+        Pending orders are displayed with "preparing" status.
 
         Args:
             shipment_status: Filter by ShipmentStatus (pending, ready, shipped).
                              If set, only shipments are returned.
-            pending_order_status: Filter by PendingOrderStatus (preparing, awaiting_shipment).
+            pending_order_status: Filter by PendingOrderStatus (preparing).
                                   If set, only pending orders are returned.
         """
         items: list = []
@@ -211,9 +211,8 @@ class ShipmentService:
     def _to_pending_order_response(self, order) -> PendingOrderResponse:
         """Convert Order to PendingOrderResponse.
 
-        Derives the status from OrderItem statuses:
-        - 'preparing' if not all items are DELIVERED
-        - 'awaiting_shipment' if all items are DELIVERED
+        Status is always 'preparing' since orders with all items delivered
+        automatically get a Shipment created.
         """
         # Count items and delivered items
         item_count = len(order.items) if order.items else 0
@@ -222,13 +221,8 @@ class ShipmentService:
             if item.status == OrderItemStatus.DELIVERED.value
         )
 
-        # Derive status
-        all_delivered = item_count > 0 and items_delivered == item_count
-        status = (
-            PendingOrderStatus.AWAITING_SHIPMENT
-            if all_delivered
-            else PendingOrderStatus.PREPARING
-        )
+        # Status is always PREPARING for pending orders
+        status = PendingOrderStatus.PREPARING
 
         # Build customer address
         address_parts = [
