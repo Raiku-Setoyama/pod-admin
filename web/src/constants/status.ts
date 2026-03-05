@@ -55,7 +55,6 @@ export const SHIPMENT_STATUS_COLORS: Record<ShipmentStatus, string> = {
  */
 export const PENDING_ORDER_STATUS_LABELS: Record<PendingOrderStatus, string> = {
   preparing: "商品準備中",
-  awaiting_shipment: "配送準備待ち",
 };
 
 /**
@@ -63,7 +62,6 @@ export const PENDING_ORDER_STATUS_LABELS: Record<PendingOrderStatus, string> = {
  */
 export const PENDING_ORDER_STATUS_COLORS: Record<PendingOrderStatus, string> = {
   preparing: "bg-orange-100 text-orange-700 border-orange-300",
-  awaiting_shipment: "bg-yellow-100 text-yellow-700 border-yellow-300",
 };
 
 // ========================================
@@ -161,6 +159,19 @@ export function getShipmentStatusOptions(): StatusOption<ShipmentStatus>[] {
       value: value as ShipmentStatus,
       label,
     })),
+  ];
+}
+
+/**
+ * 配送一覧フィルター用（ShipmentStatus + PendingOrderStatus の組み合わせ）
+ */
+export function getShipmentListFilterOptions(): StatusOption<ShipmentStatus | PendingOrderStatus>[] {
+  return [
+    { value: "all", label: "全てのステータス" },
+    { value: "preparing", label: PENDING_ORDER_STATUS_LABELS.preparing },
+    { value: "pending", label: SHIPMENT_STATUS_LABELS.pending },
+    { value: "ready", label: SHIPMENT_STATUS_LABELS.ready },
+    { value: "shipped", label: SHIPMENT_STATUS_LABELS.shipped },
   ];
 }
 

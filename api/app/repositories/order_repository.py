@@ -540,6 +540,7 @@ class OrderRepository:
         self,
         page: int = 1,
         limit: int = 20,
+        status: "PendingOrderStatus | None" = None,
     ) -> tuple[list[Order], int]:
         """Find orders that don't have associated shipments.
 
@@ -550,14 +551,35 @@ class OrderRepository:
         Args:
             page: Page number (1-indexed)
             limit: Number of items per page
+            status: Filter by PendingOrderStatus (preparing)
 
         Returns:
             Tuple of (orders, total_count)
         """
         from app.models.shipment import ShipmentItem
+        from app.schemas.shipment import PendingOrderStatus
 
         # Subquery to find orders that have shipments
         orders_with_shipment = select(ShipmentItem.order_id).distinct()
+
+        # Base query for orders without shipments
+        base_conditions = [
+            Order.id.notin_(orders_with_shipment),
+            Order.status.notin_([OrderStatus.SHIPPED.value, OrderStatus.CANCELLED.value]),
+        ]
+
+        # Apply status filter based on OrderItem statuses
+        # Note: Only PREPARING status exists now since AWAITING_SHIPMENT orders
+        # automatically get a Shipment created when all items are DELIVERED
+        if status == PendingOrderStatus.PREPARING:
+            # Orders where NOT all items are DELIVERED
+            # (i.e., at least one item is not DELIVERED)
+            non_delivered_items = (
+                select(OrderItem.order_id)
+                .where(OrderItem.status != OrderItemStatus.DELIVERED.value)
+                .distinct()
+            )
+            base_conditions.append(Order.id.in_(non_delivered_items))
 
         # Query for orders without shipments
         query = (
@@ -566,14 +588,12 @@ class OrderRepository:
                 selectinload(Order.items),
                 selectinload(Order.order_source),
             )
-            .where(Order.id.notin_(orders_with_shipment))
-            .where(Order.status.notin_([OrderStatus.SHIPPED.value, OrderStatus.CANCELLED.value]))
+            .where(*base_conditions)
         )
 
         count_query = (
             select(func.count(Order.id))
-            .where(Order.id.notin_(orders_with_shipment))
-            .where(Order.status.notin_([OrderStatus.SHIPPED.value, OrderStatus.CANCELLED.value]))
+            .where(*base_conditions)
         )
 
         # Get total count

@@ -31,10 +31,12 @@ import { ShipmentFilters } from "@/features/shipments/components/shipment-filter
 import { TrackingImport } from "@/features/shipments/components/tracking-import";
 import { useShipments } from "@/features/shipments/hooks/use-shipments";
 import { getShipmentStatusUpdateOptions } from "@/constants/status";
-import type { ShipmentStatus, ShipmentOrPendingOrder } from "@/types/api";
+import type { ShipmentStatus, ShipmentOrPendingOrder, PendingOrderStatus } from "@/types/api";
 import { isShipment } from "@/types/api";
 
 const statusOptions = getShipmentStatusUpdateOptions();
+
+type ShipmentFilterStatus = ShipmentStatus | PendingOrderStatus;
 
 export default function ShipmentsPage() {
   const router = useRouter();
@@ -43,7 +45,7 @@ export default function ShipmentsPage() {
 
   // Filter states
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<ShipmentStatus | null>(null);
+  const [status, setStatus] = useState<ShipmentFilterStatus | null>(null);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
   // 一括更新用state

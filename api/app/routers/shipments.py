@@ -12,6 +12,7 @@ from app.models.user import User
 from urllib.parse import quote
 
 from app.schemas.shipment import (
+    PendingOrderStatus,
     ShipmentBulkStatusUpdate,
     ShipmentBulkStatusUpdateResponse,
     ShipmentExportRequest,
@@ -35,7 +36,7 @@ async def list_shipments(
     current_user: Annotated[User, Depends(get_current_admin)],
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-    status: ShipmentStatus | None = None,
+    status: str | None = Query(None, description="Status filter: pending, ready, shipped, preparing"),
     created_from: date | None = None,
     created_to: date | None = None,
     search: str | None = None,
@@ -52,11 +53,26 @@ async def list_shipments(
 
     Returns both existing shipments and pending orders (orders without shipments).
     Each item has a 'type' field: 'shipment' or 'pending_order'.
+
+    Status filter accepts:
+    - ShipmentStatus: pending, ready, shipped
+    - PendingOrderStatus: preparing
     """
+    # Parse status into ShipmentStatus or PendingOrderStatus
+    shipment_status: ShipmentStatus | None = None
+    pending_order_status: PendingOrderStatus | None = None
+
+    if status:
+        if status in [s.value for s in ShipmentStatus]:
+            shipment_status = ShipmentStatus(status)
+        elif status in [s.value for s in PendingOrderStatus]:
+            pending_order_status = PendingOrderStatus(status)
+
     return await service.list_with_pending_orders(
         page=page,
         limit=limit,
-        status=status,
+        shipment_status=shipment_status,
+        pending_order_status=pending_order_status,
         created_from=created_from,
         created_to=created_to,
         search=search,

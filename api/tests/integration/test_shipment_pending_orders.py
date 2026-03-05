@@ -1,12 +1,13 @@
 """Integration tests for FEAT-0025: Shipment list with pending orders.
 
 Tests the full API flow for the extended shipment list endpoint that includes
-orders without shipments (pending orders) displayed as "preparing" or
-"awaiting_shipment" status.
+orders without shipments (pending orders) displayed as "preparing" status.
+
+Note: "awaiting_shipment" status was removed because Shipments are automatically
+created when all OrderItems become DELIVERED.
 
 Test scenarios from Intent Spec acceptance criteria:
 - AC-01: GET /api/v1/shipments returns pending orders with "preparing" status
-- AC-02: GET /api/v1/shipments returns pending orders with "awaiting_shipment" status
 - AC-03: Type field distinguishes between "shipment" and "pending_order"
 - AC-04: After Shipment creation, orders appear as normal shipments
 - AC-05: CSV download works for pending orders
@@ -190,94 +191,8 @@ async def order_with_preparing_status(
     }
 
 
-@pytest.fixture
-async def order_with_awaiting_shipment_status(
-    db_session: AsyncSession,
-    test_order_source: dict,
-    test_product_for_pending: dict,
-):
-    """Create an order with all items DELIVERED (awaiting_shipment status).
-
-    - 2 OrderItems: all DELIVERED
-    - No associated Shipment
-    """
-    order_id = str(uuid4())
-    order_number = f"AWAIT-{order_id[:8]}"
-
-    await db_session.execute(
-        text("""
-            INSERT INTO orders (
-                id, order_number, order_source_id,
-                customer_name, customer_email, customer_phone,
-                customer_postal_code, customer_address_prefecture,
-                customer_address_city, customer_address_building,
-                status, ordered_at, total_price,
-                created_at, updated_at
-            )
-            VALUES (
-                :id, :order_number, :order_source_id,
-                :customer_name, :customer_email, :customer_phone,
-                :customer_postal_code, :customer_address_prefecture,
-                :customer_address_city, :customer_address_building,
-                :status, NOW(), :total_price,
-                NOW(), NOW()
-            )
-        """),
-        {
-            "id": order_id,
-            "order_number": order_number,
-            "order_source_id": test_order_source["id"],
-            "customer_name": "Awaiting Shipment Customer",
-            "customer_email": "awaiting@example.com",
-            "customer_phone": "090-2500-0002",
-            "customer_postal_code": "100-0026",
-            "customer_address_prefecture": "Osaka",
-            "customer_address_city": "Namba",
-            "customer_address_building": None,
-            "status": "delivered",
-            "total_price": 3000,
-        },
-    )
-
-    # Create 2 OrderItems all DELIVERED
-    for i in range(2):
-        item_id = str(uuid4())
-        await db_session.execute(
-            text("""
-                INSERT INTO order_items (
-                    id, order_id, uid, product_id,
-                    product_name, product_type, status,
-                    price, quantity,
-                    created_at, updated_at
-                )
-                VALUES (
-                    :id, :order_id, :uid, :product_id,
-                    :product_name, :product_type, :status,
-                    :price, :quantity,
-                    NOW(), NOW()
-                )
-            """),
-            {
-                "id": item_id,
-                "order_id": order_id,
-                "uid": f"AWAIT-ITEM-{i+1}",
-                "product_id": test_product_for_pending["id"],
-                "product_name": f"Awaiting Item {i+1}",
-                "product_type": "acrylic_keychain",
-                "status": "delivered",
-                "price": 1500,
-                "quantity": 1,
-            },
-        )
-
-    await db_session.commit()
-
-    yield {
-        "id": order_id,
-        "order_number": order_number,
-        "item_count": 2,
-        "items_delivered": 2,
-    }
+# Note: order_with_awaiting_shipment_status fixture was removed because
+# orders with all DELIVERED items automatically get a Shipment created.
 
 
 @pytest.fixture
@@ -427,40 +342,8 @@ class TestShipmentListWithPendingOrdersAPI:
         assert pending_order["item_count"] == order_with_preparing_status["item_count"]
         assert pending_order["items_delivered"] == order_with_preparing_status["items_delivered"]
 
-    @pytest.mark.asyncio
-    async def test_ac02_awaiting_shipment_orders_appear_in_shipment_list(
-        self,
-        client: AsyncClient,
-        auth_headers: dict,
-        order_with_awaiting_shipment_status: dict,
-    ):
-        """AC-02: Orders with all DELIVERED items appear as 'awaiting_shipment'.
-
-        Given: An order exists with all OrderItems DELIVERED but no Shipment
-        When: GET /api/v1/shipments is called
-        Then: The order appears with type='pending_order' and status='awaiting_shipment'
-        """
-        response = await client.get(
-            "/api/v1/shipments",
-            headers=auth_headers,
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-
-        # Find the awaiting shipment order
-        pending_orders = [
-            item for item in data["items"]
-            if item.get("type") == "pending_order"
-            and item.get("order_number") == order_with_awaiting_shipment_status["order_number"]
-        ]
-
-        assert len(pending_orders) == 1
-        pending_order = pending_orders[0]
-
-        assert pending_order["status"] == "awaiting_shipment"
-        assert pending_order["item_count"] == order_with_awaiting_shipment_status["item_count"]
-        assert pending_order["items_delivered"] == order_with_awaiting_shipment_status["items_delivered"]
+    # Note: test_ac02_awaiting_shipment_orders_appear_in_shipment_list was removed because
+    # orders with all DELIVERED items automatically get a Shipment created.
 
     @pytest.mark.asyncio
     async def test_ac03_type_field_distinguishes_shipment_and_pending_order(
@@ -536,7 +419,6 @@ class TestShipmentListWithPendingOrdersAPI:
         auth_headers: dict,
         existing_shipment: dict,
         order_with_preparing_status: dict,
-        order_with_awaiting_shipment_status: dict,
     ):
         """Total count includes both shipments and pending orders."""
         response = await client.get(
@@ -548,7 +430,7 @@ class TestShipmentListWithPendingOrdersAPI:
         data = response.json()
 
         # Total should count both types
-        assert data["total"] >= 3  # At least our test fixtures
+        assert data["total"] >= 2  # At least our test fixtures
 
     @pytest.mark.asyncio
     async def test_customer_info_in_pending_order(
@@ -741,7 +623,7 @@ class TestPendingOrderDownloads:
         self,
         client: AsyncClient,
         auth_headers: dict,
-        order_with_awaiting_shipment_status: dict,
+        order_with_preparing_status: dict,
     ):
         """AC-05: CSV download works for pending orders.
 
@@ -749,7 +631,7 @@ class TestPendingOrderDownloads:
         When: POST /api/v1/orders/{order_id}/export-csv is called
         Then: CSV file is returned with order data
         """
-        order_id = order_with_awaiting_shipment_status["id"]
+        order_id = order_with_preparing_status["id"]
 
         # Use existing order export endpoint for pending orders
         response = await client.post(
