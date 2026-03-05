@@ -601,22 +601,33 @@ class ShipmentService:
         return csv_bytes, filename
 
     async def download_thumbnails(
-        self, shipment_ids: list[str]
+        self,
+        shipment_ids: list[str] | None = None,
+        order_ids: list[str] | None = None,
     ) -> tuple[bytes, str]:
-        """Download thumbnail images from shipments and build a ZIP file.
+        """Download thumbnail images from shipments and/or orders and build a ZIP file.
 
         Args:
             shipment_ids: List of shipment IDs to collect thumbnails from.
+            order_ids: List of order IDs to collect thumbnails from (for pending orders).
 
         Returns:
             Tuple of (ZIP file bytes, filename).
 
         Raises:
             HTTPException: 404 if no thumbnail images could be collected.
+            ValidationError: If neither shipment_ids nor order_ids are provided.
         """
-        # Collect image tasks from shipments
+        shipment_ids = shipment_ids or []
+        order_ids = order_ids or []
+
+        if not shipment_ids and not order_ids:
+            raise ValidationError("shipment_ids または order_ids が必要です")
+
+        # Collect image tasks from shipments and orders
         image_tasks: list[dict] = []
 
+        # Process shipments
         for shipment_id in shipment_ids:
             shipment = await self._shipment_repo.find_by_id(shipment_id)
             if shipment is None:
@@ -627,15 +638,15 @@ class ShipmentService:
                 order = shipment_item.order
                 if not order:
                     continue
+                self._collect_order_thumbnails(order, image_tasks)
 
-                for order_item in order.items:
-                    if order_item.thumbnail_image_url is None:
-                        continue
-                    image_tasks.append({
-                        "order_number": order.order_number,
-                        "uid": order_item.uid or "",
-                        "thumbnail_image_url": order_item.thumbnail_image_url,
-                    })
+        # Process orders (for pending orders without shipments)
+        for order_id in order_ids:
+            order = await self._order_repo.find_by_id(order_id)
+            if order is None:
+                logger.warning(f"Order not found: {order_id}")
+                continue
+            self._collect_order_thumbnails(order, image_tasks)
 
         if not image_tasks:
             raise HTTPException(
@@ -831,28 +842,37 @@ class ShipmentService:
         }
         return type_map.get(product_type, product_type)
 
-    async def export_csv(self, shipment_ids: list[str]) -> tuple[bytes, str]:
-        """Export shipments to CSV for delivery.
+    async def export_csv(
+        self,
+        shipment_ids: list[str] | None = None,
+        order_ids: list[str] | None = None,
+    ) -> tuple[bytes, str]:
+        """Export shipments and/or orders to CSV for delivery.
 
         Generates a CSV file with 18 columns for delivery company import.
         Each row represents one order item (not one shipment).
 
         Args:
             shipment_ids: List of shipment IDs to export.
+            order_ids: List of order IDs to export (for pending orders without shipments).
 
         Returns:
             Tuple of (CSV content as bytes with BOM, filename)
 
         Raises:
-            NotFoundError: If a shipment is not found.
-            ValidationError: If OrderSourceRepository is not configured.
+            NotFoundError: If a shipment or order is not found.
+            ValidationError: If neither shipment_ids nor order_ids are provided.
         """
-        if not self._order_source_repo:
-            raise ValidationError("OrderSourceRepository is not configured")
+        shipment_ids = shipment_ids or []
+        order_ids = order_ids or []
+
+        if not shipment_ids and not order_ids:
+            raise ValidationError("shipment_ids または order_ids が必要です")
 
         # Collect CSV rows (one row per order item)
         rows = []
 
+        # Process shipments
         for shipment_id in shipment_ids:
             shipment = await self._shipment_repo.find_by_id(shipment_id)
             if not shipment:
@@ -863,33 +883,14 @@ class ShipmentService:
                 order = shipment_item.order
                 if not order:
                     continue
+                self._append_order_rows(order, rows)
 
-                # Get order source for sender info (from relationship)
-                order_source = order.order_source
-
-                # Create one row per order item
-                for item in order.items:
-                    row = [
-                        order.order_number,  # 1. 注文番号
-                        order.customer_name,  # 2. お客様氏名
-                        item.product_name,  # 3. 商品名
-                        self._format_product_type(item.product_type),  # 4. 商品種類
-                        str(item.quantity),  # 5. 数量
-                        item.uid or "",  # 6. 商品番号（アイテムUID）
-                        order.customer_phone,  # 7. お届け先電話番号
-                        order.customer_postal_code,  # 8. お届け先郵便番号
-                        order.customer_address_prefecture,  # 9. お届け先住所1（都道府県）
-                        order.customer_address_city,  # 10. お届け先住所2（市区町村番地以下）
-                        order.customer_address_building or "",  # 11. お届け先住所3（建物名等）
-                        order_source.phone if order_source else "",  # 12. 配送元電話番号
-                        order_source.postal_code if order_source else "",  # 13. 配送元郵便番号
-                        order_source.address_prefecture if order_source else "",  # 14. 配送元住所1
-                        order_source.address_city if order_source else "",  # 15. 配送元住所2
-                        order_source.address_building or "" if order_source else "",  # 16. 配送元住所3
-                        order_source.name if order_source else "",  # 17. 配送元氏名
-                        f"{order.order_number}_{item.uid or ''}",  # 18. 商品名（処理用）
-                    ]
-                    rows.append(row)
+        # Process orders (for pending orders without shipments)
+        for order_id in order_ids:
+            order = await self._order_repo.find_by_id(order_id)
+            if not order:
+                raise NotFoundError("Order", order_id)
+            self._append_order_rows(order, rows)
 
         # Generate CSV with UTF-8 BOM for Excel compatibility
         output = io.StringIO()
@@ -930,3 +931,53 @@ class ShipmentService:
         filename = f"shipments_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
         return csv_bytes, filename
+
+    def _append_order_rows(self, order: Order, rows: list[list[str]]) -> None:
+        """Append CSV rows for an order's items.
+
+        Args:
+            order: The order to process.
+            rows: The list to append rows to.
+        """
+        order_source = order.order_source
+
+        for item in order.items:
+            row = [
+                order.order_number,  # 1. 注文番号
+                order.customer_name,  # 2. お客様氏名
+                item.product_name,  # 3. 商品名
+                self._format_product_type(item.product_type),  # 4. 商品種類
+                str(item.quantity),  # 5. 数量
+                item.uid or "",  # 6. 商品番号（アイテムUID）
+                order.customer_phone,  # 7. お届け先電話番号
+                order.customer_postal_code,  # 8. お届け先郵便番号
+                order.customer_address_prefecture,  # 9. お届け先住所1（都道府県）
+                order.customer_address_city,  # 10. お届け先住所2（市区町村番地以下）
+                order.customer_address_building or "",  # 11. お届け先住所3（建物名等）
+                order_source.phone if order_source else "",  # 12. 配送元電話番号
+                order_source.postal_code if order_source else "",  # 13. 配送元郵便番号
+                order_source.address_prefecture if order_source else "",  # 14. 配送元住所1
+                order_source.address_city if order_source else "",  # 15. 配送元住所2
+                order_source.address_building or "" if order_source else "",  # 16. 配送元住所3
+                order_source.name if order_source else "",  # 17. 配送元氏名
+                f"{order.order_number}_{item.uid or ''}",  # 18. 商品名（処理用）
+            ]
+            rows.append(row)
+
+    def _collect_order_thumbnails(
+        self, order: Order, image_tasks: list[dict]
+    ) -> None:
+        """Collect thumbnail image tasks from an order.
+
+        Args:
+            order: The order to collect thumbnails from.
+            image_tasks: The list to append tasks to.
+        """
+        for order_item in order.items:
+            if order_item.thumbnail_image_url is None:
+                continue
+            image_tasks.append({
+                "order_number": order.order_number,
+                "uid": order_item.uid or "",
+                "thumbnail_image_url": order_item.thumbnail_image_url,
+            })
