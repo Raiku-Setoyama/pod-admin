@@ -1,14 +1,15 @@
 import useSWR from "swr";
 import { apiClient } from "@/lib/api/client";
-import type { ShipmentListWithPendingResponse, ShipmentStatus, ShipmentOrPendingOrder } from "@/types/api";
+import type { ShipmentListWithPendingResponse, ShipmentStatus, ShipmentOrPendingOrder, PendingOrderStatus } from "@/types/api";
 
 type SortBy = "created_at" | "shipped_at" | "delivered_at";
 type SortOrder = "asc" | "desc";
+type ShipmentFilterStatus = ShipmentStatus | PendingOrderStatus;
 
 interface UseShipmentsParams {
   page?: number;
   limit?: number;
-  status?: ShipmentStatus | null;
+  status?: ShipmentFilterStatus | null;
   search?: string;
   created_from?: string;
   created_to?: string;

@@ -165,6 +165,20 @@ export function getShipmentStatusOptions(): StatusOption<ShipmentStatus>[] {
 }
 
 /**
+ * 配送一覧フィルター用（ShipmentStatus + PendingOrderStatus の組み合わせ）
+ */
+export function getShipmentListFilterOptions(): StatusOption<ShipmentStatus | PendingOrderStatus>[] {
+  return [
+    { value: "all", label: "全てのステータス" },
+    { value: "preparing", label: PENDING_ORDER_STATUS_LABELS.preparing },
+    { value: "awaiting_shipment", label: PENDING_ORDER_STATUS_LABELS.awaiting_shipment },
+    { value: "pending", label: SHIPMENT_STATUS_LABELS.pending },
+    { value: "ready", label: SHIPMENT_STATUS_LABELS.ready },
+    { value: "shipped", label: SHIPMENT_STATUS_LABELS.shipped },
+  ];
+}
+
+/**
  * 受注一覧フィルター用（OrderStatus + ShipmentStatus の組み合わせ）
  */
 export function getOrderFilterStatusOptions(): StatusOption<OrderStatus | ShipmentStatus>[] {

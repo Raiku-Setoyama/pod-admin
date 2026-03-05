@@ -135,7 +135,8 @@ class ShipmentService:
         self,
         page: int = 1,
         limit: int = 20,
-        status: ShipmentStatus | None = None,
+        shipment_status: ShipmentStatus | None = None,
+        pending_order_status: PendingOrderStatus | None = None,
         created_from: date | None = None,
         created_to: date | None = None,
         search: str | None = None,
@@ -152,37 +153,50 @@ class ShipmentService:
 
         Returns both existing shipments and orders without shipments (pending orders).
         Pending orders are displayed as "preparing" or "awaiting_shipment" status.
+
+        Args:
+            shipment_status: Filter by ShipmentStatus (pending, ready, shipped).
+                             If set, only shipments are returned.
+            pending_order_status: Filter by PendingOrderStatus (preparing, awaiting_shipment).
+                                  If set, only pending orders are returned.
         """
-        # Get shipments
-        shipments, shipment_total = await self._shipment_repo.find_all(
-            page=page,
-            limit=limit,
-            status=status,
-            created_from=created_from,
-            created_to=created_to,
-            search=search,
-            tracking_number=tracking_number,
-            carrier=carrier,
-            shipped_from=shipped_from,
-            shipped_to=shipped_to,
-            delivered_from=delivered_from,
-            delivered_to=delivered_to,
-            sort_by=sort_by,
-            sort_order=sort_order,
-        )
+        items: list = []
+        shipment_total = 0
+        pending_total = 0
 
-        # Get pending orders (orders without shipments)
-        pending_orders, pending_total = await self._order_repo.find_pending_orders(
-            page=page,
-            limit=limit,
-        )
+        # If filtering by PendingOrderStatus, skip shipments
+        if pending_order_status is None:
+            # Get shipments
+            shipments, shipment_total = await self._shipment_repo.find_all(
+                page=page,
+                limit=limit,
+                status=shipment_status,
+                created_from=created_from,
+                created_to=created_to,
+                search=search,
+                tracking_number=tracking_number,
+                carrier=carrier,
+                shipped_from=shipped_from,
+                shipped_to=shipped_to,
+                delivered_from=delivered_from,
+                delivered_to=delivered_to,
+                sort_by=sort_by,
+                sort_order=sort_order,
+            )
+            # Convert shipments to responses
+            items = [self._to_response(shipment) for shipment in shipments]
 
-        # Convert shipments to responses
-        items: list = [self._to_response(shipment) for shipment in shipments]
-
-        # Convert pending orders to responses
-        for order in pending_orders:
-            items.append(self._to_pending_order_response(order))
+        # If filtering by ShipmentStatus, skip pending orders
+        if shipment_status is None:
+            # Get pending orders (orders without shipments)
+            pending_orders, pending_total = await self._order_repo.find_pending_orders(
+                page=page,
+                limit=limit,
+                status=pending_order_status,
+            )
+            # Convert pending orders to responses
+            for order in pending_orders:
+                items.append(self._to_pending_order_response(order))
 
         # Calculate total
         total = shipment_total + pending_total

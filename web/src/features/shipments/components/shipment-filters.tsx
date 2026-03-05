@@ -12,19 +12,21 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { DateRangePicker } from "@/components/common/date-range-picker";
-import { getShipmentStatusOptions } from "@/constants/status";
-import type { ShipmentStatus } from "@/types/api";
+import { getShipmentListFilterOptions } from "@/constants/status";
+import type { ShipmentStatus, PendingOrderStatus } from "@/types/api";
 
-const statusOptions = getShipmentStatusOptions();
+const statusOptions = getShipmentListFilterOptions();
+
+type ShipmentFilterStatus = ShipmentStatus | PendingOrderStatus;
 
 interface ShipmentFiltersProps {
   // Filter values
   search: string;
-  status: ShipmentStatus | null;
+  status: ShipmentFilterStatus | null;
   dateRange?: DateRange;
   // Handlers
   onSearchChange: (value: string) => void;
-  onStatusChange: (value: ShipmentStatus | null) => void;
+  onStatusChange: (value: ShipmentFilterStatus | null) => void;
   onDateRangeChange?: (range: DateRange | undefined) => void;
   onReset: () => void;
 }
@@ -56,7 +58,7 @@ export function ShipmentFilters({
         <Select
           value={status ?? "all"}
           onValueChange={(value) =>
-            onStatusChange(value === "all" ? null : (value as ShipmentStatus))
+            onStatusChange(value === "all" ? null : (value as ShipmentFilterStatus))
           }
         >
           <SelectTrigger className="w-[160px]">
