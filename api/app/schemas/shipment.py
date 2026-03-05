@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from app.models.shipment import ShipmentStatus
 
@@ -175,15 +175,43 @@ class ShipmentBulkStatusUpdateResponse(BaseModel):
 
 
 class ShipmentExportRequest(BaseModel):
-    """配送CSVエクスポートリクエスト"""
+    """配送CSVエクスポートリクエスト
 
-    shipment_ids: list[str] = Field(..., min_length=1)
+    shipment_ids と order_ids の両方を指定可能。
+    order_ids は商品準備中の注文（Shipment未作成）用。
+    両方指定した場合は1つのCSVにまとめて出力。
+    少なくとも1つのIDが必要。
+    """
+
+    shipment_ids: list[str] = Field(default_factory=list)
+    order_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_at_least_one_id(self) -> "ShipmentExportRequest":
+        """shipment_ids または order_ids のいずれかが必要."""
+        if not self.shipment_ids and not self.order_ids:
+            raise ValueError("shipment_ids または order_ids のいずれかを指定してください")
+        return self
 
 
 class ShipmentThumbnailDownloadRequest(BaseModel):
-    """配送サムネイル画像ZIPダウンロードリクエスト"""
+    """配送サムネイル画像ZIPダウンロードリクエスト
 
-    shipment_ids: list[str] = Field(..., min_length=1)
+    shipment_ids と order_ids の両方を指定可能。
+    order_ids は商品準備中の注文（Shipment未作成）用。
+    両方指定した場合は1つのZIPにまとめて出力。
+    少なくとも1つのIDが必要。
+    """
+
+    shipment_ids: list[str] = Field(default_factory=list)
+    order_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_at_least_one_id(self) -> "ShipmentThumbnailDownloadRequest":
+        """shipment_ids または order_ids のいずれかが必要."""
+        if not self.shipment_ids and not self.order_ids:
+            raise ValueError("shipment_ids または order_ids のいずれかを指定してください")
+        return self
 
 
 class TrackingFileImportError(BaseModel):
