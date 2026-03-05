@@ -20,11 +20,14 @@ from app.schemas.order import (
     OrderBulkStatusUpdate,
     OrderBulkStatusUpdateResponse,
     OrderCreate,
+    OrderExportCsvRequest,
     OrderImageDownloadRequest,
     OrderListResponse,
     OrderResponse,
     OrderStatusUpdate,
+    OrderThumbnailDownloadRequest,
 )
+from urllib.parse import quote
 from app.services.order_image_service import OrderImageService
 from app.services.order_service import OrderService
 from app.utils.exceptions import OrderNotFoundError, ValidationError
@@ -105,12 +108,70 @@ async def download_order_images(
     current_user: Annotated[User, Depends(get_current_admin)],
 ) -> StreamingResponse:
     """受注イメージ画像をZIPファイルとしてダウンロード."""
-    from urllib.parse import quote
-
     zip_bytes = await image_service.collect_and_build_zip(data.order_ids)
     filename = image_service.generate_zip_filename()
 
     # RFC 5987: Use filename* for non-ASCII filenames
+    encoded_filename = quote(filename)
+    content_disposition = (
+        f"attachment; filename*=UTF-8''{encoded_filename}"
+    )
+
+    return StreamingResponse(
+        iter([zip_bytes]),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": content_disposition,
+        },
+    )
+
+
+@router.post("/export-csv")
+async def export_orders_csv(
+    data: OrderExportCsvRequest,
+    service: Annotated[OrderService, Depends(get_order_service)],
+    current_user: Annotated[User, Depends(get_current_admin)],
+) -> StreamingResponse:
+    """受注CSVをエクスポート
+
+    選択された注文データを配送業者向けCSVとしてエクスポートします。
+    18列のCSV形式で、配送元情報はOrderSourceから取得します。
+
+    この機能は、まだShipmentが作成されていない注文（pending_order）の
+    CSVエクスポートに使用されます。
+
+    Args:
+        data: エクスポート対象のorder_idsリスト
+
+    Returns:
+        UTF-8 BOM付きCSVファイル
+    """
+    csv_bytes, filename = await service.export_csv(data.order_ids)
+
+    encoded_filename = quote(filename)
+
+    return StreamingResponse(
+        iter([csv_bytes]),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
+        },
+    )
+
+
+@router.post("/download-thumbnails")
+async def download_order_thumbnails(
+    data: OrderThumbnailDownloadRequest,
+    service: Annotated[OrderService, Depends(get_order_service)],
+    current_user: Annotated[User, Depends(get_current_admin)],
+) -> StreamingResponse:
+    """受注サムネイル画像をZIPファイルとしてダウンロード
+
+    この機能は、まだShipmentが作成されていない注文（pending_order）の
+    サムネイル画像をダウンロードするために使用されます。
+    """
+    zip_bytes, filename = await service.download_thumbnails(data.order_ids)
+
     encoded_filename = quote(filename)
     content_disposition = (
         f"attachment; filename*=UTF-8''{encoded_filename}"

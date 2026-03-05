@@ -23,14 +23,18 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderHook, waitFor } from '@testing-library/react'
 
-// Mock SWR
-vi.mock('swr', () => ({
-  default: vi.fn(() => ({
+// Mock SWR - use vi.hoisted to create a spy function that can be referenced in vi.mock
+const { mockUseSWR } = vi.hoisted(() => ({
+  mockUseSWR: vi.fn(() => ({
     data: undefined,
     error: undefined,
     isLoading: false,
     mutate: vi.fn(),
   })),
+}))
+
+vi.mock('swr', () => ({
+  default: mockUseSWR,
 }))
 
 // Mock API client
@@ -473,32 +477,22 @@ describe('AC-011: useProducts hook includes manufacturer_id in API request', () 
   })
 
   it('passes manufacturer_id to query parameters', () => {
-    const useSWR = vi.mocked(
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      require('swr').default
-    )
-
     renderHook(() =>
       useProducts({ manufacturer_id: 'mfr-001' })
     )
 
     // useSWRが manufacturer_id を含むキーで呼ばれること
-    expect(useSWR).toHaveBeenCalledWith(
+    expect(mockUseSWR).toHaveBeenCalledWith(
       expect.stringContaining('manufacturer_id=mfr-001'),
       expect.anything()
     )
   })
 
   it('does not include manufacturer_id when not specified', () => {
-    const useSWR = vi.mocked(
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      require('swr').default
-    )
-
     renderHook(() => useProducts({}))
 
     // manufacturer_id がキーに含まれないこと
-    const callArgs = useSWR.mock.calls
+    const callArgs = mockUseSWR.mock.calls
     const lastCallKey = callArgs[callArgs.length - 1]?.[0] as string
     expect(lastCallKey).not.toContain('manufacturer_id')
   })
@@ -514,49 +508,34 @@ describe('AC-012: useProducts hook includes is_active in API request', () => {
   })
 
   it('passes is_active=true to query parameters', () => {
-    const useSWR = vi.mocked(
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      require('swr').default
-    )
-
     renderHook(() =>
       useProducts({ is_active: true })
     )
 
     // useSWRが is_active=true を含むキーで呼ばれること
-    expect(useSWR).toHaveBeenCalledWith(
+    expect(mockUseSWR).toHaveBeenCalledWith(
       expect.stringContaining('is_active=true'),
       expect.anything()
     )
   })
 
   it('passes is_active=false to query parameters', () => {
-    const useSWR = vi.mocked(
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      require('swr').default
-    )
-
     renderHook(() =>
       useProducts({ is_active: false })
     )
 
     // useSWRが is_active=false を含むキーで呼ばれること
-    expect(useSWR).toHaveBeenCalledWith(
+    expect(mockUseSWR).toHaveBeenCalledWith(
       expect.stringContaining('is_active=false'),
       expect.anything()
     )
   })
 
   it('does not include is_active when not specified', () => {
-    const useSWR = vi.mocked(
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      require('swr').default
-    )
-
     renderHook(() => useProducts({}))
 
     // is_active がキーに含まれないこと
-    const callArgs = useSWR.mock.calls
+    const callArgs = mockUseSWR.mock.calls
     const lastCallKey = callArgs[callArgs.length - 1]?.[0] as string
     expect(lastCallKey).not.toContain('is_active')
   })

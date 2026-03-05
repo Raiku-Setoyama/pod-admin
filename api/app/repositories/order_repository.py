@@ -535,3 +535,56 @@ class OrderRepository:
             await self._db.flush()
 
         return order
+
+    async def find_pending_orders(
+        self,
+        page: int = 1,
+        limit: int = 20,
+    ) -> tuple[list[Order], int]:
+        """Find orders that don't have associated shipments.
+
+        Returns orders that:
+        - Have no associated ShipmentItem
+        - Are not in SHIPPED or CANCELLED status
+
+        Args:
+            page: Page number (1-indexed)
+            limit: Number of items per page
+
+        Returns:
+            Tuple of (orders, total_count)
+        """
+        from app.models.shipment import ShipmentItem
+
+        # Subquery to find orders that have shipments
+        orders_with_shipment = select(ShipmentItem.order_id).distinct()
+
+        # Query for orders without shipments
+        query = (
+            select(Order)
+            .options(
+                selectinload(Order.items),
+                selectinload(Order.order_source),
+            )
+            .where(Order.id.notin_(orders_with_shipment))
+            .where(Order.status.notin_([OrderStatus.SHIPPED.value, OrderStatus.CANCELLED.value]))
+        )
+
+        count_query = (
+            select(func.count(Order.id))
+            .where(Order.id.notin_(orders_with_shipment))
+            .where(Order.status.notin_([OrderStatus.SHIPPED.value, OrderStatus.CANCELLED.value]))
+        )
+
+        # Get total count
+        total_result = await self._db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        # Apply pagination
+        offset = (page - 1) * limit
+        query = query.order_by(Order.ordered_at.desc()).offset(offset).limit(limit)
+
+        result = await self._db.execute(query)
+        orders = list(result.scalars().all())
+
+        return orders, total

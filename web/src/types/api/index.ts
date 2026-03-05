@@ -167,6 +167,33 @@ export interface AllManufacturerOrderItemListResponse {
 // Shipment types
 export type ShipmentStatus = "pending" | "ready" | "shipped";
 
+// Pending order status (orders without shipments)
+export type PendingOrderStatus = "preparing" | "awaiting_shipment";
+
+// Order item summary for pending orders
+export interface OrderItemSummary {
+  id: string;
+  product_name: string;
+  product_type: ProductType;
+  quantity: number;
+  status: string;
+  thumbnail_image_url: string | null;
+}
+
+// Pending order (order without shipment)
+export interface PendingOrder {
+  type: "pending_order";
+  order_id: string;
+  order_number: string;
+  customer_name: string;
+  customer_address: string;
+  item_count: number;
+  items_delivered: number;
+  status: PendingOrderStatus;
+  created_at: string;
+  order_items: OrderItemSummary[];
+}
+
 export interface ShipmentItem {
   id: string;
   order_id: string;
@@ -177,6 +204,7 @@ export interface ShipmentItem {
 }
 
 export interface Shipment {
+  type?: "shipment";  // Optional for backward compatibility
   id: string;
   status: ShipmentStatus;
   tracking_number: string | null;
@@ -197,8 +225,29 @@ export interface Shipment {
   updated_at: string;
 }
 
+// Union type for shipment list items (either Shipment or PendingOrder)
+export type ShipmentOrPendingOrder = (Shipment & { type?: "shipment" }) | PendingOrder;
+
+// Type guard to check if item is a PendingOrder
+export function isPendingOrder(item: ShipmentOrPendingOrder): item is PendingOrder {
+  return item.type === "pending_order";
+}
+
+// Type guard to check if item is a Shipment
+export function isShipment(item: ShipmentOrPendingOrder): item is Shipment {
+  return item.type !== "pending_order";
+}
+
 export interface ShipmentListResponse {
   items: Shipment[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+// Extended shipment list response with pending orders
+export interface ShipmentListWithPendingResponse {
+  items: ShipmentOrPendingOrder[];
   total: number;
   page: number;
   limit: number;

@@ -1,4 +1,4 @@
-import type { OrderStatus, ShipmentStatus } from "@/types/api";
+import type { OrderStatus, ShipmentStatus, PendingOrderStatus } from "@/types/api";
 
 // ========================================
 // Order Status (受注ステータス)
@@ -47,10 +47,30 @@ export const SHIPMENT_STATUS_COLORS: Record<ShipmentStatus, string> = {
 };
 
 // ========================================
+// Pending Order Status (未配送注文ステータス)
+// ========================================
+
+/**
+ * PendingOrderStatus のラベル名
+ */
+export const PENDING_ORDER_STATUS_LABELS: Record<PendingOrderStatus, string> = {
+  preparing: "商品準備中",
+  awaiting_shipment: "配送準備待ち",
+};
+
+/**
+ * PendingOrderStatus の色（Tailwind CSS クラス）
+ */
+export const PENDING_ORDER_STATUS_COLORS: Record<PendingOrderStatus, string> = {
+  preparing: "bg-orange-100 text-orange-700 border-orange-300",
+  awaiting_shipment: "bg-yellow-100 text-yellow-700 border-yellow-300",
+};
+
+// ========================================
 // Combined Status (StatusBadge 用)
 // ========================================
 
-export type StatusType = OrderStatus | ShipmentStatus;
+export type StatusType = OrderStatus | ShipmentStatus | PendingOrderStatus;
 
 /**
  * 全ステータスのラベル名
@@ -58,6 +78,7 @@ export type StatusType = OrderStatus | ShipmentStatus;
 export const STATUS_LABELS: Record<StatusType, string> = {
   ...ORDER_STATUS_LABELS,
   ...SHIPMENT_STATUS_LABELS,
+  ...PENDING_ORDER_STATUS_LABELS,
 };
 
 /**
@@ -66,6 +87,7 @@ export const STATUS_LABELS: Record<StatusType, string> = {
 export const STATUS_COLORS: Record<StatusType, string> = {
   ...ORDER_STATUS_COLORS,
   ...SHIPMENT_STATUS_COLORS,
+  ...PENDING_ORDER_STATUS_COLORS,
 };
 
 // ========================================
@@ -84,6 +106,13 @@ export function getOrderStatusLabel(status: OrderStatus): string {
  */
 export function getShipmentStatusLabel(status: ShipmentStatus): string {
   return SHIPMENT_STATUS_LABELS[status] ?? status;
+}
+
+/**
+ * PendingOrderStatus のラベルを取得
+ */
+export function getPendingOrderStatusLabel(status: PendingOrderStatus): string {
+  return PENDING_ORDER_STATUS_LABELS[status] ?? status;
 }
 
 /**

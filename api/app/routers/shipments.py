@@ -16,6 +16,7 @@ from app.schemas.shipment import (
     ShipmentBulkStatusUpdateResponse,
     ShipmentExportRequest,
     ShipmentListResponse,
+    ShipmentListWithPendingResponse,
     ShipmentResponse,
     ShipmentStatusUpdate,
     ShipmentThumbnailDownloadRequest,
@@ -28,7 +29,7 @@ from app.utils.csv_generator import CSVGenerator
 router = APIRouter(prefix="/shipments", tags=["shipments"])
 
 
-@router.get("", response_model=ShipmentListResponse)
+@router.get("", response_model=ShipmentListWithPendingResponse)
 async def list_shipments(
     service: Annotated[ShipmentService, Depends(get_shipment_service)],
     current_user: Annotated[User, Depends(get_current_admin)],
@@ -46,9 +47,13 @@ async def list_shipments(
     delivered_to: date | None = None,
     sort_by: Literal["created_at", "shipped_at", "delivered_at"] = "created_at",
     sort_order: Literal["asc", "desc"] = "desc",
-) -> ShipmentListResponse:
-    """List shipments with pagination and filters."""
-    return await service.list(
+) -> ShipmentListWithPendingResponse:
+    """List shipments with pagination and filters.
+
+    Returns both existing shipments and pending orders (orders without shipments).
+    Each item has a 'type' field: 'shipment' or 'pending_order'.
+    """
+    return await service.list_with_pending_orders(
         page=page,
         limit=limit,
         status=status,

@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import date
+import asyncio
+import csv
+import io
+import logging
+import mimetypes
+from datetime import date, datetime
+from urllib.parse import urlparse
+
+import httpx
+from fastapi import HTTPException
 
 from app.models.order import (
     AcrylicKeychainSize,
@@ -21,8 +30,10 @@ from app.models.order import (
 )
 from app.models.product import ProductType
 from app.repositories.order_repository import OrderRepository
+from app.repositories.order_source_repository import OrderSourceRepository
 from app.repositories.product_repository import ProductRepository
 from app.repositories.shipment_repository import ShipmentRepository
+from app.utils.zip_builder import ZipBuilder
 from app.models.shipment import Shipment
 from app.schemas.order import (
     ManufacturingDataInfo,
@@ -38,10 +49,13 @@ from app.models.shipment import ShipmentStatus
 from app.utils.exceptions import (
     DuplicateError,
     InvalidStatusTransitionError,
+    NotFoundError,
     OrderNotFoundError,
     ProductNotFoundError,
     ValidationError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class OrderService:
@@ -52,10 +66,12 @@ class OrderService:
         order_repo: OrderRepository,
         product_repo: ProductRepository,
         shipment_repo: ShipmentRepository,
+        order_source_repo: OrderSourceRepository | None = None,
     ):
         self._order_repo = order_repo
         self._product_repo = product_repo
         self._shipment_repo = shipment_repo
+        self._order_source_repo = order_source_repo
 
     async def create(
         self,
@@ -554,3 +570,258 @@ class OrderService:
             failed_count=failed_count,
             failed_ids=failed_ids,
         )
+
+    async def export_csv(self, order_ids: list[str]) -> tuple[bytes, str]:
+        """Export orders to CSV for delivery.
+
+        Generates a CSV file with 18 columns for delivery company import.
+        Each row represents one order item (not one order).
+
+        This is similar to ShipmentService.export_csv but works with order_ids
+        instead of shipment_ids (for pending orders that don't have shipments yet).
+
+        Args:
+            order_ids: List of order IDs to export.
+
+        Returns:
+            Tuple of (CSV content as bytes with BOM, filename)
+
+        Raises:
+            NotFoundError: If an order is not found.
+            ValidationError: If OrderSourceRepository is not configured.
+        """
+        if not self._order_source_repo:
+            raise ValidationError("OrderSourceRepository is not configured")
+
+        # Collect CSV rows (one row per order item)
+        rows = []
+
+        for order_id in order_ids:
+            order = await self._order_repo.find_by_id(order_id)
+            if not order:
+                raise NotFoundError("Order", order_id)
+
+            # Get order source for sender info (from relationship)
+            order_source = order.order_source
+
+            # Create one row per order item
+            for item in order.items:
+                row = [
+                    order.order_number,  # 1. 注文番号
+                    order.customer_name,  # 2. お客様氏名
+                    item.product_name,  # 3. 商品名
+                    self._format_product_type(item.product_type),  # 4. 商品種類
+                    str(item.quantity),  # 5. 数量
+                    item.uid or "",  # 6. 商品番号（アイテムUID）
+                    order.customer_phone,  # 7. お届け先電話番号
+                    order.customer_postal_code,  # 8. お届け先郵便番号
+                    order.customer_address_prefecture,  # 9. お届け先住所1（都道府県）
+                    order.customer_address_city,  # 10. お届け先住所2（市区町村番地以下）
+                    order.customer_address_building or "",  # 11. お届け先住所3（建物名等）
+                    order_source.phone if order_source else "",  # 12. 配送元電話番号
+                    order_source.postal_code if order_source else "",  # 13. 配送元郵便番号
+                    order_source.address_prefecture if order_source else "",  # 14. 配送元住所1
+                    order_source.address_city if order_source else "",  # 15. 配送元住所2
+                    order_source.address_building or "" if order_source else "",  # 16. 配送元住所3
+                    order_source.name if order_source else "",  # 17. 配送元氏名
+                    f"{order.order_number}_{item.uid or ''}",  # 18. 商品名（処理用）
+                ]
+                rows.append(row)
+
+        # Generate CSV with UTF-8 BOM for Excel compatibility
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Write header (matching template exactly)
+        header = [
+            "注文番号",
+            "お客様氏名",
+            "商品名",
+            "商品種類",
+            "数量",
+            "商品番号",
+            "お届け先電話番号",
+            "お届け先郵便番号",
+            "お届け先住所1(都道府県)",
+            "お届け先住所2(市区町村番地以下)",
+            "お届け先住所3(建物名等)",
+            "配送元電話番号",
+            "配送元郵便番号",
+            "配送元住所1(都道府県)",
+            "配送元住所2(市区町村番地以下)",
+            "配送元住所3(建物名等)",
+            "配送元氏名",
+            "商品名（処理用）",
+        ]
+        writer.writerow(header)
+
+        # Write data rows
+        for row in rows:
+            writer.writerow(row)
+
+        # Get CSV content with BOM
+        csv_content = output.getvalue()
+        csv_bytes = b"\xef\xbb\xbf" + csv_content.encode("utf-8")
+
+        # Generate filename
+        filename = f"orders_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+        return csv_bytes, filename
+
+    async def download_thumbnails(
+        self, order_ids: list[str]
+    ) -> tuple[bytes, str]:
+        """Download thumbnail images from orders and build a ZIP file.
+
+        This is similar to ShipmentService.download_thumbnails but works with order_ids
+        instead of shipment_ids (for pending orders that don't have shipments yet).
+
+        Args:
+            order_ids: List of order IDs to collect thumbnails from.
+
+        Returns:
+            Tuple of (ZIP file bytes, filename).
+
+        Raises:
+            HTTPException: 404 if no thumbnail images could be collected.
+        """
+        # Collect image tasks from orders
+        image_tasks: list[dict] = []
+
+        for order_id in order_ids:
+            order = await self._order_repo.find_by_id(order_id)
+            if order is None:
+                logger.warning(f"Order not found: {order_id}")
+                continue
+
+            for order_item in order.items:
+                if order_item.thumbnail_image_url is None:
+                    continue
+                image_tasks.append({
+                    "order_number": order.order_number,
+                    "uid": order_item.uid or "",
+                    "thumbnail_image_url": order_item.thumbnail_image_url,
+                })
+
+        if not image_tasks:
+            raise HTTPException(
+                status_code=404,
+                detail="ダウンロード対象のサムネイル画像がありません",
+            )
+
+        # Fetch images in parallel with semaphore
+        semaphore = asyncio.Semaphore(10)
+
+        async with httpx.AsyncClient() as client:
+
+            async def fetch_image(task: dict) -> dict | None:
+                async with semaphore:
+                    try:
+                        response = await client.get(
+                            task["thumbnail_image_url"],
+                            timeout=10.0,
+                        )
+                        if response.status_code != 200:
+                            logger.warning(
+                                f"Failed to fetch thumbnail: {task['thumbnail_image_url']} "
+                                f"(status={response.status_code})"
+                            )
+                            return None
+
+                        # Determine file extension
+                        ext = self._get_extension_from_url(task["thumbnail_image_url"])
+                        if not ext:
+                            ext = self._get_extension_from_content_type(
+                                response.headers.get("content-type", "")
+                            )
+                        if not ext:
+                            ext = ".png"
+
+                        return {
+                            "order_number": task["order_number"],
+                            "uid": task["uid"],
+                            "content": response.content,
+                            "extension": ext,
+                        }
+                    except Exception as e:
+                        logger.warning(
+                            f"Error fetching thumbnail {task['thumbnail_image_url']}: {e}"
+                        )
+                        return None
+
+            results = await asyncio.gather(
+                *[fetch_image(task) for task in image_tasks]
+            )
+            fetched_images = [r for r in results if r is not None]
+
+        if not fetched_images:
+            raise HTTPException(
+                status_code=404,
+                detail="ダウンロード対象のサムネイル画像がありません",
+            )
+
+        # Build ZIP
+        builder = ZipBuilder()
+        for img in fetched_images:
+            file_path = f"{img['order_number']}_{img['uid']}{img['extension']}"
+            builder.add_file(file_path, img["content"])
+
+        zip_bytes = builder.build()
+
+        # Generate filename
+        now = datetime.now()
+        timestamp = now.strftime("%Y%m%d_%H%M%S")
+        filename = f"注文サムネイル_{timestamp}.zip"
+
+        return zip_bytes, filename
+
+    def _format_product_type(self, product_type: str) -> str:
+        """Convert product_type to Japanese display name."""
+        type_map = {
+            "acrylic_keychain": "アクリルキーホルダー",
+            "acrylic_stand": "アクリルスタンド",
+            "sticker": "ステッカー",
+            "tote_bag": "トートバッグ",
+            "mug": "マグカップ",
+            "tshirt": "Tシャツ",
+        }
+        return type_map.get(product_type, product_type)
+
+    @staticmethod
+    def _get_extension_from_url(url: str) -> str | None:
+        """Extract file extension from URL path."""
+        parsed = urlparse(url)
+        path = parsed.path
+        if "." in path:
+            ext = path.rsplit(".", 1)[-1].lower()
+            if ext in ("png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "tiff"):
+                return f".{ext}"
+        return None
+
+    @staticmethod
+    def _get_extension_from_content_type(content_type: str) -> str | None:
+        """Get file extension from Content-Type header."""
+        if not content_type:
+            return None
+        mime_type = content_type.split(";")[0].strip().lower()
+
+        mime_map = {
+            "image/png": ".png",
+            "image/jpeg": ".jpg",
+            "image/jpg": ".jpg",
+            "image/gif": ".gif",
+            "image/webp": ".webp",
+            "image/bmp": ".bmp",
+            "image/svg+xml": ".svg",
+            "image/tiff": ".tiff",
+        }
+
+        ext = mime_map.get(mime_type)
+        if ext:
+            return ext
+
+        guessed_ext = mimetypes.guess_extension(mime_type)
+        if guessed_ext and guessed_ext != ".bin":
+            return guessed_ext
+
+        return None

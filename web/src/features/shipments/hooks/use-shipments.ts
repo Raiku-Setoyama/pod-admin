@@ -1,6 +1,6 @@
 import useSWR from "swr";
 import { apiClient } from "@/lib/api/client";
-import type { ShipmentListResponse, ShipmentStatus } from "@/types/api";
+import type { ShipmentListWithPendingResponse, ShipmentStatus, ShipmentOrPendingOrder } from "@/types/api";
 
 type SortBy = "created_at" | "shipped_at" | "delivered_at";
 type SortOrder = "asc" | "desc";
@@ -56,13 +56,16 @@ export function useShipments(params: UseShipmentsParams = {}) {
   if (delivered_from) queryParams.set("delivered_from", delivered_from);
   if (delivered_to) queryParams.set("delivered_to", delivered_to);
 
-  const { data, error, isLoading, mutate } = useSWR<ShipmentListResponse>(
+  const { data, error, isLoading, mutate } = useSWR<ShipmentListWithPendingResponse>(
     `/shipments?${queryParams.toString()}`,
     apiClient
   );
 
   return {
-    shipments: data?.items ?? [],
+    // Return items with unified type (includes both shipments and pending orders)
+    items: data?.items ?? [] as ShipmentOrPendingOrder[],
+    // Legacy alias for backward compatibility
+    shipments: data?.items ?? [] as ShipmentOrPendingOrder[],
     total: data?.total ?? 0,
     page: data?.page ?? page,
     limit: data?.limit ?? limit,

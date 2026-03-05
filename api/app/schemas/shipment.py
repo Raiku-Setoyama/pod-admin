@@ -1,10 +1,53 @@
 """Shipment schemas."""
 
 from datetime import datetime
+from enum import Enum
+from typing import Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from app.models.shipment import ShipmentStatus
+
+
+class PendingOrderStatus(str, Enum):
+    """Pending order status - derived from OrderItem statuses."""
+
+    PREPARING = "preparing"  # 商品準備中（全OrderItemがDELIVEREDでない）
+    AWAITING_SHIPMENT = "awaiting_shipment"  # 配送準備待ち（全OrderItemがDELIVERED）
+
+
+class OrderItemSummary(BaseModel):
+    """Order item summary for PendingOrderResponse."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    product_name: str
+    product_type: str
+    quantity: int
+    status: str
+    thumbnail_image_url: str | None = None
+
+
+class PendingOrderResponse(BaseModel):
+    """Pending order response schema - orders without shipments.
+
+    Represents orders that don't have a Shipment yet.
+    Status is derived from OrderItem statuses.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    type: Literal["pending_order"] = "pending_order"
+    order_id: str
+    order_number: str
+    customer_name: str
+    customer_address: str
+    item_count: int
+    items_delivered: int
+    status: PendingOrderStatus
+    created_at: datetime
+    order_items: list[OrderItemSummary] = []
 
 
 class ShipmentCreate(BaseModel):
@@ -57,6 +100,7 @@ class ShipmentResponse(BaseModel):
     """
 
     id: str
+    type: Literal["shipment"] = "shipment"
     status: ShipmentStatus
     tracking_number: str | None
     carrier: str | None
@@ -91,6 +135,23 @@ class ShipmentListResponse(BaseModel):
     """Shipment list response schema."""
 
     items: list[ShipmentResponse]
+    total: int
+    page: int
+    limit: int
+
+
+# Union type for mixed list items
+ShipmentOrPendingOrder = Union[ShipmentResponse, PendingOrderResponse]
+
+
+class ShipmentListWithPendingResponse(BaseModel):
+    """Shipment list response with pending orders.
+
+    Contains both shipments and pending orders in a single list.
+    Use the 'type' field to distinguish between them.
+    """
+
+    items: list[ShipmentOrPendingOrder]
     total: int
     page: int
     limit: int
