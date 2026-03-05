@@ -32,7 +32,7 @@ import { TrackingImport } from "@/features/shipments/components/tracking-import"
 import { useShipments } from "@/features/shipments/hooks/use-shipments";
 import { getShipmentStatusUpdateOptions } from "@/constants/status";
 import type { ShipmentStatus, ShipmentOrPendingOrder } from "@/types/api";
-import { isPendingOrder, isShipment } from "@/types/api";
+import { isShipment } from "@/types/api";
 
 const statusOptions = getShipmentStatusUpdateOptions();
 
@@ -149,65 +149,44 @@ export default function ShipmentsPage() {
     setIsExporting(true);
     try {
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-      const requests: Promise<Response>[] = [];
 
-      // Export shipments
-      if (shipmentIds.length > 0) {
-        requests.push(
-          fetch(`${apiBaseUrl}/shipments/export-csv`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${localStorage.getItem("access_token")}`,
-            },
-            body: JSON.stringify({ shipment_ids: shipmentIds }),
-          })
-        );
+      // Send both shipment_ids and order_ids in a single request
+      const response = await fetch(`${apiBaseUrl}/shipments/export-csv`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+        },
+        body: JSON.stringify({
+          shipment_ids: shipmentIds,
+          order_ids: orderIds,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Export failed");
       }
 
-      // Export pending orders (orders without shipments)
-      if (orderIds.length > 0) {
-        requests.push(
-          fetch(`${apiBaseUrl}/orders/export-csv`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${localStorage.getItem("access_token")}`,
-            },
-            body: JSON.stringify({ order_ids: orderIds }),
-          })
-        );
-      }
-
-      const responses = await Promise.all(requests);
-
-      // Download each response
-      for (const response of responses) {
-        if (!response.ok) {
-          throw new Error("Export failed");
+      // Get filename from Content-Disposition header
+      const contentDisposition = response.headers.get("Content-Disposition");
+      let filename = "export.csv";
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename\*=UTF-8''(.+)/);
+        if (filenameMatch) {
+          filename = decodeURIComponent(filenameMatch[1]);
         }
-
-        // Get filename from Content-Disposition header
-        const contentDisposition = response.headers.get("Content-Disposition");
-        let filename = "export.csv";
-        if (contentDisposition) {
-          const filenameMatch = contentDisposition.match(/filename\*=UTF-8''(.+)/);
-          if (filenameMatch) {
-            filename = decodeURIComponent(filenameMatch[1]);
-          }
-        }
-
-        // Download the file
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
       }
+
+      // Download the file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
 
       toast.success(`${selectedIds.size}件のデータをエクスポートしました`);
     } catch (error) {
@@ -230,65 +209,44 @@ export default function ShipmentsPage() {
     setIsDownloadingThumbnails(true);
     try {
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-      const requests: Promise<Response>[] = [];
 
-      // Download from shipments
-      if (shipmentIds.length > 0) {
-        requests.push(
-          fetch(`${apiBaseUrl}/shipments/download-thumbnails`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${localStorage.getItem("access_token")}`,
-            },
-            body: JSON.stringify({ shipment_ids: shipmentIds }),
-          })
-        );
+      // Send both shipment_ids and order_ids in a single request
+      const response = await fetch(`${apiBaseUrl}/shipments/download-thumbnails`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+        },
+        body: JSON.stringify({
+          shipment_ids: shipmentIds,
+          order_ids: orderIds,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Download failed");
       }
 
-      // Download from pending orders
-      if (orderIds.length > 0) {
-        requests.push(
-          fetch(`${apiBaseUrl}/orders/download-thumbnails`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${localStorage.getItem("access_token")}`,
-            },
-            body: JSON.stringify({ order_ids: orderIds }),
-          })
-        );
-      }
-
-      const responses = await Promise.all(requests);
-
-      // Download each response
-      for (const response of responses) {
-        if (!response.ok) {
-          throw new Error("Download failed");
+      // Get filename from Content-Disposition header
+      const contentDisposition = response.headers.get("Content-Disposition");
+      let filename = "thumbnails.zip";
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename\*=UTF-8''(.+)/);
+        if (filenameMatch) {
+          filename = decodeURIComponent(filenameMatch[1]);
         }
-
-        // Get filename from Content-Disposition header
-        const contentDisposition = response.headers.get("Content-Disposition");
-        let filename = "thumbnails.zip";
-        if (contentDisposition) {
-          const filenameMatch = contentDisposition.match(/filename\*=UTF-8''(.+)/);
-          if (filenameMatch) {
-            filename = decodeURIComponent(filenameMatch[1]);
-          }
-        }
-
-        // Download the file
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
       }
+
+      // Download the file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
 
       toast.success(`${selectedIds.size}件のサムネイル画像をダウンロードしました`);
     } catch (error) {

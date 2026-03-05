@@ -92,13 +92,20 @@ async def export_shipments_csv(
     選択された発送データを配送業者向けCSVとしてエクスポートします。
     17列のCSV形式で、配送元情報はOrderSourceから取得します。
 
+    shipment_ids と order_ids の両方を指定可能です。
+    order_ids は商品準備中の注文（Shipment未作成）用です。
+    両方指定した場合は1つのCSVにまとめて出力されます。
+
     Args:
-        data: エクスポート対象のshipment_idsリスト
+        data: エクスポート対象のshipment_ids/order_idsリスト
 
     Returns:
         UTF-8 BOM付きCSVファイル
     """
-    csv_bytes, filename = await service.export_csv(data.shipment_ids)
+    csv_bytes, filename = await service.export_csv(
+        shipment_ids=data.shipment_ids,
+        order_ids=data.order_ids,
+    )
 
     encoded_filename = quote(filename)
 
@@ -117,8 +124,16 @@ async def download_thumbnails(
     service: Annotated[ShipmentService, Depends(get_shipment_service)],
     current_user: Annotated[User, Depends(get_current_admin)],
 ) -> StreamingResponse:
-    """配送サムネイル画像をZIPファイルとしてダウンロード."""
-    zip_bytes, filename = await service.download_thumbnails(data.shipment_ids)
+    """配送サムネイル画像をZIPファイルとしてダウンロード.
+
+    shipment_ids と order_ids の両方を指定可能です。
+    order_ids は商品準備中の注文（Shipment未作成）用です。
+    両方指定した場合は1つのZIPにまとめて出力されます。
+    """
+    zip_bytes, filename = await service.download_thumbnails(
+        shipment_ids=data.shipment_ids,
+        order_ids=data.order_ids,
+    )
 
     encoded_filename = quote(filename)
     content_disposition = (
