@@ -317,15 +317,15 @@ class ManufacturerOrderService:
         update_status=True かつメーカーポータルからの呼び出しの場合、
         「発注中（ORDERED）」ステータスの明細のみ「製造中（MANUFACTURING）」に更新する。
 
-        FEAT-0012 命名規則:
-        - ZIP名: {type_folder_name}.zip
+        命名規則:
+        - ZIP名: TAPI_{メーカー名}_発注資料.zip
         - タイプフォルダ: {商品種類カテゴリ}_{YYYYMMDD}
         - Tシャツ特殊: Tシャツ- {印刷位置} -_{YYYYMMDD}
-        - CSV名: {prefix}発注リスト_{YYYYMMDD}.csv
+        - XLSX名: {prefix}発注リスト_{YYYYMMDD}.xlsx
         - 画像: {注文番号}_{製造番号}.png
         - 製造データ①: {商品フルネーム}【{数量}個】_{注文番号}_{製造番号}_{MMDD}.{ext}
         - 製造データ②: アクリルフィギュアのみ _stand.ai
-        - フラット配置（注文別サブフォルダなし）
+        - 注文番号別サブフォルダに配置（XLSXはタイプフォルダ直下）
 
         Args:
             manufacturer_id: メーカーID
@@ -405,21 +405,20 @@ class ManufacturerOrderService:
         zip_builder = ZipBuilder()
         date_str = now.strftime("%Y%m%d")
 
-        # タイプフォルダ名を収集（ZIP名に使う）
-        # RKSYO_ プレフィックスを付与
+        # タイプフォルダ名を収集
         type_folder_names: list[str] = []
 
         for group_key, group_items in items_by_group.items():
             item_product_type = group_key[0]
             product_type_name = get_product_type_name(item_product_type)
 
-            # タイプフォルダ名の決定（RKSYO_プレフィックス付き）
+            # タイプフォルダ名の決定
             if item_product_type == "tshirt":
                 position = group_key[1]
-                type_folder = f"RKSYO_Tシャツ- {position} -_{date_str}"
+                type_folder = f"Tシャツ- {position} -_{date_str}"
                 folder_prefix = f"Tシャツ- {position} -"
             else:
-                type_folder = f"RKSYO_{product_type_name}_{date_str}"
+                type_folder = f"{product_type_name}_{date_str}"
                 folder_prefix = product_type_name
 
             type_folder_names.append(type_folder)
@@ -431,7 +430,7 @@ class ManufacturerOrderService:
             )
             zip_builder.add_excel(f"{type_folder}/{xlsx_filename}", xlsx_content)
 
-            # 各アイテムのファイルをフラット配置
+            # 各アイテムのファイルを注文番号フォルダに配置
             for item in group_items:
                 order_number = item["order_number"]
                 uid = item.get("uid") or "unknown"
@@ -458,6 +457,9 @@ class ManufacturerOrderService:
                     f"_{order_number}_{uid}_{mmdd}{ext}"
                 )
 
+                # 注文番号フォルダのパスプレフィックス
+                order_folder = f"{type_folder}/{order_number}"
+
                 # デザイン画像（製造データ①）
                 if item.get("design_image_url"):
                     content, _original_filename = await self._download_file(
@@ -465,7 +467,7 @@ class ManufacturerOrderService:
                     )
                     if content:
                         zip_builder.add_file(
-                            f"{type_folder}/{mfg_filename}", content
+                            f"{order_folder}/{mfg_filename}", content
                         )
 
                 # サムネイル画像 → {注文番号}_{製造番号}.png
@@ -476,7 +478,7 @@ class ManufacturerOrderService:
                     if content:
                         image_filename = f"{order_number}_{uid}.png"
                         zip_builder.add_file(
-                            f"{type_folder}/{image_filename}", content
+                            f"{order_folder}/{image_filename}", content
                         )
 
                 # 製造データ②（アクリルフィギュアのみ: _stand.ai）
@@ -489,7 +491,7 @@ class ManufacturerOrderService:
                         f"_{order_number}_{uid}_{mmdd}_stand.ai"
                     )
                     zip_builder.add_file(
-                        f"{type_folder}/{stand_filename}", stand_content
+                        f"{order_folder}/{stand_filename}", stand_content
                     )
 
         # ZIP生成
@@ -506,8 +508,8 @@ class ManufacturerOrderService:
             for order_id in affected_order_ids:
                 await self._order_repo.update_order_derived_status(order_id)
 
-        # ZIP名: 単一タイプの場合はそのタイプフォルダ名、複数の場合は最初のタイプフォルダ名
-        zip_name = f"{type_folder_names[0]}.zip"
+        # ZIP名: TAPI_{メーカー名}_発注資料.zip
+        zip_name = f"TAPI_{manufacturer.name}_発注資料.zip"
 
         return zip_bytes, zip_name
 
