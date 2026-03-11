@@ -65,7 +65,7 @@ export default function ManufacturerDashboardPage() {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${manufacturerName}_発注資料.zip`;
+      link.download = `TAPI_${manufacturerName}_発注資料.zip`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
