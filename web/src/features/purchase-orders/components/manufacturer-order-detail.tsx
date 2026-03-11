@@ -190,7 +190,7 @@ export function ManufacturerOrderDetail({
       const blobUrl = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = `${data.manufacturer_name}_発注資料.zip`;
+      a.download = `TAPI_${data.manufacturer_name}_発注資料.zip`;
       a.click();
       window.URL.revokeObjectURL(blobUrl);
     } catch (error) {
