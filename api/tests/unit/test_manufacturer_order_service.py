@@ -389,7 +389,7 @@ class TestFeat0012NamingRules:
     - ZIP名: TAPI_{メーカー名}_発注資料.zip
     - タイプフォルダ: {商品種類カテゴリ}_{YYYYMMDD}
     - Tシャツ特殊: Tシャツ- {印刷位置} -_{YYYYMMDD}
-    - XLSX名: {prefix}発注リスト_{YYYYMMDD}.xlsx (商品名・原価列なし)
+    - XLSX名: {prefix}_発注リスト_{YYYYMMDD}.xlsx (商品名・原価列なし)
     - 画像: {注文番号}_{製造番号}.png
     - 製造データ①: {商品フルネーム}【{数量}個】_{注文番号}_{製造番号}_{MMDD}.{ext}
     - 製造データ②: アクリルフィギュアのみ _stand.ai
@@ -708,11 +708,11 @@ class TestFeat0012NamingRules:
     async def test_xlsx_filename_for_acrylic_keychain(
         self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
     ):
-        """XLSX名: アクリルキーホルダー発注リスト_20260224.xlsx
+        """XLSX名: アクリルキーホルダー_発注リスト_20260224.xlsx
 
         given: acrylic_keychain の明細
         when: ZIPを生成する
-        then: XLSXが 'アクリルキーホルダー発注リスト_20260224.xlsx' の名前で含まれる
+        then: XLSXが 'アクリルキーホルダー_発注リスト_20260224.xlsx' の名前で含まれる
         """
         items = [
             _make_order_item(
@@ -728,17 +728,17 @@ class TestFeat0012NamingRules:
 
         paths = self._get_zip_paths(zip_bytes)
         xlsx_files = [p for p in paths if p.endswith(".xlsx")]
-        assert any("アクリルキーホルダー発注リスト_20260224.xlsx" in xlsx for xlsx in xlsx_files)
+        assert any("アクリルキーホルダー_発注リスト_20260224.xlsx" in xlsx for xlsx in xlsx_files)
 
     @pytest.mark.asyncio
     async def test_xlsx_filename_for_tshirt_with_position(
         self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
     ):
-        """XLSX名: Tシャツ- 正面 -発注リスト_20260224.xlsx
+        """XLSX名: Tシャツ- 正面 -_発注リスト_20260224.xlsx
 
         given: Tシャツ正面の明細
         when: ZIPを生成する
-        then: XLSXが 'Tシャツ- 正面 -発注リスト_20260224.xlsx' の名前で含まれる
+        then: XLSXが 'Tシャツ- 正面 -_発注リスト_20260224.xlsx' の名前で含まれる
         """
         items = [
             _make_order_item(
@@ -755,13 +755,13 @@ class TestFeat0012NamingRules:
 
         paths = self._get_zip_paths(zip_bytes)
         xlsx_files = [p for p in paths if p.endswith(".xlsx")]
-        assert any("Tシャツ- 正面 -発注リスト_20260224.xlsx" in xlsx for xlsx in xlsx_files)
+        assert any("Tシャツ- 正面 -_発注リスト_20260224.xlsx" in xlsx for xlsx in xlsx_files)
 
     @pytest.mark.asyncio
     async def test_xlsx_filename_for_acrylic_figure(
         self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
     ):
-        """XLSX名: アクリルフィギュア発注リスト_20260224.xlsx"""
+        """XLSX名: アクリルフィギュア_発注リスト_20260224.xlsx"""
         items = [
             _make_order_item(
                 product_type="acrylic_stand",
@@ -777,7 +777,7 @@ class TestFeat0012NamingRules:
 
         paths = self._get_zip_paths(zip_bytes)
         xlsx_files = [p for p in paths if p.endswith(".xlsx")]
-        assert any("アクリルフィギュア発注リスト_20260224.xlsx" in xlsx for xlsx in xlsx_files)
+        assert any("アクリルフィギュア_発注リスト_20260224.xlsx" in xlsx for xlsx in xlsx_files)
 
     # -------------------------------------------------------------------
     # 画像ファイル名テスト
@@ -1235,7 +1235,7 @@ class TestFeat0012NamingRules:
         when: ZIPを生成する
         then: 以下の構造になる
           アクリルキーホルダー_20260224/
-            アクリルキーホルダー発注リスト_20260224.xlsx
+            アクリルキーホルダー_発注リスト_20260224.xlsx
             POD-20260101-0002/
               POD-20260101-0002_def456.png
               アクリルキーホルダー - 50x50 (mm) - アクリル【個数】2個_POD-20260101-0002_def456_0224.ai
@@ -1268,7 +1268,7 @@ class TestFeat0012NamingRules:
 
         # 期待されるファイル
         expected_files = [
-            f"{type_folder}/アクリルキーホルダー発注リスト_20260224.xlsx",
+            f"{type_folder}/アクリルキーホルダー_発注リスト_20260224.xlsx",
             f"{type_folder}/POD-20260101-0002/POD-20260101-0002_def456.png",
             f"{type_folder}/POD-20260101-0002/アクリルキーホルダー - 50x50 (mm) - アクリル【個数】2個_POD-20260101-0002_def456_0224.ai",
         ]
@@ -1286,7 +1286,7 @@ class TestFeat0012NamingRules:
         when: ZIPを生成する
         then: 以下の構造になる
           アクリルフィギュア_20260224/
-            アクリルフィギュア発注リスト_20260224.xlsx
+            アクリルフィギュア_発注リスト_20260224.xlsx
             POD-20260101-0003/
               POD-20260101-0003_ghi789.png
               アクリルフィギュア - 70x70mm - アクリル【個数】1個_POD-20260101-0003_ghi789_0224.ai
@@ -1320,7 +1320,7 @@ class TestFeat0012NamingRules:
 
         # 期待されるファイル（スタンドファイル含む）
         expected_files = [
-            f"{type_folder}/アクリルフィギュア発注リスト_20260224.xlsx",
+            f"{type_folder}/アクリルフィギュア_発注リスト_20260224.xlsx",
             f"{type_folder}/POD-20260101-0003/POD-20260101-0003_ghi789.png",
             f"{type_folder}/POD-20260101-0003/アクリルフィギュア - 70x70mm - アクリル【個数】1個_POD-20260101-0003_ghi789_0224.ai",
             f"{type_folder}/POD-20260101-0003/アクリルフィギュア - 70x70mm - アクリル【個数】1個_POD-20260101-0003_ghi789_0224_stand.ai",
@@ -1339,7 +1339,7 @@ class TestFeat0012NamingRules:
         when: ZIPを生成する
         then: 以下の構造になる
           Tシャツ- 正面 -_20260224/
-            Tシャツ- 正面 -発注リスト_20260224.xlsx
+            Tシャツ- 正面 -_発注リスト_20260224.xlsx
             POD-20260101-0001/
               POD-20260101-0001_abc123.png
               Tシャツ - M - 正面 - 白【個数】1個_POD-20260101-0001_abc123_0224_front.pdf
@@ -1374,7 +1374,7 @@ class TestFeat0012NamingRules:
         type_folder = "Tシャツ- 正面 -_20260224"
 
         expected_files = [
-            f"{type_folder}/Tシャツ- 正面 -発注リスト_20260224.xlsx",
+            f"{type_folder}/Tシャツ- 正面 -_発注リスト_20260224.xlsx",
             f"{type_folder}/POD-20260101-0001/POD-20260101-0001_abc123.png",
             f"{type_folder}/POD-20260101-0001/Tシャツ - M - 正面 - 白【個数】1個_POD-20260101-0001_abc123_0224_front.pdf",
         ]

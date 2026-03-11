@@ -424,7 +424,7 @@ class ManufacturerOrderService:
             type_folder_names.append(type_folder)
 
             # Excel追加（CSV→XLSX変更）
-            xlsx_filename = f"{folder_prefix}発注リスト_{date_str}.xlsx"
+            xlsx_filename = f"{folder_prefix}_発注リスト_{date_str}.xlsx"
             xlsx_content = self._order_list_gen.generate_order_list_xlsx(
                 group_items, product_type=item_product_type
             )
