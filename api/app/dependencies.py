@@ -29,6 +29,7 @@ from app.services.order_image_service import OrderImageService
 from app.services.order_list_service import OrderListService
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
+from app.services.email_service import EmailService
 from app.services.shipment_service import ShipmentService
 from app.utils.exceptions import ForbiddenError, UnauthorizedError
 from app.utils.file_storage import FileStorage, LocalFileStorage
@@ -125,14 +126,28 @@ def get_order_service(
     return OrderService(order_repo, product_repo, shipment_repo, order_source_repo)
 
 
+def get_email_service() -> EmailService | None:
+    """Get email service (None if SendGrid not configured)."""
+    if not settings.SENDGRID_API_KEY:
+        return None
+    return EmailService(
+        api_key=settings.SENDGRID_API_KEY,
+        from_email=settings.SENDGRID_FROM_EMAIL,
+        contact_email=settings.CONTACT_EMAIL,
+    )
+
+
 def get_shipment_service(
     shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
     order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
     file_storage: Annotated[FileStorage, Depends(lambda: LocalFileStorage(settings.UPLOAD_DIR))],
     order_source_repo: Annotated[OrderSourceRepository, Depends(get_order_source_repository)],
+    email_service: Annotated[EmailService | None, Depends(get_email_service)],
 ) -> ShipmentService:
     """Get shipment service."""
-    return ShipmentService(shipment_repo, order_repo, file_storage, order_source_repo)
+    return ShipmentService(
+        shipment_repo, order_repo, file_storage, order_source_repo, email_service
+    )
 
 
 def get_chat_service(

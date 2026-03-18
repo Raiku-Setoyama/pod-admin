@@ -259,11 +259,20 @@ export interface TrackingFileImportError {
   message: string;
 }
 
+export interface TrackingFileImportRowResult {
+  order_number: string;
+  tracking_number: string;
+  email_sent: boolean;
+}
+
 export interface TrackingFileImportResult {
   total_count: number;
   success_count: number;
   error_count: number;
+  email_sent_count: number;
+  email_failed_count: number;
   errors: TrackingFileImportError[];
+  results: TrackingFileImportRowResult[];
   updated_shipments: Shipment[];
 }
 

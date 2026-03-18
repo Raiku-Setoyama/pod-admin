@@ -35,6 +35,7 @@ from app.schemas.shipment import (
     ShipmentStatusUpdate,
     TrackingFileImportError,
     TrackingFileImportResult,
+    TrackingFileImportRowResult,
     TrackingImportRequest,
 )
 from app.utils.exceptions import InvalidStatusTransitionError, NotFoundError, ValidationError
@@ -56,11 +57,15 @@ class ShipmentService:
         order_repo: OrderRepository,
         file_storage: FileStorage,
         order_source_repo: OrderSourceRepository | None = None,
+        email_service: "EmailService | None" = None,
     ):
+        from app.services.email_service import EmailService  # noqa: F811
+
         self._shipment_repo = shipment_repo
         self._order_repo = order_repo
         self._file_storage = file_storage
         self._order_source_repo = order_source_repo
+        self._email_service = email_service
 
     async def create(self, data: ShipmentCreate) -> ShipmentResponse:
         """Create a new shipment."""
@@ -517,7 +522,10 @@ class ShipmentService:
 
         # 注文番号からshipmentを検索して更新
         success_count = 0
+        email_sent_count = 0
+        email_failed_count = 0
         updated_shipments: list[ShipmentResponse] = []
+        results: list[TrackingFileImportRowResult] = []
 
         for order_number, (tracking_number, carrier_value, row_num) in parsed_entries.items():
             # 注文を検索
@@ -541,18 +549,62 @@ class ShipmentService:
                 ))
                 continue
 
-            # 更新
+            # 伝票番号・運送会社の更新
             shipment.tracking_number = tracking_number
             if carrier_value is not None:
                 shipment.carrier = carrier_value
+
+            # 配送ステータス更新
+            shipment.status = ShipmentStatus.SHIPPED.value
+            shipment.shipped_at = datetime.now(timezone.utc)
+
+            # 注文ステータス更新
+            order.status = OrderStatus.SHIPPED.value
+
+            # メール送信（失敗してもDB更新はロールバックしない）
+            email_sent = False
+            if (
+                self._email_service
+                and order.customer_email
+                and not shipment.shipping_email_sent
+            ):
+                email_sent = await self._email_service.send_shipping_notification(
+                    to_email=order.customer_email,
+                    customer_name=order.customer_name or "",
+                    tracking_number=tracking_number,
+                    carrier_name=carrier_value or "",
+                    order_external_id=order.order_number,
+                    order_items=[
+                        {
+                            "product_name": item.product_name,
+                            "quantity": item.quantity,
+                            "thumbnail_image_url": item.thumbnail_image_url,
+                        }
+                        for item in order.items
+                    ],
+                )
+                if email_sent:
+                    shipment.shipping_email_sent = True
+                    email_sent_count += 1
+                else:
+                    email_failed_count += 1
+
             await self._shipment_repo.update(shipment)
             success_count += 1
+            results.append(TrackingFileImportRowResult(
+                order_number=order_number,
+                tracking_number=tracking_number,
+                email_sent=email_sent,
+            ))
 
         return TrackingFileImportResult(
             total_count=valid_row_count,
             success_count=success_count,
             error_count=len(errors),
+            email_sent_count=email_sent_count,
+            email_failed_count=email_failed_count,
             errors=errors,
+            results=results,
             updated_shipments=updated_shipments,
         )
 

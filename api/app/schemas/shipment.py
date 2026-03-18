@@ -221,11 +221,22 @@ class TrackingFileImportError(BaseModel):
     message: str
 
 
+class TrackingFileImportRowResult(BaseModel):
+    """伝票番号ファイルインポートの行ごとの結果"""
+
+    order_number: str
+    tracking_number: str
+    email_sent: bool
+
+
 class TrackingFileImportResult(BaseModel):
     """伝票番号ファイルインポートの結果"""
 
     total_count: int
     success_count: int
     error_count: int
+    email_sent_count: int = 0
+    email_failed_count: int = 0
     errors: list[TrackingFileImportError]
+    results: list[TrackingFileImportRowResult] = []
     updated_shipments: list[ShipmentResponse] = []
