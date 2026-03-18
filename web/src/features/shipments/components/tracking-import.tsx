@@ -126,6 +126,18 @@ export function TrackingImport({ onImportComplete }: TrackingImportProps) {
               {result.error_count > 0 && `、${result.error_count}件失敗`}
             </div>
 
+            {result.email_sent_count > 0 && (
+              <div className="p-3 text-sm bg-blue-50 border border-blue-200 rounded-md text-blue-700">
+                メール送信: {result.email_sent_count}件成功
+              </div>
+            )}
+
+            {result.email_failed_count > 0 && (
+              <div className="p-3 text-sm bg-orange-50 border border-orange-200 rounded-md text-orange-700">
+                メール送信失敗: {result.email_failed_count}件（配送情報は更新済み）
+              </div>
+            )}
+
             {result.errors.length > 0 && (
               <div className="p-3 text-sm bg-red-50 border border-red-200 rounded-md space-y-1">
                 <p className="font-medium text-red-700">エラー詳細:</p>
