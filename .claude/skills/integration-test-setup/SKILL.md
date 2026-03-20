@@ -1,6 +1,6 @@
 ---
 name: integration-test-setup
-description: バックエンド統合テスト環境の初期構築ガイド。tests/integration/が存在しない場合に参照。
+description: バックエンド統合テスト環境の初期構築ガイド（DBモック方式）。tests/integration/が存在しない場合に参照。
 allowed-tools: Read, Write, Edit, Bash(docker:*), Bash(npm:*), Bash(npx:*)
 ---
 
@@ -10,64 +10,43 @@ allowed-tools: Read, Write, Edit, Bash(docker:*), Bash(npm:*), Bash(npx:*)
 
 ## 概要
 
-統合テストは複数モジュール間の連携を実際のDB接続で検証する。
-モックを使わず、本番に近い環境でテストすることで信頼性を高める。
+統合テストは複数モジュール間の連携（API層〜サービス層）を検証する。
+DB操作はモック/スタブで分離し、実DBには接続しない。これにより:
+- テスト用DBコンテナの起動・停止が不要で高速
+- DB接続エラー・ポート競合等の環境依存問題が発生しない
+- CI/CD環境でも安定して動作する
 
 ```
-テストコード → Service → Repository → 実DB（Docker）
+テストコード → API/Router → Service → Repository（モック）
 ```
 
 ## 必須ファイル構成
 
+### TypeScript (vitest)
+
 ```
 tests/
 ├── integration/
-│   ├── setup.ts           # グローバルセットアップ
 │   ├── helpers.ts         # テストユーティリティ
 │   └── services/
 │       └── user.test.ts   # 統合テスト
-├── fixtures/
-│   └── users.json         # テストデータ
 └── vitest.integration.config.ts
-docker-compose.test.yml    # テスト用DB定義
-.env.test                  # テスト用環境変数
+```
+
+### Python (pytest)
+
+```
+tests/
+├── integration/
+│   ├── conftest.py        # フィクスチャ・モック設定
+│   └── test_user_api.py   # 統合テスト
 ```
 
 ---
 
-## セットアップ手順
+## TypeScript セットアップ
 
-### 1. docker-compose.test.yml（テスト用DB）
-
-```yaml
-version: '3.8'
-
-services:
-  test-db:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_USER: test
-      POSTGRES_PASSWORD: test
-      POSTGRES_DB: test_db
-    ports:
-      - "5433:5432"  # 本番と異なるポート
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U test -d test_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    tmpfs:
-      - /var/lib/postgresql/data  # メモリ上で高速化
-```
-
-### 2. .env.test（テスト用環境変数）
-
-```env
-DATABASE_URL=postgresql://test:test@localhost:5433/test_db
-NODE_ENV=test
-```
-
-### 3. vitest.integration.config.ts
+### 1. vitest.integration.config.ts
 
 ```typescript
 import { defineConfig } from 'vitest/config';
@@ -75,94 +54,57 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['tests/integration/**/*.test.ts'],
-    globalSetup: './tests/integration/setup.ts',
-    testTimeout: 30000,
-    hookTimeout: 30000,
-    pool: 'forks',        // テスト間の分離
-    poolOptions: {
-      forks: {
-        singleFork: true, // DB接続の競合を防ぐ
-      },
-    },
-    env: {
-      DATABASE_URL: 'postgresql://test:test@localhost:5433/test_db',
-    },
+    testTimeout: 10000,
   },
 });
 ```
 
-### 4. tests/integration/setup.ts（グローバルセットアップ）
+### 2. tests/integration/helpers.ts（テストユーティリティ）
 
 ```typescript
-import { execSync } from 'child_process';
+import { vi } from 'vitest';
 
-export async function setup() {
-  console.log('🔧 Starting test database...');
-
-  // テスト用DBコンテナを起動
-  execSync('docker compose -f docker-compose.test.yml up -d --wait', {
-    stdio: 'inherit',
-  });
-
-  // マイグレーション実行
-  execSync('npx prisma migrate deploy', {
-    stdio: 'inherit',
-    env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL },
-  });
-
-  console.log('✅ Test database ready');
+// Repository のモックファクトリ
+export function createMockRepository() {
+  return {
+    findById: vi.fn(),
+    findAll: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  };
 }
 
-export async function teardown() {
-  console.log('🧹 Stopping test database...');
-  execSync('docker compose -f docker-compose.test.yml down -v', {
-    stdio: 'inherit',
-  });
-}
+// API テスト用ヘルパー（フレームワークに合わせて調整）
+// Express の場合: supertest を使用
+// Hono の場合: app.request() を使用
+// Nest.js の場合: @nestjs/testing を使用
 ```
 
-### 5. tests/integration/helpers.ts（テストユーティリティ）
+### 3. tests/integration/services/user.test.ts（テスト例）
 
 ```typescript
-import { PrismaClient } from '@prisma/client';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createMockRepository } from '../helpers';
 
-const prisma = new PrismaClient();
+// モジュールのモック（実際のパスに合わせて調整）
+vi.mock('../../../src/repositories/user', () => ({
+  userRepository: createMockRepository(),
+}));
 
-// 各テスト前にデータをリセット
-export async function resetDatabase() {
-  const tables = await prisma.$queryRaw<{ tablename: string }[]>`
-    SELECT tablename FROM pg_tables WHERE schemaname = 'public'
-  `;
-
-  for (const { tablename } of tables) {
-    if (tablename !== '_prisma_migrations') {
-      await prisma.$executeRawUnsafe(`TRUNCATE TABLE "${tablename}" CASCADE`);
-    }
-  }
-}
-
-// フィクスチャデータの投入
-export async function seedUsers(users: Array<{ email: string; name: string }>) {
-  return prisma.user.createMany({ data: users });
-}
-
-export { prisma };
-```
-
-### 6. tests/integration/services/user.test.ts（テスト例）
-
-```typescript
-import { describe, it, expect, beforeEach } from 'vitest';
-import { resetDatabase, seedUsers, prisma } from '../helpers';
+import { userRepository } from '../../../src/repositories/user';
 import { createUser, getUserById } from '../../../src/services/user';
 
 describe('UserService Integration', () => {
-  beforeEach(async () => {
-    await resetDatabase();
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
   describe('createUser', () => {
-    it('should create a user in the database', async () => {
+    it('should create a user via service layer', async () => {
+      const mockUser = { id: 1, email: 'test@example.com', name: 'Test User' };
+      vi.mocked(userRepository.create).mockResolvedValue(mockUser);
+
       const result = await createUser({
         email: 'test@example.com',
         name: 'Test User',
@@ -170,17 +112,16 @@ describe('UserService Integration', () => {
 
       expect(result.id).toBeDefined();
       expect(result.email).toBe('test@example.com');
-
-      // DBに実際に保存されているか確認
-      const saved = await prisma.user.findUnique({
-        where: { id: result.id },
+      expect(userRepository.create).toHaveBeenCalledWith({
+        email: 'test@example.com',
+        name: 'Test User',
       });
-      expect(saved).not.toBeNull();
-      expect(saved?.email).toBe('test@example.com');
     });
 
     it('should reject duplicate email', async () => {
-      await seedUsers([{ email: 'existing@example.com', name: 'Existing' }]);
+      vi.mocked(userRepository.create).mockRejectedValue(
+        new Error('Email already exists')
+      );
 
       await expect(
         createUser({ email: 'existing@example.com', name: 'New' })
@@ -190,17 +131,19 @@ describe('UserService Integration', () => {
 
   describe('getUserById', () => {
     it('should return user when exists', async () => {
-      const [created] = await seedUsers([
-        { email: 'find@example.com', name: 'Find Me' },
-      ]);
+      const mockUser = { id: 1, email: 'find@example.com', name: 'Find Me' };
+      vi.mocked(userRepository.findById).mockResolvedValue(mockUser);
 
-      const result = await getUserById(created.id);
+      const result = await getUserById(1);
 
       expect(result).not.toBeNull();
       expect(result?.name).toBe('Find Me');
+      expect(userRepository.findById).toHaveBeenCalledWith(1);
     });
 
     it('should return null when not exists', async () => {
+      vi.mocked(userRepository.findById).mockResolvedValue(null);
+
       const result = await getUserById(99999);
       expect(result).toBeNull();
     });
@@ -208,14 +151,13 @@ describe('UserService Integration', () => {
 });
 ```
 
-### 7. package.json スクリプト
+### 4. package.json スクリプト
 
 ```json
 {
   "scripts": {
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "test:integration:watch": "vitest --config vitest.integration.config.ts",
     "test": "npm run test:unit && npm run test:integration"
   }
 }
@@ -223,125 +165,95 @@ describe('UserService Integration', () => {
 
 ---
 
-## フレームワーク別の補足
+## Python セットアップ
 
-### Prisma (Node.js)
-
-```typescript
-// setup.ts
-execSync('npx prisma migrate deploy', { ... });
-
-// helpers.ts - トランザクションでロールバック
-export async function withTransaction<T>(
-  fn: (tx: Prisma.TransactionClient) => Promise<T>
-): Promise<T> {
-  return prisma.$transaction(async (tx) => {
-    const result = await fn(tx);
-    throw new Error('ROLLBACK'); // 強制ロールバック
-  }).catch((e) => {
-    if (e.message === 'ROLLBACK') return result;
-    throw e;
-  });
-}
-```
-
-### SQLAlchemy (FastAPI/Python)
+### 1. tests/integration/conftest.py（フィクスチャ・モック設定）
 
 ```python
-# conftest.py
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from app.database import Base
+from unittest.mock import AsyncMock, MagicMock
 
-TEST_DATABASE_URL = "postgresql://test:test@localhost:5433/test_db"
-
-@pytest.fixture(scope="session")
-def engine():
-    return create_engine(TEST_DATABASE_URL)
-
-@pytest.fixture(scope="session")
-def tables(engine):
-    Base.metadata.create_all(engine)
-    yield
-    Base.metadata.drop_all(engine)
 
 @pytest.fixture
-def db_session(engine, tables):
-    connection = engine.connect()
-    transaction = connection.begin()
-    Session = sessionmaker(bind=connection)
-    session = Session()
+def mock_db_session():
+    """DB セッションのモック"""
+    session = AsyncMock()
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    session.close = AsyncMock()
+    return session
 
-    yield session
 
-    session.close()
-    transaction.rollback()  # 各テスト後にロールバック
-    connection.close()
+@pytest.fixture
+def mock_user_repository():
+    """UserRepository のモック"""
+    repo = AsyncMock()
+    repo.find_by_id = AsyncMock()
+    repo.find_all = AsyncMock()
+    repo.create = AsyncMock()
+    repo.update = AsyncMock()
+    repo.delete = AsyncMock()
+    return repo
 ```
+
+### 2. tests/integration/test_user_api.py（テスト例 — FastAPI）
 
 ```python
-# tests/integration/test_user_service.py
-def test_create_user(db_session):
-    result = user_service.create(db_session, UserCreate(
-        email="test@example.com",
-        name="Test User"
-    ))
+import pytest
+from unittest.mock import AsyncMock, patch
+from httpx import AsyncClient, ASGITransport
+from app.main import app
 
-    assert result.id is not None
-    assert result.email == "test@example.com"
 
-    # DBに保存されているか確認
-    saved = db_session.query(User).filter(User.id == result.id).first()
-    assert saved is not None
+@pytest.mark.asyncio
+async def test_create_user(mock_user_repository):
+    mock_user = {"id": 1, "email": "test@example.com", "name": "Test User"}
+    mock_user_repository.create.return_value = mock_user
+
+    with patch("app.services.user.user_repository", mock_user_repository):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/users",
+                json={"email": "test@example.com", "name": "Test User"},
+            )
+
+    assert response.status_code == 201
+    assert response.json()["email"] == "test@example.com"
+    mock_user_repository.create.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_user_not_found(mock_user_repository):
+    mock_user_repository.find_by_id.return_value = None
+
+    with patch("app.services.user.user_repository", mock_user_repository):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/users/99999")
+
+    assert response.status_code == 404
 ```
 
 ---
 
-## テストデータ戦略
+## モック方針
 
-### 方式1: 各テスト前にリセット + シード
+### 何をモックするか
 
-```typescript
-beforeEach(async () => {
-  await resetDatabase();
-  await seedUsers(fixtures.users);
-});
-```
+| モック対象 | 理由 |
+|-----------|------|
+| Repository 層（DB操作） | DB接続不要で安定・高速 |
+| 外部API呼び出し | ネットワーク依存を排除 |
+| ファイルシステム操作 | テスト環境の汚染を防止 |
 
-- シンプルで確実
-- テスト間の独立性が高い
-- 大量データでは遅くなる可能性
+### 何をモックしないか
 
-### 方式2: トランザクションロールバック
-
-```typescript
-beforeEach(async () => {
-  await prisma.$executeRaw`BEGIN`;
-});
-
-afterEach(async () => {
-  await prisma.$executeRaw`ROLLBACK`;
-});
-```
-
-- 高速
-- 複数接続では動作しない場合あり
-
-### 推奨: 方式1（リセット + シード）
-
-信頼性を優先し、テストの独立性を確保する。
-
----
-
-## トラブルシューティング
-
-| エラー | 原因 | 対処 |
-|--------|------|------|
-| ECONNREFUSED | テストDBコンテナ未起動 | `docker compose -f docker-compose.test.yml up -d` |
-| マイグレーション失敗 | スキーマ不整合 | `docker compose -f docker-compose.test.yml down -v` で初期化 |
-| テストがハング | 接続プール枯渇 | `singleFork: true` を設定 |
-| データ残留 | リセット漏れ | `beforeEach` で `resetDatabase()` を確実に呼ぶ |
+| モックしない対象 | 理由 |
+|-----------------|------|
+| Router → Service の結合 | 統合テストの本質（層間の連携検証） |
+| バリデーション | 入力チェックの動作確認が必要 |
+| ミドルウェア | 認証・エラーハンドリングの検証が必要 |
 
 ---
 
@@ -349,11 +261,8 @@ afterEach(async () => {
 
 新規プロジェクトで統合テスト環境を構築する際：
 
-1. [ ] `docker-compose.test.yml` を作成
-2. [ ] `.env.test` を作成
-3. [ ] `vitest.integration.config.ts` を作成
-4. [ ] `tests/integration/setup.ts` を作成
-5. [ ] `tests/integration/helpers.ts` を作成
-6. [ ] `package.json` にスクリプト追加
-7. [ ] `.gitignore` に `.env.test` を追加（必要に応じて）
-8. [ ] 最初の統合テストを作成して動作確認
+1. [ ] テスト設定ファイルを作成（`vitest.integration.config.ts` or pytest設定）
+2. [ ] `tests/integration/` ディレクトリを作成
+3. [ ] テストヘルパー/フィクスチャを作成（モックファクトリ）
+4. [ ] `package.json`（or `pyproject.toml`）にスクリプト追加
+5. [ ] 最初の統合テストを作成して動作確認

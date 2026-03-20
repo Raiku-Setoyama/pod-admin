@@ -11,54 +11,25 @@
           }
         ]
       }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write(*.ts)|Edit(*.ts)|Write(*.tsx)|Edit(*.tsx)",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "docker compose exec -T app npx tsc --noEmit --pretty 2>&1 | tail -20 || true",
-            "timeout": 60
-          }
-        ]
-      }
     ]
   },
   "permissions": {
     "allow": [
       "Read",
-      "Edit",
       "Write",
+      "Edit",
+      "MultiEdit",
+      "Bash(*)",
       "Glob",
       "Grep",
+      "LS",
       "Task",
-      "Bash(docker compose *)",
-      "Bash(docker *)",
-      "Bash(git *)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git push:*)",
-      "Bash(git checkout:*)",
-      "Bash(git branch:*)",
-      "Bash(git status:*)",
-      "Bash(git diff:*)",
-      "Bash(git log:*)",
-      "Bash(gh pr *)",
-      "Bash(gh pr create:*)",
-      "Bash(gh auth:*)",
-      "Bash(gh repo:*)",
-      "Bash(npm *)",
-      "Bash(npx *)",
-      "Bash(uv:*)",
-      "Bash(uv lock:*)",
-      "Bash(mkdir *)",
-      "Bash(cat *)",
-      "Bash(ls *)",
-      "Bash(tree:*)",
-      "Bash(find *)",
-      "Bash(grep *)",
-      "Bash(make *)"
+      "WebFetch",
+      "WebSearch",
+      "TodoRead",
+      "TodoWrite",
+      "NotebookRead",
+      "NotebookEdit"
     ]
   }
 }

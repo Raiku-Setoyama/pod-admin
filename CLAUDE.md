@@ -1,106 +1,41 @@
-# プロジェクト規約（ADD方式）
-
-## 開発哲学
-
-このプロジェクトはADD思想に基づく。
-**コードの行ではなく、意図・制約・成果で品質を担保する。**
-
-原則:
-- Intent-First: すべての実装は構造化された意図仕様から始める
-- Test-Proven: 正しさはテストで証明する（人間のコード読解に依存しない）
-- Docker-First: 開発・テスト環境はDockerコンテナで完結させ、ローカルを汚さない
-- Full-Auto Default: 仕様→設計→実装→テスト→PR作成は原則AIが全自動で行う
-
----
-
-## 自動化パイプライン
-
-`/ship` 実行時、以下のサブエージェントを順に呼び出して全自動で処理する:
-
-| Phase | サブエージェント | 役割 |
-|---|---|---|
-| 1 | spec-writer | 自然言語→Intent Spec（YAML）に変換、`.claude/specs/` に保存 |
-| 2 | architect | 変更対象の特定、アーキテクチャ判断、実装順序の決定 |
-| 3 | tdd-writer | ユニットテスト（`tests/unit/`）+ 統合テスト（`tests/integration/`）を生成。E2Eは明示依頼時のみ |
-| 4 | implementer | テストをパスするコードを実装 |
-| 5 | quality-gate | 6層検証（静的→Unit→Integration→E2E（オプション）→仕様適合→AI意味レビュー） |
-| 6 | /ship 自身 | 品質ゲートPASS時にコミット・プッシュ・PR作成 |
-
-FAIL時: implementer に戻して修正（最大3回）→ それでもFAILなら人間に報告
-
----
-
-## テスト戦略
-
-### 必須テスト（常に実行）
-
-**バックエンド（pytest）:**
-- **ユニットテスト**（`api/tests/unit/`、カバレッジ80%以上）
-  - 単一モジュール・関数の振る舞いを検証
-  - 外部依存はモック・スタブで分離
-- **統合テスト**（`api/tests/integration/`）
-  - 複数モジュール間の連携・DB接続・API呼び出しを検証
-  - Docker環境で実DBを使用（テスト用コンテナ）
-
-**フロントエンド（vitest）:**
-- **ユニットテスト**（`web/tests/unit/`、カバレッジ80%以上）
-  - コンポーネント・フック・ユーティリティの振る舞いを検証
-  - API呼び出しはモック
-
-### オプションテスト（明示的に依頼された場合のみ）
-- **Playwright E2E**（`e2e/`、ブラウザからの統合検証）
-  - ユーザーが「E2Eテスト」「ブラウザテスト」等を明示的に依頼した場合のみ生成・実行
-  - デフォルトでは実行しない
-
-### テスト完遂ルール
-**すべてのテスト（ユニット・統合、E2Eがある場合はE2Eも）がパスするまで実装を続ける。**
-テストが失敗している状態でのコミット・PR作成は禁止。
-
-## Docker環境
-
-```bash
-# 開発環境（ルートから実行）
-docker compose up -d                                          # 全サービス起動（api + web + db）
-docker compose logs -f                                        # 全ログ表示
-
-# バックエンドテスト（pytest）
-docker compose exec api uv run pytest                         # 全テスト
-docker compose exec api uv run pytest tests/unit              # ユニットテスト
-docker compose exec api uv run pytest tests/integration       # 統合テスト
-docker compose exec api uv run pytest --cov=app --cov-report=term  # カバレッジ
-
-# フロントエンドテスト（vitest）
-docker compose exec web npm test                              # 全テスト（watch mode）
-docker compose exec web npm run test:run                      # 全テスト（single run）
-docker compose exec web npm run test:coverage                 # カバレッジ
-
-# E2E テスト（Playwright、明示依頼時のみ）
-docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm e2e
-```
-
-## コマンド
-
-- `/spec <要望>` — 対話型で仕様を詰め、確定後そのまま全自動実装へ
-- `/ship <要望>` — 全自動パイプライン（サブエージェントを順に呼び出す）
-- `/ship --spec <id>` — 過去の仕様ファイルから再実装
-
-## アーキテクチャガイド
-
-以下のスキルを参照:
-
-- **プロジェクト初期設定**: `.claude/skills/project-init/` — 技術スタック検出、Docker環境構築、テスト設定
-- **バックエンド**: `.claude/skills/fastapi-architecture/` — FastAPI レイヤードアーキテクチャ
-- **フロントエンド**: `.claude/skills/nextjs-architecture/` — Next.js App Router アーキテクチャ
-- **統合テスト環境**: `.claude/skills/integration-test-setup/` — Docker + 実DBを使った統合テスト環境（`tests/integration/` 未存在時に参照）
-- **E2E環境構築**: `.claude/skills/e2e-setup/` — Playwright E2E環境の初期セットアップ（`e2e/` 未存在時に参照）
-
-既存プロジェクトの場合は、そのプロジェクトの技術スタック・アーキテクチャに合わせる。
+# プロジェクト規約
 
 ## 技術スタック
 
-- **フロントエンド**: Next.js 16 / React 19 / TypeScript 5 / Tailwind CSS 4 / shadcn/ui
-- **バックエンド**: FastAPI / Python 3.12 / SQLAlchemy 2.0 (asyncpg) / Alembic
-- **データベース**: PostgreSQL 16
-- **テスト**: pytest（バックエンド）, vitest（フロントエンド）, Playwright（E2E、オプション）
-- **コンテナ**: Docker Compose
-- **パッケージ管理**: npm（web）, uv（api）
+- フロントエンド: Next.js 16 / React / TypeScript 5 / Tailwind CSS 4 / Radix UI
+- バックエンド: FastAPI / SQLAlchemy 2 (async) / Alembic / Pydantic 2
+- 言語: TypeScript (フロントエンド) / Python 3.12 (バックエンド)
+- データベース: PostgreSQL 16
+- テスト: vitest（フロントエンド）, pytest（バックエンド）, Playwright（E2E）
+- パッケージ管理: npm（フロントエンド）, uv（バックエンド）
+- コンテナ: Docker Compose
+
+---
+
+## カスタムコマンド
+
+このプロジェクトでは、ADD（AI-Driven Development）方式のカスタムコマンドを利用できます。
+
+| コマンド | 説明 |
+|----------|------|
+| `/spec <要望>` | 対話型で仕様を作成（GitHub Issue として登録） |
+| `/ship #<issue番号>` | GitHub Issue の仕様から全自動実装→PR作成 |
+
+**注意:** 上記コマンド使用時のみ、ADD方式のルール（テスト戦略、品質チェック等）が適用されます。
+通常のClaude Code使用時には、これらのルールは適用されません。
+
+詳細: `.claude/skills/add-methodology/SKILL.md`
+
+---
+
+## アーキテクチャガイド
+
+| スキル | 説明 |
+|--------|------|
+| `docker-env` | Docker環境のサービス検出・技術スタック判定・テスト実行コマンド |
+| `fastapi-architecture` | FastAPI レイヤードアーキテクチャ |
+| `nextjs-architecture` | Next.js App Router アーキテクチャ |
+| `integration-test-setup` | 統合テスト環境（DBモック方式） |
+| `add-methodology` | ADD方式の開発哲学・テスト戦略 |
+
+既存プロジェクトの場合は、そのプロジェクトの技術スタック・アーキテクチャに合わせる。
