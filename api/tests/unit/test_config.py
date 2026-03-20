@@ -56,3 +56,55 @@ def test_settings_cors_origins():
 
     assert "http://localhost:3000" in settings.CORS_ORIGINS
     assert "http://localhost:8080" in settings.CORS_ORIGINS
+
+
+# === FEAT-0030: リフレッシュトークン有効期限デフォルト値テスト ===
+
+
+def test_refresh_token_expire_days_default_is_30():
+    """REFRESH_TOKEN_EXPIRE_DAYSのデフォルト値が30日であること"""
+    from app.config import Settings
+
+    settings = Settings(
+        DATABASE_URL="postgresql+asyncpg://test:test@localhost:5432/testdb",
+        SECRET_KEY="test-secret-key-for-testing-only",
+        _env_file=None,
+    )
+
+    assert settings.REFRESH_TOKEN_EXPIRE_DAYS == 30, (
+        f"Expected REFRESH_TOKEN_EXPIRE_DAYS default to be 30, "
+        f"got {settings.REFRESH_TOKEN_EXPIRE_DAYS}"
+    )
+
+
+def test_refresh_token_expire_days_can_be_overridden():
+    """REFRESH_TOKEN_EXPIRE_DAYSが環境変数で上書き可能であること"""
+    os.environ["REFRESH_TOKEN_EXPIRE_DAYS"] = "60"
+    os.environ["DATABASE_URL"] = "postgresql+asyncpg://test:test@localhost:5432/testdb"
+    os.environ["SECRET_KEY"] = "test-secret-key"
+
+    from app.config import Settings
+
+    settings = Settings(_env_file=None)
+    assert settings.REFRESH_TOKEN_EXPIRE_DAYS == 60
+
+    # Cleanup
+    del os.environ["REFRESH_TOKEN_EXPIRE_DAYS"]
+    del os.environ["DATABASE_URL"]
+    del os.environ["SECRET_KEY"]
+
+
+def test_access_token_expire_minutes_unchanged():
+    """ACCESS_TOKEN_EXPIRE_MINUTESのデフォルト値が30分のままであること"""
+    from app.config import Settings
+
+    settings = Settings(
+        DATABASE_URL="postgresql+asyncpg://test:test@localhost:5432/testdb",
+        SECRET_KEY="test-secret-key-for-testing-only",
+        _env_file=None,
+    )
+
+    assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 30, (
+        f"Expected ACCESS_TOKEN_EXPIRE_MINUTES default to be 30, "
+        f"got {settings.ACCESS_TOKEN_EXPIRE_MINUTES}"
+    )

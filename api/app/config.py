@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # Security
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     API_KEY_HEADER: str = "X-API-Key"
 
     # CORS
