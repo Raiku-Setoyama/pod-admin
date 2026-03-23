@@ -198,6 +198,8 @@ class ShipmentService:
                 page=page,
                 limit=limit,
                 status=pending_order_status,
+                created_from=created_from,
+                created_to=created_to,
             )
             # Convert pending orders to responses
             for order in pending_orders:
