@@ -2,7 +2,6 @@
 
 from app.models.order import OrderStatus
 from app.models.product_attributes import (
-    PRODUCT_ATTRIBUTES,
     AcrylicKeychainSize,
     AcrylicStandSize,
     StickerSize,

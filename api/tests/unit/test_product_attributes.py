@@ -69,16 +69,16 @@ class TestProductAttributeSpec:
 
     def test_creation(self):
         spec = ProductAttributeSpec(
-            sizes=["S", "M"],
-            colors=["白"],
-            positions=["正面"],
+            sizes=("S", "M"),
+            colors=("白",),
+            positions=("正面",),
             required_size=True,
             required_color=True,
             required_position=False,
         )
-        assert spec.sizes == ["S", "M"]
-        assert spec.colors == ["白"]
-        assert spec.positions == ["正面"]
+        assert spec.sizes == ("S", "M")
+        assert spec.colors == ("白",)
+        assert spec.positions == ("正面",)
         assert spec.required_size is True
         assert spec.required_color is True
         assert spec.required_position is False
@@ -93,42 +93,42 @@ class TestProductAttributes:
 
     def test_tshirt_spec(self):
         spec = PRODUCT_ATTRIBUTES[ProductType.TSHIRT]
-        assert spec.sizes == ["S", "M", "L", "XL"]
-        assert spec.colors == ["白"]
-        assert spec.positions == ["正面"]
+        assert spec.sizes == ("S", "M", "L", "XL")
+        assert spec.colors == ("白",)
+        assert spec.positions == ("正面",)
         assert spec.required_size is True
         assert spec.required_color is True
         assert spec.required_position is True
 
     def test_acrylic_keychain_spec(self):
         spec = PRODUCT_ATTRIBUTES[ProductType.ACRYLIC_KEYCHAIN]
-        assert spec.sizes == ["50x50mm", "70x70mm", "100x100mm"]
-        assert spec.colors == ["アクリル"]
+        assert spec.sizes == ("50x50mm", "70x70mm", "100x100mm")
+        assert spec.colors == ("アクリル",)
         assert spec.required_size is True
         assert spec.required_color is False
         assert spec.required_position is False
 
     def test_acrylic_stand_spec(self):
         spec = PRODUCT_ATTRIBUTES[ProductType.ACRYLIC_STAND]
-        assert spec.sizes == ["50x50mm", "70x70mm", "100x100mm"]
-        assert spec.colors == ["アクリル"]
+        assert spec.sizes == ("50x50mm", "70x70mm", "100x100mm")
+        assert spec.colors == ("アクリル",)
         assert spec.required_size is True
         assert spec.required_color is False
         assert spec.required_position is False
 
     def test_sticker_spec(self):
         spec = PRODUCT_ATTRIBUTES[ProductType.STICKER]
-        assert spec.sizes == ["50x50mm", "70x70mm", "100x100mm"]
-        assert spec.colors == ["ホワイト"]
+        assert spec.sizes == ("50x50mm", "70x70mm", "100x100mm")
+        assert spec.colors == ("ホワイト",)
         assert spec.required_size is True
         assert spec.required_color is True
         assert spec.required_position is False
 
     def test_tote_bag_spec(self):
         spec = PRODUCT_ATTRIBUTES[ProductType.TOTE_BAG]
-        assert spec.sizes == ["M"]
-        assert spec.colors == ["ナチュラル"]
-        assert spec.positions == ["正面"]
+        assert spec.sizes == ("M",)
+        assert spec.colors == ("ナチュラル",)
+        assert spec.positions == ("正面",)
         assert spec.required_size is True
         assert spec.required_color is True
         assert spec.required_position is True
@@ -140,7 +140,7 @@ class TestGetAttributeSpec:
     def test_returns_spec_for_valid_type(self):
         spec = get_attribute_spec(ProductType.TSHIRT)
         assert isinstance(spec, ProductAttributeSpec)
-        assert spec.sizes == ["S", "M", "L", "XL"]
+        assert spec.sizes == ("S", "M", "L", "XL")
 
     def test_returns_spec_for_all_types(self):
         for pt in ProductType:
@@ -202,7 +202,7 @@ class TestValidateProductAttributes:
             validate_product_attributes(ProductType.TSHIRT, size="XXL", color="白", position="正面")
 
     def test_invalid_size_shows_valid_values(self):
-        with pytest.raises(ValidationError, match=r"Valid: \['S', 'M', 'L', 'XL'\]"):
+        with pytest.raises(ValidationError, match=r"Valid: \('S', 'M', 'L', 'XL'\)"):
             validate_product_attributes(ProductType.TSHIRT, size="XXL", color="白", position="正面")
 
     def test_invalid_color(self):

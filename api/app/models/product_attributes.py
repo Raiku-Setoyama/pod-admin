@@ -104,9 +104,9 @@ class ToteBagPosition(str, Enum):
 class ProductAttributeSpec:
     """Specification of valid attributes for a product type."""
 
-    sizes: list[str]
-    colors: list[str]
-    positions: list[str]
+    sizes: tuple[str, ...]
+    colors: tuple[str, ...]
+    positions: tuple[str, ...]
     required_size: bool
     required_color: bool
     required_position: bool
@@ -118,41 +118,41 @@ class ProductAttributeSpec:
 
 PRODUCT_ATTRIBUTES: dict[ProductType, ProductAttributeSpec] = {
     ProductType.TSHIRT: ProductAttributeSpec(
-        sizes=[e.value for e in TshirtSize],
-        colors=[e.value for e in TshirtColor],
-        positions=[e.value for e in TshirtPosition],
+        sizes=tuple(e.value for e in TshirtSize),
+        colors=tuple(e.value for e in TshirtColor),
+        positions=tuple(e.value for e in TshirtPosition),
         required_size=True,
         required_color=True,
         required_position=True,
     ),
     ProductType.ACRYLIC_KEYCHAIN: ProductAttributeSpec(
-        sizes=[e.value for e in AcrylicKeychainSize],
-        colors=[e.value for e in AcrylicKeychainColor],
-        positions=[],
+        sizes=tuple(e.value for e in AcrylicKeychainSize),
+        colors=tuple(e.value for e in AcrylicKeychainColor),
+        positions=(),
         required_size=True,
         required_color=False,
         required_position=False,
     ),
     ProductType.ACRYLIC_STAND: ProductAttributeSpec(
-        sizes=[e.value for e in AcrylicStandSize],
-        colors=[e.value for e in AcrylicStandColor],
-        positions=[],
+        sizes=tuple(e.value for e in AcrylicStandSize),
+        colors=tuple(e.value for e in AcrylicStandColor),
+        positions=(),
         required_size=True,
         required_color=False,
         required_position=False,
     ),
     ProductType.STICKER: ProductAttributeSpec(
-        sizes=[e.value for e in StickerSize],
-        colors=[e.value for e in StickerColor],
-        positions=[],
+        sizes=tuple(e.value for e in StickerSize),
+        colors=tuple(e.value for e in StickerColor),
+        positions=(),
         required_size=True,
         required_color=True,
         required_position=False,
     ),
     ProductType.TOTE_BAG: ProductAttributeSpec(
-        sizes=[e.value for e in ToteBagSize],
-        colors=[e.value for e in ToteBagColor],
-        positions=[e.value for e in ToteBagPosition],
+        sizes=tuple(e.value for e in ToteBagSize),
+        colors=tuple(e.value for e in ToteBagColor),
+        positions=tuple(e.value for e in ToteBagPosition),
         required_size=True,
         required_color=True,
         required_position=True,
@@ -166,7 +166,13 @@ PRODUCT_ATTRIBUTES: dict[ProductType, ProductAttributeSpec] = {
 
 def get_attribute_spec(product_type: ProductType) -> ProductAttributeSpec:
     """Return the attribute spec for a product type."""
-    return PRODUCT_ATTRIBUTES[product_type]
+    spec = PRODUCT_ATTRIBUTES.get(product_type)
+    if spec is None:
+        raise ValidationError(
+            f"No attribute spec defined for product type '{product_type.value}'. "
+            f"Please add it to PRODUCT_ATTRIBUTES registry."
+        )
+    return spec
 
 
 def validate_product_attributes(
