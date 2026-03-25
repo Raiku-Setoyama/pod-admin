@@ -6,8 +6,10 @@ from fastapi import APIRouter, Depends, Query
 
 from app.dependencies import get_current_admin, get_product_service
 from app.models.product import ProductType
+from app.models.product_attributes import PRODUCT_ATTRIBUTES, get_attribute_spec
 from app.models.user import User
 from app.schemas.product import (
+    ProductAttributeSpecResponse,
     ProductCreate,
     ProductListResponse,
     ProductResponse,
@@ -16,6 +18,43 @@ from app.schemas.product import (
 from app.services.product_service import ProductService
 
 router = APIRouter(prefix="/products", tags=["products"])
+
+
+@router.get("/attributes", response_model=list[ProductAttributeSpecResponse])
+async def list_product_attributes(
+    current_user: Annotated[User, Depends(get_current_admin)],
+) -> list[ProductAttributeSpecResponse]:
+    """List attribute specs for all product types."""
+    return [
+        ProductAttributeSpecResponse(
+            product_type=pt.value,
+            sizes=spec.sizes,
+            colors=spec.colors,
+            positions=spec.positions,
+            required_size=spec.required_size,
+            required_color=spec.required_color,
+            required_position=spec.required_position,
+        )
+        for pt, spec in PRODUCT_ATTRIBUTES.items()
+    ]
+
+
+@router.get("/attributes/{product_type}", response_model=ProductAttributeSpecResponse)
+async def get_product_attributes(
+    product_type: ProductType,
+    current_user: Annotated[User, Depends(get_current_admin)],
+) -> ProductAttributeSpecResponse:
+    """Get attribute spec for a specific product type."""
+    spec = get_attribute_spec(product_type)
+    return ProductAttributeSpecResponse(
+        product_type=product_type.value,
+        sizes=spec.sizes,
+        colors=spec.colors,
+        positions=spec.positions,
+        required_size=spec.required_size,
+        required_color=spec.required_color,
+        required_position=spec.required_position,
+    )
 
 
 @router.get("", response_model=ProductListResponse)

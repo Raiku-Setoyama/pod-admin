@@ -59,3 +59,15 @@ class ProductListResponse(BaseModel):
     total: int
     page: int
     limit: int
+
+
+class ProductAttributeSpecResponse(BaseModel):
+    """Product attribute spec response."""
+
+    product_type: str
+    sizes: list[str]
+    colors: list[str]
+    positions: list[str]
+    required_size: bool
+    required_color: bool
+    required_position: bool
