@@ -87,6 +87,8 @@ class AcrylicStandColor(str, Enum):
 class StickerSize(str, Enum):
     """ステッカーサイズ."""
 
+    MM50X50 = "50x50mm"
+    MM70X70 = "70x70mm"
     MM100X100 = "100x100mm"
 
 

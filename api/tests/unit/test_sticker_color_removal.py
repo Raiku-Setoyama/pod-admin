@@ -183,10 +183,10 @@ class TestStickerPriceCalculation:
             service._calculate_sticker_price(request)
 
     def test_ac006_sticker_price_succeeds_with_white_at_79_yen(self, service: ExternalService):
-        """AC-006: ステッカーの価格計算で「ホワイト」が成功すること
+        """AC-006: ステッカー100x100mmの価格計算で「ホワイト」が成功すること
 
         given: ExternalService の calculate_price
-        when: product_type=sticker, color=ホワイト で価格計算を実行する
+        when: product_type=sticker, size=100x100mm, color=ホワイト で価格計算を実行する
         then: 単価79円で価格計算が成功する
         """
         request = PriceCalculationRequest(
@@ -199,31 +199,31 @@ class TestStickerPriceCalculation:
         result = service._calculate_sticker_price(request)
 
         assert result.unit_price == 79, (
-            f"ステッカー「ホワイト」の単価は79円であるべきですが、{result.unit_price}円です。"
+            f"ステッカー100x100mmの単価は79円であるべきですが、{result.unit_price}円です。"
         )
         assert result.total_price == 79 * 3, (
             f"合計金額は {79 * 3}円であるべきですが、{result.total_price}円です。"
         )
         assert result.quantity == 3
 
-    def test_ac006_sticker_price_white_single_quantity(self, service: ExternalService):
-        """AC-006: ステッカー「ホワイト」の単品価格が79円であること
+    def test_ac006_sticker_price_50x50mm(self, service: ExternalService):
+        """AC-006: ステッカー50x50mmの単品価格が50円であること
 
         given: ExternalService の calculate_price
-        when: product_type=sticker, color=ホワイト, quantity=1 で価格計算を実行する
-        then: 単価79円、合計79円で成功する
+        when: product_type=sticker, size=50x50mm, color=ホワイト, quantity=1 で価格計算を実行する
+        then: 単価50円、合計50円で成功する
         """
         request = PriceCalculationRequest(
             product_type=ProductType.STICKER,
-            size="100x100mm",
+            size="50x50mm",
             color="ホワイト",
             quantity=1,
         )
 
         result = service._calculate_sticker_price(request)
 
-        assert result.unit_price == 79
-        assert result.total_price == 79
+        assert result.unit_price == 50
+        assert result.total_price == 50
 
 
 class TestStickerPricesDictionary:
@@ -234,32 +234,32 @@ class TestStickerPricesDictionary:
 
         given: STICKER_PRICES 辞書
         when: 辞書のキーを確認する
-        then: 「ホワイト」のみが存在し、「クリア」は存在しない
+        then: 「クリア」は存在しない
         """
         assert "クリア" not in STICKER_PRICES, (
             "STICKER_PRICES に「クリア」のエントリが存在します。削除が必要です。"
         )
 
-    def test_ac007_sticker_prices_has_only_white(self):
-        """AC-007: STICKER_PRICES に「ホワイト」のみが存在すること
+    def test_ac007_sticker_prices_keyed_by_size(self):
+        """AC-007: STICKER_PRICES がサイズベースであること
 
         given: STICKER_PRICES 辞書
         when: 辞書のキーを確認する
-        then: 「ホワイト」のキーのみが存在する
+        then: 全サイズのキーが存在する
         """
-        assert list(STICKER_PRICES.keys()) == ["ホワイト"], (
-            f"STICKER_PRICES のキーは ['ホワイト'] のみであるべきですが、"
+        assert list(STICKER_PRICES.keys()) == ["50x50mm", "70x70mm", "100x100mm"], (
+            f"STICKER_PRICES のキーはサイズベースであるべきですが、"
             f"{list(STICKER_PRICES.keys())} です。"
         )
 
-    def test_ac007_sticker_prices_white_is_79(self):
-        """AC-007: STICKER_PRICES の「ホワイト」の価格が79円であること
+    def test_ac007_sticker_prices_100x100mm_is_79(self):
+        """AC-007: STICKER_PRICES の 100x100mm の価格が79円であること
 
         given: STICKER_PRICES 辞書
-        when: 「ホワイト」の価格を確認する
+        when: 100x100mm の価格を確認する
         then: 79円である
         """
-        assert STICKER_PRICES.get("ホワイト") == 79, (
-            f"STICKER_PRICES の「ホワイト」の価格は79円であるべきですが、"
-            f"{STICKER_PRICES.get('ホワイト')}円です。"
+        assert STICKER_PRICES.get("100x100mm") == 79, (
+            f"STICKER_PRICES の 100x100mm の価格は79円であるべきですが、"
+            f"{STICKER_PRICES.get('100x100mm')}円です。"
         )

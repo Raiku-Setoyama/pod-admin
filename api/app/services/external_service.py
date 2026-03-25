@@ -41,7 +41,9 @@ ACRYLIC_STAND_PRICES = {
 }
 
 STICKER_PRICES = {
-    StickerColor.WHITE.value: 79,
+    StickerSize.MM50X50.value: 50,
+    StickerSize.MM70X70.value: 59,
+    StickerSize.MM100X100.value: 79,
 }
 
 
@@ -94,7 +96,6 @@ class ExternalService:
                 position=[p.value for p in ToteBagPosition],
             )
 
-        # Other product types not yet supported
         raise ValidationError(
             f"Product type '{product_type.value}' is not yet supported"
         )
@@ -251,8 +252,8 @@ class ExternalService:
                 f"Invalid color '{data.color}'. Valid colors: {valid_colors}"
             )
 
-        # Calculate price based on color
-        unit_price = STICKER_PRICES.get(data.color, 79)
+        # Calculate price based on size
+        unit_price = STICKER_PRICES.get(data.size, 79)
         total_price = unit_price * data.quantity
 
         return PriceCalculationResponse(
