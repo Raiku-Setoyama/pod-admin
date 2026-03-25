@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -26,7 +26,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { apiClient } from "@/lib/api/client";
-import type { Product, ProductType, Manufacturer, ManufacturerListResponse } from "@/types/api";
+import type { Product, ProductType, ManufacturerListResponse, ProductAttributeSpec } from "@/types/api";
 
 const productTypes: { value: ProductType; label: string }[] = [
   { value: "acrylic_keychain", label: "アクリルキーホルダー" },
@@ -63,6 +63,7 @@ interface ProductFormProps {
 }
 
 const fetcher = (url: string) => apiClient<ManufacturerListResponse>(url);
+const attributeFetcher = (url: string) => apiClient<ProductAttributeSpec>(url);
 
 export function ProductForm({
   product,
@@ -94,6 +95,23 @@ export function ProductForm({
       is_active: product?.is_active ?? true,
     },
   });
+
+  const selectedProductType = form.watch("product_type");
+
+  const { data: attributeSpec } = useSWR<ProductAttributeSpec>(
+    selectedProductType ? `/products/attributes/${selectedProductType}` : null,
+    attributeFetcher
+  );
+
+  // Reset attribute fields when product_type changes (new product only)
+  useEffect(() => {
+    if (!isEditing) {
+      form.setValue("size", "");
+      form.setValue("color", "");
+      form.setValue("position", "");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProductType]);
 
   const onSubmit = async (data: ProductFormValues) => {
     setIsSubmitting(true);
@@ -165,47 +183,86 @@ export function ProductForm({
             />
 
             <div className="grid grid-cols-3 gap-4">
-              <FormField
-                control={form.control}
-                name="size"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>サイズ（任意）</FormLabel>
-                    <FormControl>
-                      <Input placeholder="例: M, L, 50x50mm" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {attributeSpec && attributeSpec.sizes.length > 0 && (
+                <FormField
+                  control={form.control}
+                  name="size"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        サイズ{attributeSpec.required_size ? "（必須）" : "（任意）"}
+                      </FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="サイズを選択" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {attributeSpec.sizes.map((s) => (
+                            <SelectItem key={s} value={s}>{s}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
-              <FormField
-                control={form.control}
-                name="position"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>印刷位置（任意）</FormLabel>
-                    <FormControl>
-                      <Input placeholder="例: 正面, 背面" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {attributeSpec && attributeSpec.colors.length > 0 && (
+                <FormField
+                  control={form.control}
+                  name="color"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        カラー{attributeSpec.required_color ? "（必須）" : "（任意）"}
+                      </FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="カラーを選択" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {attributeSpec.colors.map((c) => (
+                            <SelectItem key={c} value={c}>{c}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
-              <FormField
-                control={form.control}
-                name="color"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>カラー（任意）</FormLabel>
-                    <FormControl>
-                      <Input placeholder="例: ホワイト, ブラック" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {attributeSpec && attributeSpec.positions.length > 0 && (
+                <FormField
+                  control={form.control}
+                  name="position"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        印刷位置{attributeSpec.required_position ? "（必須）" : "（任意）"}
+                      </FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="印刷位置を選択" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {attributeSpec.positions.map((p) => (
+                            <SelectItem key={p} value={p}>{p}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
             </div>
 
             <FormField
