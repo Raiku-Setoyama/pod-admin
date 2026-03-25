@@ -1,6 +1,7 @@
 """Product service."""
 
 from app.models.product import Product, ProductType
+from app.models.product_attributes import validate_product_attributes
 from app.repositories.manufacturer_repository import ManufacturerRepository
 from app.repositories.product_repository import ProductRepository
 from app.schemas.product import (
@@ -83,6 +84,14 @@ class ProductService:
         manufacturer = await self._manufacturer_repo.find_by_id(data.manufacturer_id)
         if not manufacturer:
             raise ManufacturerNotFoundError(data.manufacturer_id)
+
+        # Validate product attributes against registry
+        validate_product_attributes(
+            data.product_type,
+            size=data.size,
+            color=data.color,
+            position=data.position,
+        )
 
         # Check for duplicate product specification
         await self._check_duplicate(
@@ -169,6 +178,14 @@ class ProductService:
             update_data["color"]
             if "color" in update_data
             else product.color
+        )
+
+        # Validate product attributes against registry
+        validate_product_attributes(
+            ProductType(final_product_type),
+            size=final_size,
+            color=final_color,
+            position=final_position,
         )
 
         # Check for duplicate product specification (excluding self)
