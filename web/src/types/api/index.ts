@@ -330,6 +330,16 @@ export interface ProductListResponse {
   limit: number;
 }
 
+export interface ProductAttributeSpec {
+  product_type: ProductType;
+  sizes: string[];
+  colors: string[];
+  positions: string[];
+  required_size: boolean;
+  required_color: boolean;
+  required_position: boolean;
+}
+
 // Chat types
 export interface ChatAttachment {
   id: string;
