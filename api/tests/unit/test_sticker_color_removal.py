@@ -13,7 +13,7 @@ FEAT-0007: ステッカー商品タイプから「クリア」カラーを削除
 import pytest
 from unittest.mock import AsyncMock
 
-from app.models.order import StickerColor
+from app.models.product_attributes import StickerColor
 from app.models.product import ProductType
 from app.schemas.external import PriceCalculationRequest
 from app.services.external_service import ExternalService, STICKER_PRICES
