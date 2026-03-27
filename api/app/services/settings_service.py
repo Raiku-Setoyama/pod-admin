@@ -32,8 +32,12 @@ class SettingsService:
         """Get shipping preparation days setting."""
         setting = await self._system_setting_repo.get_by_key(SHIPPING_PREPARATION_DAYS_KEY)
         if setting:
+            try:
+                value = int(setting.value)
+            except (ValueError, TypeError):
+                value = SHIPPING_PREPARATION_DAYS_DEFAULT
             return ShippingPreparationDaysResponse(
-                value=int(setting.value),
+                value=value,
                 description=setting.description,
             )
         return ShippingPreparationDaysResponse(
@@ -59,7 +63,11 @@ class SettingsService:
         """Get shipping preparation days as integer (for internal use)."""
         setting = await self._system_setting_repo.get_by_key(SHIPPING_PREPARATION_DAYS_KEY)
         if setting:
-            return int(setting.value)
+            try:
+                value = int(setting.value)
+            except (ValueError, TypeError):
+                value = SHIPPING_PREPARATION_DAYS_DEFAULT
+            return value
         return SHIPPING_PREPARATION_DAYS_DEFAULT
 
     async def get_company_holidays(self) -> CompanyHolidayListResponse:

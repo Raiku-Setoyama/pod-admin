@@ -154,6 +154,14 @@ def get_email_service() -> EmailService | None:
     )
 
 
+def get_settings_service(
+    system_setting_repo: Annotated[SystemSettingRepository, Depends(get_system_setting_repository)],
+    company_holiday_repo: Annotated[CompanyHolidayRepository, Depends(get_company_holiday_repository)],
+) -> SettingsService:
+    """Get settings service."""
+    return SettingsService(system_setting_repo, company_holiday_repo)
+
+
 def get_shipment_service(
     shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
     order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
@@ -229,14 +237,6 @@ def get_invoice_service(
 ) -> InvoiceService:
     """Get invoice service."""
     return InvoiceService(manufacturer_repo, order_repo)
-
-
-def get_settings_service(
-    system_setting_repo: Annotated[SystemSettingRepository, Depends(get_system_setting_repository)],
-    company_holiday_repo: Annotated[CompanyHolidayRepository, Depends(get_company_holiday_repository)],
-) -> SettingsService:
-    """Get settings service."""
-    return SettingsService(system_setting_repo, company_holiday_repo)
 
 
 # File storage dependency

@@ -64,3 +64,18 @@ class TestAddBusinessDays:
         # Friday 3/27 + 5 = Fri 4/3
         result = add_business_days(date(2026, 3, 27), 5, set())
         assert result == date(2026, 4, 3)
+
+    def test_golden_week(self):
+        """GW期間の計算."""
+        # 2026-04-28 (Tuesday) + 5 business days
+        # 4/29 昭和の日(skip), 4/30(Thu=1), 5/1(Fri=2),
+        # 5/2-3(weekend skip), 5/4 みどりの日(skip),
+        # 5/5 こどもの日(skip), 5/6 振替休日(skip),
+        # 5/7(Thu=3), 5/8(Fri=4), 5/9-10(weekend skip), 5/11(Mon=5)
+        result = add_business_days(date(2026, 4, 28), 5, set())
+        assert result == date(2026, 5, 11)
+
+    def test_negative_days_raises_error(self):
+        """負の日数はエラーになる."""
+        with pytest.raises(ValueError, match="days must be non-negative"):
+            add_business_days(date(2026, 3, 30), -1, set())

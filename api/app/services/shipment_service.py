@@ -6,7 +6,6 @@ import asyncio
 import logging
 import mimetypes
 from datetime import date, datetime, timedelta, timezone
-from datetime import date as date_type
 from urllib.parse import urlparse
 
 from fastapi import HTTPException, UploadFile
@@ -144,10 +143,10 @@ class ShipmentService:
         self,
         orders: list,
         prep_days: int,
-        company_holidays: set[date_type],
-    ) -> date_type | None:
+        company_holidays: set[date],
+    ) -> date | None:
         """配送予定日を計算する."""
-        delivery_dates: list[date_type] = []
+        delivery_dates: list[date] = []
         for order in orders:
             if not order or not order.items:
                 continue
@@ -198,7 +197,7 @@ class ShipmentService:
 
         # Fetch settings for estimated shipping date calculation (once per request)
         prep_days = 5  # default
-        company_holidays: set[date_type] = set()
+        company_holidays: set[date] = set()
         if self._settings_service:
             prep_days = await self._settings_service.get_shipping_preparation_days_value()
             company_holidays = await self._settings_service.get_company_holiday_dates()

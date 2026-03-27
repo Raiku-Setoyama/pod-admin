@@ -35,9 +35,16 @@ class CompanyHolidayRepository:
 
     async def create(self, holiday_date: date, name: str) -> CompanyHoliday:
         """Create a new company holiday."""
+        from sqlalchemy.exc import IntegrityError
+        from app.utils.exceptions import ValidationError
+
         holiday = CompanyHoliday(date=holiday_date, name=name)
         self._db.add(holiday)
-        await self._db.flush()
+        try:
+            await self._db.flush()
+        except IntegrityError:
+            await self._db.rollback()
+            raise ValidationError(f"休日 {holiday_date} は既に登録されています")
         await self._db.refresh(holiday)
         return holiday
 

@@ -51,8 +51,8 @@ export function CompanyHolidays() {
       setNewDate("");
       setNewName("");
       await fetchHolidays();
-    } catch {
-      // ignore
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "追加に失敗しました");
     } finally {
       setAdding(false);
     }
@@ -64,8 +64,8 @@ export function CompanyHolidays() {
         method: "DELETE",
       });
       await fetchHolidays();
-    } catch {
-      // ignore
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "削除に失敗しました");
     }
   };
 

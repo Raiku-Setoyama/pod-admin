@@ -39,6 +39,9 @@ def add_business_days(start_date: date, days: int, company_holidays: set[date]) 
     Returns:
         加算後の日付
     """
+    if days < 0:
+        raise ValueError("days must be non-negative")
+
     current = start_date
     remaining = days
 
