@@ -4,10 +4,12 @@ import { PageContainer } from "@/components/layout/page-container";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { ShippingSettings } from "@/features/settings/components/shipping-settings";
+import { CompanyHolidays } from "@/features/settings/components/company-holidays";
 
 export default function SettingsPage() {
   return (
-    <PageContainer title="設定" description="アカウント設定">
+    <PageContainer title="設定" description="システム設定">
       <div className="max-w-2xl space-y-6">
         <Card>
           <CardHeader>
@@ -20,6 +22,9 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        <ShippingSettings />
+        <CompanyHolidays />
       </div>
     </PageContainer>
   );

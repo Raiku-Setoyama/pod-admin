@@ -60,6 +60,17 @@ function getDisplayId(item: ShipmentOrPendingOrder): string {
   return item.id.slice(0, 8);
 }
 
+function getEstimatedShippingDate(item: ShipmentOrPendingOrder): string {
+  const dateStr = "estimated_shipping_date" in item ? item.estimated_shipping_date : null;
+  if (!dateStr) return "-";
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
 function formatDate(dateString: string): string {
   const date = new Date(dateString);
   return date.toLocaleDateString("ja-JP", {
@@ -119,13 +130,14 @@ export function ShipmentList({
             <TableHead>商品数</TableHead>
             <TableHead>伝票番号</TableHead>
             <TableHead>作成日</TableHead>
+            <TableHead>配送予定日</TableHead>
             <TableHead>ステータス</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {shipments.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+              <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                 該当する配送がありません
               </TableCell>
             </TableRow>
@@ -159,6 +171,7 @@ export function ShipmentList({
                   <TableCell>{getItemCount(item)}点</TableCell>
                   <TableCell>{getTrackingNumber(item)}</TableCell>
                   <TableCell>{formatDate(item.created_at)}</TableCell>
+                  <TableCell>{getEstimatedShippingDate(item)}</TableCell>
                   <TableCell>
                     <StatusBadge status={item.status} />
                   </TableCell>

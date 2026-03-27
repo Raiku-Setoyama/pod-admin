@@ -192,6 +192,7 @@ export interface PendingOrder {
   status: PendingOrderStatus;
   created_at: string;
   order_items: OrderItemSummary[];
+  estimated_shipping_date: string | null;
 }
 
 export interface ShipmentItem {
@@ -212,6 +213,7 @@ export interface Shipment {
   packing_photo_path: string | null;
   shipped_at: string | null;
   delivered_at: string | null;
+  estimated_shipping_date: string | null;
   note: string | null;
   customer_name: string;
   customer_postal_code: string;
@@ -410,6 +412,22 @@ export interface ManufacturerProfile {
   bank_account_holder: string | null;
   representative_name: string | null;
   invoice_notes: string | null;
+}
+
+// Settings types
+export interface ShippingPreparationDays {
+  value: number;
+  description: string | null;
+}
+
+export interface CompanyHoliday {
+  id: string;
+  date: string;
+  name: string;
+}
+
+export interface CompanyHolidayListResponse {
+  items: CompanyHoliday[];
 }
 
 export interface ManufacturerProfileUpdate {
