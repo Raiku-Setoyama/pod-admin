@@ -585,7 +585,7 @@ class OrderRepository:
         query = (
             select(Order)
             .options(
-                selectinload(Order.items),
+                selectinload(Order.items).selectinload(OrderItem.product),
                 selectinload(Order.order_source),
             )
             .where(*base_conditions)

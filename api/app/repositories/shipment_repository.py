@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.order import Order, OrderItem
+from app.models.product import Product
 from app.models.shipment import Shipment, ShipmentItem, ShipmentStatus
 
 
@@ -23,7 +24,8 @@ class ShipmentRepository:
             .options(
                 selectinload(Shipment.items)
                 .selectinload(ShipmentItem.order)
-                .selectinload(Order.items),
+                .selectinload(Order.items)
+                .selectinload(OrderItem.product),
                 selectinload(Shipment.items)
                 .selectinload(ShipmentItem.order)
                 .selectinload(Order.order_source),
@@ -39,7 +41,8 @@ class ShipmentRepository:
             .options(
                 selectinload(Shipment.items)
                 .selectinload(ShipmentItem.order)
-                .selectinload(Order.items),
+                .selectinload(Order.items)
+                .selectinload(OrderItem.product),
                 selectinload(Shipment.items)
                 .selectinload(ShipmentItem.order)
                 .selectinload(Order.order_source),
@@ -70,6 +73,7 @@ class ShipmentRepository:
             selectinload(Shipment.items)
             .selectinload(ShipmentItem.order)
             .selectinload(Order.items)
+            .selectinload(OrderItem.product),
         )
         count_query = select(func.count(Shipment.id))
 

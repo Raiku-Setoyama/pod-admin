@@ -1,6 +1,6 @@
 """Shipment schemas."""
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Literal, Union
 
@@ -47,6 +47,7 @@ class PendingOrderResponse(BaseModel):
     status: PendingOrderStatus
     created_at: datetime
     order_items: list[OrderItemSummary] = []
+    estimated_shipping_date: date | None = None
 
 
 class ShipmentCreate(BaseModel):
@@ -117,6 +118,7 @@ class ShipmentResponse(BaseModel):
     items: list[ShipmentItemResponse]
     created_at: datetime
     updated_at: datetime
+    estimated_shipping_date: date | None = None
 
     @computed_field
     @property

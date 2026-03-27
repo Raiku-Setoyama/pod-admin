@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import mimetypes
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+from datetime import date as date_type
 from urllib.parse import urlparse
 
 from fastapi import HTTPException, UploadFile
@@ -39,6 +40,7 @@ from app.schemas.shipment import (
     TrackingImportRequest,
 )
 from app.utils.exceptions import InvalidStatusTransitionError, NotFoundError, ValidationError
+from app.utils.business_day_calculator import add_business_days
 from app.utils.file_storage import FileStorage
 from app.utils.zip_builder import ZipBuilder
 
@@ -58,6 +60,7 @@ class ShipmentService:
         file_storage: FileStorage,
         order_source_repo: OrderSourceRepository | None = None,
         email_service: "EmailService | None" = None,
+        settings_service: "SettingsService | None" = None,
     ):
         from app.services.email_service import EmailService  # noqa: F811
 
@@ -66,6 +69,7 @@ class ShipmentService:
         self._file_storage = file_storage
         self._order_source_repo = order_source_repo
         self._email_service = email_service
+        self._settings_service = settings_service
 
     async def create(self, data: ShipmentCreate) -> ShipmentResponse:
         """Create a new shipment."""
@@ -136,6 +140,29 @@ class ShipmentService:
             limit=limit,
         )
 
+    def _calculate_estimated_shipping_date(
+        self,
+        orders: list,
+        prep_days: int,
+        company_holidays: set[date_type],
+    ) -> date_type | None:
+        """配送予定日を計算する."""
+        delivery_dates: list[date_type] = []
+        for order in orders:
+            if not order or not order.items:
+                continue
+            for order_item in order.items:
+                product = getattr(order_item, "product", None)
+                if product and hasattr(product, "lead_time_days") and product.lead_time_days:
+                    d = order.ordered_at.date() + timedelta(days=product.lead_time_days)
+                    delivery_dates.append(d)
+
+        if not delivery_dates:
+            return None
+
+        latest_delivery = max(delivery_dates)
+        return add_business_days(latest_delivery, prep_days, company_holidays)
+
     async def list_with_pending_orders(
         self,
         page: int = 1,
@@ -169,6 +196,13 @@ class ShipmentService:
         shipment_total = 0
         pending_total = 0
 
+        # Fetch settings for estimated shipping date calculation (once per request)
+        prep_days = 5  # default
+        company_holidays: set[date_type] = set()
+        if self._settings_service:
+            prep_days = await self._settings_service.get_shipping_preparation_days_value()
+            company_holidays = await self._settings_service.get_company_holiday_dates()
+
         # If filtering by PendingOrderStatus, skip shipments
         if pending_order_status is None:
             # Get shipments
@@ -189,7 +223,13 @@ class ShipmentService:
                 sort_order=sort_order,
             )
             # Convert shipments to responses
-            items = [self._to_response(shipment) for shipment in shipments]
+            for shipment in shipments:
+                response = self._to_response(shipment)
+                orders_for_calc = [si.order for si in shipment.items if si.order]
+                response.estimated_shipping_date = self._calculate_estimated_shipping_date(
+                    orders_for_calc, prep_days, company_holidays
+                )
+                items.append(response)
 
         # If filtering by ShipmentStatus, skip pending orders
         if shipment_status is None:
@@ -201,7 +241,11 @@ class ShipmentService:
             )
             # Convert pending orders to responses
             for order in pending_orders:
-                items.append(self._to_pending_order_response(order))
+                response = self._to_pending_order_response(order)
+                response.estimated_shipping_date = self._calculate_estimated_shipping_date(
+                    [order], prep_days, company_holidays
+                )
+                items.append(response)
 
         # Calculate total
         total = shipment_total + pending_total

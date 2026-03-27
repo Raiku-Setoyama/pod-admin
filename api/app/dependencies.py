@@ -160,10 +160,11 @@ def get_shipment_service(
     file_storage: Annotated[FileStorage, Depends(lambda: LocalFileStorage(settings.UPLOAD_DIR))],
     order_source_repo: Annotated[OrderSourceRepository, Depends(get_order_source_repository)],
     email_service: Annotated[EmailService | None, Depends(get_email_service)],
+    settings_service: Annotated[SettingsService, Depends(get_settings_service)],
 ) -> ShipmentService:
     """Get shipment service."""
     return ShipmentService(
-        shipment_repo, order_repo, file_storage, order_source_repo, email_service
+        shipment_repo, order_repo, file_storage, order_source_repo, email_service, settings_service
     )
 
 
