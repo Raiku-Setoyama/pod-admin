@@ -11,11 +11,13 @@ from app.database import get_db
 from app.models.manufacturer import Manufacturer
 from app.models.user import User, UserRole
 from app.repositories.chat_repository import ChatRepository
+from app.repositories.company_holiday_repository import CompanyHolidayRepository
 from app.repositories.manufacturer_repository import ManufacturerRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.order_source_repository import OrderSourceRepository
 from app.repositories.product_repository import ProductRepository
 from app.repositories.shipment_repository import ShipmentRepository
+from app.repositories.system_setting_repository import SystemSettingRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.chat_service import ChatService
@@ -30,6 +32,7 @@ from app.services.order_list_service import OrderListService
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
 from app.services.email_service import EmailService
+from app.services.settings_service import SettingsService
 from app.services.shipment_service import ShipmentService
 from app.utils.exceptions import ForbiddenError, UnauthorizedError
 from app.utils.file_storage import FileStorage, LocalFileStorage
@@ -91,6 +94,20 @@ def get_order_source_repository(
 ) -> OrderSourceRepository:
     """Get order source repository."""
     return OrderSourceRepository(db)
+
+
+def get_system_setting_repository(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> SystemSettingRepository:
+    """Get system setting repository."""
+    return SystemSettingRepository(db)
+
+
+def get_company_holiday_repository(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> CompanyHolidayRepository:
+    """Get company holiday repository."""
+    return CompanyHolidayRepository(db)
 
 
 # Service dependencies
@@ -211,6 +228,14 @@ def get_invoice_service(
 ) -> InvoiceService:
     """Get invoice service."""
     return InvoiceService(manufacturer_repo, order_repo)
+
+
+def get_settings_service(
+    system_setting_repo: Annotated[SystemSettingRepository, Depends(get_system_setting_repository)],
+    company_holiday_repo: Annotated[CompanyHolidayRepository, Depends(get_company_holiday_repository)],
+) -> SettingsService:
+    """Get settings service."""
+    return SettingsService(system_setting_repo, company_holiday_repo)
 
 
 # File storage dependency
