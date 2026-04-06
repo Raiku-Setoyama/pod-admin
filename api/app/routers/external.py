@@ -32,7 +32,7 @@ async def get_product_options(
     Returns the selectable attributes (size, color, position) for the specified product type.
     Currently only supports T-shirts.
     """
-    return service.get_product_options(product_type)
+    return await service.get_product_options(product_type)
 
 
 @router.post(
