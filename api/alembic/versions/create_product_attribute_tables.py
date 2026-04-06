@@ -69,7 +69,7 @@ def upgrade() -> None:
     )
 
     # Seed data: existing ENUM values
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
     options = []
 
     # Tシャツ
