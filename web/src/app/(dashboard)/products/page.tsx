@@ -130,10 +130,15 @@ export default function ProductsPage() {
       title="商品マスタ"
       description="商品情報の管理"
       actions={
-        <Button onClick={() => router.push("/products/new")}>
-          <Plus className="h-4 w-4" />
-          新規商品
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => router.push("/products/attributes")}>
+            属性管理
+          </Button>
+          <Button onClick={() => router.push("/products/new")}>
+            <Plus className="h-4 w-4" />
+            新規商品
+          </Button>
+        </div>
       }
     >
       <div className="space-y-4">
