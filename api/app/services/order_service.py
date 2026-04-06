@@ -14,25 +14,16 @@ import httpx
 from fastapi import HTTPException
 
 from app.models.order import (
-    AcrylicKeychainSize,
-    AcrylicStandSize,
     Order,
     OrderItem,
     OrderStatus,
-    StickerColor,
-    StickerSize,
-    ToteBagColor,
-    ToteBagPosition,
-    ToteBagSize,
-    TshirtColor,
-    TshirtPosition,
-    TshirtSize,
 )
 from app.models.product import ProductType
 from app.repositories.order_repository import OrderRepository
 from app.repositories.order_source_repository import OrderSourceRepository
 from app.repositories.product_repository import ProductRepository
 from app.repositories.shipment_repository import ShipmentRepository
+from app.services.product_attribute_service import ProductAttributeService
 from app.utils.zip_builder import ZipBuilder
 from app.models.shipment import Shipment
 from app.schemas.order import (
@@ -67,11 +58,13 @@ class OrderService:
         product_repo: ProductRepository,
         shipment_repo: ShipmentRepository,
         order_source_repo: OrderSourceRepository | None = None,
+        attribute_service: ProductAttributeService | None = None,
     ):
         self._order_repo = order_repo
         self._product_repo = product_repo
         self._shipment_repo = shipment_repo
         self._order_source_repo = order_source_repo
+        self._attribute_service = attribute_service
 
     async def create(
         self,
@@ -88,7 +81,7 @@ class OrderService:
         product_ids: dict[int, str] = {}  # index -> product_id
         for idx, item_data in enumerate(data.items):
             # Validate attributes based on product_type
-            self._validate_item_attributes(item_data)
+            await self._validate_item_attributes(item_data)
 
             # Find product by product_type and get product_id
             product = await self._product_repo.find_by_product_type(
@@ -137,18 +130,16 @@ class OrderService:
         order = await self._order_repo.create(order)
         return await self._to_response(order)
 
-    def _validate_item_attributes(self, item_data: OrderItemCreate) -> None:
-        """Validate item attributes based on product_type."""
-        if item_data.product_type == ProductType.TSHIRT:
-            self._validate_tshirt_attributes(item_data)
-        elif item_data.product_type == ProductType.ACRYLIC_KEYCHAIN:
-            self._validate_acrylic_keychain_attributes(item_data)
-        elif item_data.product_type == ProductType.ACRYLIC_STAND:
-            self._validate_acrylic_stand_attributes(item_data)
-        elif item_data.product_type == ProductType.STICKER:
-            self._validate_sticker_attributes(item_data)
-        elif item_data.product_type == ProductType.TOTE_BAG:
-            self._validate_tote_bag_attributes(item_data)
+    async def _validate_item_attributes(self, item_data: OrderItemCreate) -> None:
+        """Validate item attributes based on product_type using DB-registered options."""
+        if self._attribute_service:
+            await self._attribute_service.validate_attributes(
+                product_type=item_data.product_type.value,
+                size=item_data.size,
+                color=item_data.color,
+                position=item_data.position,
+                context=f"uid: {item_data.uid}" if item_data.uid else "",
+            )
 
     async def get_by_id(self, order_id: str) -> OrderResponse:
         """Get an order by ID."""
@@ -350,146 +341,6 @@ class OrderService:
             created_at=order.created_at,
             updated_at=order.updated_at,
         )
-
-    def _validate_tshirt_attributes(self, item_data) -> None:
-        """Tシャツ受注時の属性バリデーション."""
-        # サイズ必須・値検証
-        if not item_data.size:
-            raise ValidationError(
-                f"size is required for T-shirt (uid: {item_data.uid})"
-            )
-        try:
-            TshirtSize(item_data.size)
-        except ValueError:
-            valid_sizes = [s.value for s in TshirtSize]
-            raise ValidationError(
-                f"Invalid size '{item_data.size}'. Valid: {valid_sizes} (uid: {item_data.uid})"
-            )
-
-        # 色必須・値検証
-        if not item_data.color:
-            raise ValidationError(
-                f"color is required for T-shirt (uid: {item_data.uid})"
-            )
-        try:
-            TshirtColor(item_data.color)
-        except ValueError:
-            valid_colors = [c.value for c in TshirtColor]
-            raise ValidationError(
-                f"Invalid color '{item_data.color}'. Valid: {valid_colors} (uid: {item_data.uid})"
-            )
-
-        # 位置必須・値検証
-        if not item_data.position:
-            raise ValidationError(
-                f"position is required for T-shirt (uid: {item_data.uid})"
-            )
-        try:
-            TshirtPosition(item_data.position)
-        except ValueError:
-            valid_positions = [p.value for p in TshirtPosition]
-            raise ValidationError(
-                f"Invalid position '{item_data.position}'. Valid: {valid_positions} (uid: {item_data.uid})"
-            )
-
-    def _validate_acrylic_keychain_attributes(self, item_data) -> None:
-        """アクリルキーホルダー受注時の属性バリデーション."""
-        # サイズ必須・値検証
-        if not item_data.size:
-            raise ValidationError(
-                f"size is required for acrylic keychain (uid: {item_data.uid})"
-            )
-        try:
-            AcrylicKeychainSize(item_data.size)
-        except ValueError:
-            valid_sizes = [s.value for s in AcrylicKeychainSize]
-            raise ValidationError(
-                f"Invalid size '{item_data.size}'. Valid: {valid_sizes} (uid: {item_data.uid})"
-            )
-
-    def _validate_acrylic_stand_attributes(self, item_data) -> None:
-        """アクリルスタンド受注時の属性バリデーション."""
-        # サイズ必須・値検証
-        if not item_data.size:
-            raise ValidationError(
-                f"size is required for acrylic stand (uid: {item_data.uid})"
-            )
-        try:
-            AcrylicStandSize(item_data.size)
-        except ValueError:
-            valid_sizes = [s.value for s in AcrylicStandSize]
-            raise ValidationError(
-                f"Invalid size '{item_data.size}'. Valid: {valid_sizes} (uid: {item_data.uid})"
-            )
-
-    def _validate_sticker_attributes(self, item_data) -> None:
-        """ステッカー受注時の属性バリデーション."""
-        # サイズ必須・値検証
-        if not item_data.size:
-            raise ValidationError(
-                f"size is required for sticker (uid: {item_data.uid})"
-            )
-        try:
-            StickerSize(item_data.size)
-        except ValueError:
-            valid_sizes = [s.value for s in StickerSize]
-            raise ValidationError(
-                f"Invalid size '{item_data.size}'. Valid: {valid_sizes} (uid: {item_data.uid})"
-            )
-
-        # 色必須・値検証
-        if not item_data.color:
-            raise ValidationError(
-                f"color is required for sticker (uid: {item_data.uid})"
-            )
-        try:
-            StickerColor(item_data.color)
-        except ValueError:
-            valid_colors = [c.value for c in StickerColor]
-            raise ValidationError(
-                f"Invalid color '{item_data.color}'. Valid: {valid_colors} (uid: {item_data.uid})"
-            )
-
-    def _validate_tote_bag_attributes(self, item_data) -> None:
-        """トートバッグ受注時の属性バリデーション."""
-        # サイズ必須・値検証
-        if not item_data.size:
-            raise ValidationError(
-                f"size is required for tote bag (uid: {item_data.uid})"
-            )
-        try:
-            ToteBagSize(item_data.size)
-        except ValueError:
-            valid_sizes = [s.value for s in ToteBagSize]
-            raise ValidationError(
-                f"Invalid size '{item_data.size}'. Valid: {valid_sizes} (uid: {item_data.uid})"
-            )
-
-        # 色必須・値検証
-        if not item_data.color:
-            raise ValidationError(
-                f"color is required for tote bag (uid: {item_data.uid})"
-            )
-        try:
-            ToteBagColor(item_data.color)
-        except ValueError:
-            valid_colors = [c.value for c in ToteBagColor]
-            raise ValidationError(
-                f"Invalid color '{item_data.color}'. Valid: {valid_colors} (uid: {item_data.uid})"
-            )
-
-        # 位置必須・値検証
-        if not item_data.position:
-            raise ValidationError(
-                f"position is required for tote bag (uid: {item_data.uid})"
-            )
-        try:
-            ToteBagPosition(item_data.position)
-        except ValueError:
-            valid_positions = [p.value for p in ToteBagPosition]
-            raise ValidationError(
-                f"Invalid position '{item_data.position}'. Valid: {valid_positions} (uid: {item_data.uid})"
-            )
 
     async def bulk_update_status(
         self,
