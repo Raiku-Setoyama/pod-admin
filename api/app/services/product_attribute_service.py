@@ -1,9 +1,6 @@
 """Product attribute service."""
 
-from app.models.product_attribute import (
-    ProductAttributeOption,
-    ProductAttributeRequirement,
-)
+from app.models.product_attribute import ProductAttributeOption
 from app.repositories.product_attribute_repository import ProductAttributeRepository
 from app.schemas.product_attribute import (
     ProductAttributeOptionCreate,
