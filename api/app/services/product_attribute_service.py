@@ -44,6 +44,16 @@ class ProductAttributeService:
 
         suffix = f" ({context})" if context else ""
 
+        # Fetch all active options for this product_type in a single query
+        all_options = await self._repo.find_options(
+            product_type=product_type, is_active=True
+        )
+        options_by_name: dict[str, list[str]] = {}
+        for opt in all_options:
+            options_by_name.setdefault(opt.attribute_name, []).append(
+                opt.attribute_value
+            )
+
         for attr_name, attr_value, is_required in [
             ("size", size, requirement.required_size),
             ("color", color, requirement.required_color),
@@ -54,12 +64,7 @@ class ProductAttributeService:
                     f"{attr_name} is required for {product_type}{suffix}"
                 )
             if attr_value:
-                options = await self._repo.find_options(
-                    product_type=product_type,
-                    attribute_name=attr_name,
-                    is_active=True,
-                )
-                valid_values = [o.attribute_value for o in options]
+                valid_values = options_by_name.get(attr_name, [])
                 if attr_value not in valid_values:
                     raise ValidationError(
                         f"Invalid {attr_name} '{attr_value}'. "

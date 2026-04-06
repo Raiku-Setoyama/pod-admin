@@ -16,6 +16,7 @@ from app.models.chat_message import ChatAttachment, ChatMessage  # noqa: F401
 from app.models.manufacturer import Manufacturer  # noqa: F401
 from app.models.order import Order, OrderItem  # noqa: F401
 from app.models.product import Product  # noqa: F401
+from app.models.product_attribute import ProductAttributeOption, ProductAttributeRequirement  # noqa: F401
 from app.models.shipment import Shipment, ShipmentItem  # noqa: F401
 from app.models.user import User  # noqa: F401
 

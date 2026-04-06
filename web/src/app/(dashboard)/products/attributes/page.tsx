@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import useSWR from "swr";
+import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 import { PageContainer } from "@/components/layout/page-container";
 import { Button } from "@/components/ui/button";
@@ -62,6 +63,7 @@ export default function ProductAttributesPage() {
     display_order: 0,
   });
   const [error, setError] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   const {
     data: options,
@@ -101,20 +103,20 @@ export default function ProductAttributesPage() {
     }
   }, [selectedType, newOption, mutateOptions]);
 
-  const handleDeleteOption = useCallback(
-    async (optionId: string) => {
-      if (!confirm("この属性オプションを削除しますか？")) return;
-      try {
-        await apiClient(`/product-attributes/options/${optionId}`, {
-          method: "DELETE",
-        });
-        mutateOptions();
-      } catch {
-        alert("削除に失敗しました");
-      }
-    },
-    [mutateOptions]
-  );
+  const handleConfirmDelete = useCallback(async () => {
+    if (!deleteTargetId) return;
+    try {
+      await apiClient(`/product-attributes/options/${deleteTargetId}`, {
+        method: "DELETE",
+      });
+      mutateOptions();
+      toast.success("属性オプションを削除しました");
+    } catch {
+      toast.error("削除に失敗しました");
+    } finally {
+      setDeleteTargetId(null);
+    }
+  }, [deleteTargetId, mutateOptions]);
 
   const handleToggleActive = useCallback(
     async (optionId: string, currentActive: boolean) => {
@@ -125,7 +127,7 @@ export default function ProductAttributesPage() {
         });
         mutateOptions();
       } catch {
-        alert("更新に失敗しました");
+        toast.error("更新に失敗しました");
       }
     },
     [mutateOptions]
@@ -140,7 +142,7 @@ export default function ProductAttributesPage() {
         });
         mutateRequirement();
       } catch {
-        alert("更新に失敗しました");
+        toast.error("更新に失敗しました");
       }
     },
     [selectedType, mutateRequirement]
@@ -264,7 +266,7 @@ export default function ProductAttributesPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleDeleteOption(opt.id)}
+                              onClick={() => setDeleteTargetId(opt.id)}
                             >
                               <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
@@ -344,6 +346,26 @@ export default function ProductAttributesPage() {
               disabled={!newOption.attribute_value.trim()}
             >
               追加
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirm Dialog */}
+      <Dialog open={!!deleteTargetId} onOpenChange={(open) => !open && setDeleteTargetId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>属性オプションの削除</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            この属性オプションを削除しますか？この操作は元に戻せません。
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTargetId(null)}>
+              キャンセル
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDelete}>
+              削除
             </Button>
           </DialogFooter>
         </DialogContent>

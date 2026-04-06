@@ -162,7 +162,7 @@ class TestProductServiceList:
     @pytest.fixture
     def service(self, mock_product_repo, mock_manufacturer_repo):
         """テスト対象のサービスインスタンス"""
-        return ProductService(mock_product_repo, mock_manufacturer_repo)
+        return ProductService(mock_product_repo, mock_manufacturer_repo, AsyncMock())
 
     @pytest.mark.asyncio
     async def test_ac006_list_returns_manufacturer_name(
@@ -228,7 +228,7 @@ class TestProductServiceGetById:
     @pytest.fixture
     def service(self, mock_product_repo, mock_manufacturer_repo):
         """テスト対象のサービスインスタンス"""
-        return ProductService(mock_product_repo, mock_manufacturer_repo)
+        return ProductService(mock_product_repo, mock_manufacturer_repo, AsyncMock())
 
     @pytest.mark.asyncio
     async def test_ac007_get_by_id_returns_manufacturer_name(
@@ -272,7 +272,7 @@ class TestProductManufacturerNameNull:
     @pytest.fixture
     def service(self, mock_product_repo, mock_manufacturer_repo):
         """テスト対象のサービスインスタンス"""
-        return ProductService(mock_product_repo, mock_manufacturer_repo)
+        return ProductService(mock_product_repo, mock_manufacturer_repo, AsyncMock())
 
     @pytest.mark.asyncio
     async def test_ac008_manufacturer_none_returns_null_name(

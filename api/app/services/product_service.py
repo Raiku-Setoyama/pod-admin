@@ -3,13 +3,13 @@
 from app.models.product import Product, ProductType
 from app.repositories.manufacturer_repository import ManufacturerRepository
 from app.repositories.product_repository import ProductRepository
-from app.services.product_attribute_service import ProductAttributeService
 from app.schemas.product import (
     ProductCreate,
     ProductListResponse,
     ProductResponse,
     ProductUpdate,
 )
+from app.services.product_attribute_service import ProductAttributeService
 from app.utils.exceptions import (
     DuplicateProductError,
     ManufacturerNotFoundError,
@@ -24,7 +24,7 @@ class ProductService:
         self,
         product_repo: ProductRepository,
         manufacturer_repo: ManufacturerRepository,
-        attribute_service: ProductAttributeService | None = None,
+        attribute_service: ProductAttributeService,
     ):
         self._product_repo = product_repo
         self._manufacturer_repo = manufacturer_repo
@@ -88,13 +88,12 @@ class ProductService:
             raise ManufacturerNotFoundError(data.manufacturer_id)
 
         # Validate attributes against DB
-        if self._attribute_service:
-            await self._attribute_service.validate_attributes(
-                product_type=data.product_type.value,
-                size=data.size,
-                color=data.color,
-                position=data.position,
-            )
+        await self._attribute_service.validate_attributes(
+            product_type=data.product_type.value,
+            size=data.size,
+            color=data.color,
+            position=data.position,
+        )
 
         # Check for duplicate product specification
         await self._check_duplicate(
@@ -184,13 +183,12 @@ class ProductService:
         )
 
         # Validate attributes against DB
-        if self._attribute_service:
-            await self._attribute_service.validate_attributes(
-                product_type=final_product_type,
-                size=final_size,
-                color=final_color,
-                position=final_position,
-            )
+        await self._attribute_service.validate_attributes(
+            product_type=final_product_type,
+            size=final_size,
+            color=final_color,
+            position=final_position,
+        )
 
         # Check for duplicate product specification (excluding self)
         await self._check_duplicate(

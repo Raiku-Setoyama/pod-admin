@@ -108,6 +108,7 @@ class TestProductServiceDuplicateCheck:
         return ProductService(
             product_repo=mock_product_repo,
             manufacturer_repo=mock_manufacturer_repo,
+            attribute_service=AsyncMock(),
         )
 
     @pytest.mark.asyncio

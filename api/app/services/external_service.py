@@ -46,16 +46,17 @@ class ExternalService:
     ) -> PriceCalculationResponse:
         """Calculate price for a product with given attributes."""
         # Validate attributes via DB
-        if self._attribute_service:
-            await self._attribute_service.validate_attributes(
-                product_type=data.product_type.value,
-                size=data.size,
-                color=data.color,
-                position=data.position,
-            )
+        if not self._attribute_service:
+            raise ValidationError("Attribute service is not configured")
+        await self._attribute_service.validate_attributes(
+            product_type=data.product_type.value,
+            size=data.size,
+            color=data.color,
+            position=data.position,
+        )
 
         # Look up price from product master
-        product = await self._product_repo.find_duplicate(
+        product = await self._product_repo.find_by_attributes(
             product_type=data.product_type.value,
             size=data.size,
             position=data.position,

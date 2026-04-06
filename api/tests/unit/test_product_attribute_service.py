@@ -54,10 +54,10 @@ class TestValidateAttributes:
         mock_repo.find_requirement.return_value = _make_requirement(
             "tshirt", required_size=True, required_color=True, required_position=True
         )
-        mock_repo.find_options.side_effect = [
-            [_make_option("tshirt", "size", "M")],
-            [_make_option("tshirt", "color", "白")],
-            [_make_option("tshirt", "position", "正面")],
+        mock_repo.find_options.return_value = [
+            _make_option("tshirt", "size", "M"),
+            _make_option("tshirt", "color", "白"),
+            _make_option("tshirt", "position", "正面"),
         ]
 
         # Should not raise

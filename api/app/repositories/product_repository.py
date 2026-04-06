@@ -138,3 +138,35 @@ class ProductRepository:
         query = select(Product).where(and_(*conditions))
         result = await self._db.execute(query)
         return result.scalars().first()
+
+    async def find_by_attributes(
+        self,
+        product_type: str,
+        size: str,
+        position: str | None = None,
+        color: str | None = None,
+    ) -> Product | None:
+        """Find an active product by its attribute combination.
+
+        Unlike find_duplicate(), this method is intended for looking up
+        a product's master data (e.g., price) given its attributes.
+        """
+        conditions = [
+            Product.product_type == product_type,
+            Product.size == size,
+            Product.is_active == True,  # noqa: E712
+        ]
+
+        if position is None:
+            conditions.append(Product.position.is_(None))
+        else:
+            conditions.append(Product.position == position)
+
+        if color is None:
+            conditions.append(Product.color.is_(None))
+        else:
+            conditions.append(Product.color == color)
+
+        query = select(Product).where(and_(*conditions))
+        result = await self._db.execute(query)
+        return result.scalars().first()

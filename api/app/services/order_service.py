@@ -19,13 +19,11 @@ from app.models.order import (
     OrderStatus,
 )
 from app.models.product import ProductType
+from app.models.shipment import Shipment, ShipmentStatus
 from app.repositories.order_repository import OrderRepository
 from app.repositories.order_source_repository import OrderSourceRepository
 from app.repositories.product_repository import ProductRepository
 from app.repositories.shipment_repository import ShipmentRepository
-from app.services.product_attribute_service import ProductAttributeService
-from app.utils.zip_builder import ZipBuilder
-from app.models.shipment import Shipment
 from app.schemas.order import (
     ManufacturingDataInfo,
     OrderBulkStatusUpdateResponse,
@@ -36,7 +34,7 @@ from app.schemas.order import (
     OrderResponse,
     OrderShipmentInfo,
 )
-from app.models.shipment import ShipmentStatus
+from app.services.product_attribute_service import ProductAttributeService
 from app.utils.exceptions import (
     DuplicateError,
     InvalidStatusTransitionError,
@@ -45,6 +43,7 @@ from app.utils.exceptions import (
     ProductNotFoundError,
     ValidationError,
 )
+from app.utils.zip_builder import ZipBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -132,14 +131,15 @@ class OrderService:
 
     async def _validate_item_attributes(self, item_data: OrderItemCreate) -> None:
         """Validate item attributes based on product_type using DB-registered options."""
-        if self._attribute_service:
-            await self._attribute_service.validate_attributes(
-                product_type=item_data.product_type.value,
-                size=item_data.size,
-                color=item_data.color,
-                position=item_data.position,
-                context=f"uid: {item_data.uid}" if item_data.uid else "",
-            )
+        if not self._attribute_service:
+            raise ValidationError("ProductAttributeService is not configured")
+        await self._attribute_service.validate_attributes(
+            product_type=item_data.product_type.value,
+            size=item_data.size,
+            color=item_data.color,
+            position=item_data.position,
+            context=f"uid: {item_data.uid}" if item_data.uid else "",
+        )
 
     async def get_by_id(self, order_id: str) -> OrderResponse:
         """Get an order by ID."""
