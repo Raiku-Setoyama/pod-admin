@@ -13,6 +13,7 @@ from app.routers import (
     manufacturer_portal,
     manufacturers,
     orders,
+    product_attributes,
     products,
     shipments,
 )
@@ -76,6 +77,7 @@ app.include_router(shipments.router, prefix=settings.API_V1_PREFIX)
 app.include_router(chat.router, prefix=settings.API_V1_PREFIX)
 app.include_router(dashboard.router, prefix=settings.API_V1_PREFIX)
 app.include_router(external.router, prefix=settings.API_V1_PREFIX)
+app.include_router(product_attributes.router, prefix=settings.API_V1_PREFIX)
 
 
 # Test endpoints for exception handling (only in debug mode)
