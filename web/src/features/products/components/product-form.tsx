@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -27,6 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { apiClient } from "@/lib/api/client";
 import type { Product, ProductType, Manufacturer, ManufacturerListResponse } from "@/types/api";
+import { useProductAttributeSpec } from "@/features/product-attributes/hooks/use-product-attribute-options";
 
 const productTypes: { value: ProductType; label: string }[] = [
   { value: "acrylic_keychain", label: "アクリルキーホルダー" },
@@ -94,6 +95,20 @@ export function ProductForm({
       is_active: product?.is_active ?? true,
     },
   });
+
+  const watchedProductType = form.watch("product_type");
+  const { spec } = useProductAttributeSpec(watchedProductType);
+
+  // product_type が変更されたら属性フィールドをリセット
+  const prevProductTypeRef = useRef(watchedProductType);
+  useEffect(() => {
+    if (prevProductTypeRef.current !== watchedProductType) {
+      form.setValue("size", "");
+      form.setValue("position", "");
+      form.setValue("color", "");
+      prevProductTypeRef.current = watchedProductType;
+    }
+  }, [watchedProductType, form]);
 
   const onSubmit = async (data: ProductFormValues) => {
     setIsSubmitting(true);
@@ -165,43 +180,112 @@ export function ProductForm({
             />
 
             <div className="grid grid-cols-3 gap-4">
+              {/* Size */}
               <FormField
                 control={form.control}
                 name="size"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>サイズ（任意）</FormLabel>
-                    <FormControl>
-                      <Input placeholder="例: M, L, 50x50mm" {...field} />
-                    </FormControl>
+                    <FormLabel>
+                      サイズ{spec?.required_size ? "" : "（任意）"}
+                    </FormLabel>
+                    {spec && spec.sizes.length > 0 ? (
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value || ""}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="サイズを選択" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {spec.sizes.map((size) => (
+                            <SelectItem key={size} value={size}>
+                              {size}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <FormControl>
+                        <Input placeholder="例: M, L, 50x50mm" {...field} />
+                      </FormControl>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
+              {/* Position */}
               <FormField
                 control={form.control}
                 name="position"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>印刷位置（任意）</FormLabel>
-                    <FormControl>
-                      <Input placeholder="例: 正面, 背面" {...field} />
-                    </FormControl>
+                    <FormLabel>
+                      印刷位置{spec?.required_position ? "" : "（任意）"}
+                    </FormLabel>
+                    {spec && spec.positions.length > 0 ? (
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value || ""}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="印刷位置を選択" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {spec.positions.map((pos) => (
+                            <SelectItem key={pos} value={pos}>
+                              {pos}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <FormControl>
+                        <Input placeholder="例: 正面, 背面" {...field} />
+                      </FormControl>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
+              {/* Color */}
               <FormField
                 control={form.control}
                 name="color"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>カラー（任意）</FormLabel>
-                    <FormControl>
-                      <Input placeholder="例: ホワイト, ブラック" {...field} />
-                    </FormControl>
+                    <FormLabel>
+                      カラー{spec?.required_color ? "" : "（任意）"}
+                    </FormLabel>
+                    {spec && spec.colors.length > 0 ? (
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value || ""}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="カラーを選択" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {spec.colors.map((color) => (
+                            <SelectItem key={color} value={color}>
+                              {color}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <FormControl>
+                        <Input placeholder="例: ホワイト, ブラック" {...field} />
+                      </FormControl>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
