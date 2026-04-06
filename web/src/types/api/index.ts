@@ -424,3 +424,32 @@ export interface ManufacturerProfileUpdate {
   representative_name?: string | null;
   invoice_notes?: string | null;
 }
+
+// Product Attribute Options
+export interface ProductAttributeOption {
+  id: string;
+  product_type: ProductType;
+  attribute_name: "size" | "color" | "position";
+  attribute_value: string;
+  display_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductAttributeRequirement {
+  product_type: ProductType;
+  required_size: boolean;
+  required_color: boolean;
+  required_position: boolean;
+}
+
+export interface ProductAttributeSpec {
+  product_type: ProductType;
+  sizes: string[];
+  colors: string[];
+  positions: string[];
+  required_size: boolean;
+  required_color: boolean;
+  required_position: boolean;
+}
