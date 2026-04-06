@@ -110,19 +110,20 @@ def get_auth_service(
     return AuthService(user_repo)
 
 
-def get_product_service(
-    product_repo: Annotated[ProductRepository, Depends(get_product_repository)],
-    manufacturer_repo: Annotated[ManufacturerRepository, Depends(get_manufacturer_repository)],
-) -> ProductService:
-    """Get product service."""
-    return ProductService(product_repo, manufacturer_repo)
-
-
 def get_product_attribute_service(
     repo: Annotated[ProductAttributeRepository, Depends(get_product_attribute_repository)],
 ) -> ProductAttributeService:
     """Get product attribute service."""
     return ProductAttributeService(repo)
+
+
+def get_product_service(
+    product_repo: Annotated[ProductRepository, Depends(get_product_repository)],
+    manufacturer_repo: Annotated[ManufacturerRepository, Depends(get_manufacturer_repository)],
+    attribute_service: Annotated[ProductAttributeService, Depends(get_product_attribute_service)],
+) -> ProductService:
+    """Get product service."""
+    return ProductService(product_repo, manufacturer_repo, attribute_service)
 
 
 def get_manufacturer_service(
