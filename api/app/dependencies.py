@@ -14,6 +14,7 @@ from app.repositories.chat_repository import ChatRepository
 from app.repositories.manufacturer_repository import ManufacturerRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.order_source_repository import OrderSourceRepository
+from app.repositories.product_attribute_repository import ProductAttributeRepository
 from app.repositories.product_repository import ProductRepository
 from app.repositories.shipment_repository import ShipmentRepository
 from app.repositories.user_repository import UserRepository
@@ -28,6 +29,7 @@ from app.services.manufacturer_portal_service import ManufacturerPortalService
 from app.services.order_image_service import OrderImageService
 from app.services.order_list_service import OrderListService
 from app.services.order_service import OrderService
+from app.services.product_attribute_service import ProductAttributeService
 from app.services.product_service import ProductService
 from app.services.email_service import EmailService
 from app.services.shipment_service import ShipmentService
@@ -93,6 +95,13 @@ def get_order_source_repository(
     return OrderSourceRepository(db)
 
 
+def get_product_attribute_repository(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ProductAttributeRepository:
+    """Get product attribute repository."""
+    return ProductAttributeRepository(db)
+
+
 # Service dependencies
 def get_auth_service(
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
@@ -107,6 +116,13 @@ def get_product_service(
 ) -> ProductService:
     """Get product service."""
     return ProductService(product_repo, manufacturer_repo)
+
+
+def get_product_attribute_service(
+    repo: Annotated[ProductAttributeRepository, Depends(get_product_attribute_repository)],
+) -> ProductAttributeService:
+    """Get product attribute service."""
+    return ProductAttributeService(repo)
 
 
 def get_manufacturer_service(
