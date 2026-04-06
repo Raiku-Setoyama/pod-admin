@@ -7,7 +7,6 @@ Create Date: 2026-04-06
 
 import sqlalchemy as sa
 from alembic import op
-from datetime import datetime, timezone
 from uuid import uuid4
 
 revision = "create_product_attr_001"
@@ -69,7 +68,6 @@ def upgrade() -> None:
     )
 
     # Seed data: existing ENUM values
-    now = datetime.now(timezone.utc)
     options = []
 
     # Tシャツ
@@ -98,7 +96,7 @@ def upgrade() -> None:
     options.append(("tote_bag", "color", "ナチュラル", 1))
     options.append(("tote_bag", "position", "正面", 1))
 
-    # Insert options
+    # Insert options (created_at/updated_at use server_default)
     attr_table = sa.table(
         "product_attribute_options",
         sa.column("id", sa.String),
@@ -107,8 +105,6 @@ def upgrade() -> None:
         sa.column("attribute_value", sa.String),
         sa.column("display_order", sa.Integer),
         sa.column("is_active", sa.Boolean),
-        sa.column("created_at", sa.DateTime),
-        sa.column("updated_at", sa.DateTime),
     )
     op.bulk_insert(
         attr_table,
@@ -120,14 +116,12 @@ def upgrade() -> None:
                 "attribute_value": av,
                 "display_order": do,
                 "is_active": True,
-                "created_at": now,
-                "updated_at": now,
             }
             for pt, an, av, do in options
         ],
     )
 
-    # Insert requirements
+    # Insert requirements (created_at/updated_at use server_default)
     req_table = sa.table(
         "product_attribute_requirements",
         sa.column("id", sa.String),
@@ -135,8 +129,6 @@ def upgrade() -> None:
         sa.column("required_size", sa.Boolean),
         sa.column("required_color", sa.Boolean),
         sa.column("required_position", sa.Boolean),
-        sa.column("created_at", sa.DateTime),
-        sa.column("updated_at", sa.DateTime),
     )
     requirements = [
         ("tshirt", True, True, True),
@@ -154,8 +146,6 @@ def upgrade() -> None:
                 "required_size": rs,
                 "required_color": rc,
                 "required_position": rp,
-                "created_at": now,
-                "updated_at": now,
             }
             for pt, rs, rc, rp in requirements
         ],
