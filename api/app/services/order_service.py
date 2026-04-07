@@ -7,7 +7,7 @@ import csv
 import io
 import logging
 import mimetypes
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from urllib.parse import urlparse
 
 import httpx
@@ -33,6 +33,7 @@ from app.repositories.order_repository import OrderRepository
 from app.repositories.order_source_repository import OrderSourceRepository
 from app.repositories.product_repository import ProductRepository
 from app.repositories.shipment_repository import ShipmentRepository
+from app.utils.business_day_calculator import add_business_days
 from app.utils.zip_builder import ZipBuilder
 from app.models.shipment import Shipment
 from app.schemas.order import (
@@ -267,13 +268,10 @@ class OrderService:
             estimated_shipping_date=estimated_date,
         )
 
-    async def _calculate_estimated_shipping_date(self, order) -> "date | None":
+    async def _calculate_estimated_shipping_date(self, order: Order) -> date | None:
         """注文の納品予定日を計算する."""
         if not self._settings_service:
             return None
-
-        from datetime import date, timedelta
-        from app.utils.business_day_calculator import add_business_days
 
         prep_days = await self._settings_service.get_shipping_preparation_days_value()
         company_holidays = await self._settings_service.get_company_holiday_dates()

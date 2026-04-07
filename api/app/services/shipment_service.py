@@ -232,7 +232,6 @@ class ShipmentService:
             # Convert shipments to responses
             for shipment in shipments:
                 response = self._to_response(shipment)
-                response.estimated_shipping_date = shipment.estimated_shipping_date
                 items.append(response)
 
         # If filtering by ShipmentStatus, skip pending orders
@@ -933,6 +932,7 @@ class ShipmentService:
             customer_address_building=first_order.customer_address_building if first_order else None,
             customer_phone=first_order.customer_phone if first_order else "",
             items=items,
+            estimated_shipping_date=shipment.estimated_shipping_date,
             created_at=shipment.created_at,
             updated_at=shipment.updated_at,
         )

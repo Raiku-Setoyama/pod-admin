@@ -19,6 +19,7 @@ from app.schemas.manufacturer import (
     AllManufacturerOrderItemResponse,
     AllManufacturerOrderItemListResponse,
 )
+from app.utils.business_day_calculator import add_business_days
 from app.utils.exceptions import NotFoundError, NoOrderedItemsError
 from app.utils.order_list_generator import OrderListGenerator, get_product_type_name
 from app.utils.stand_file_config import get_stand_file_path
@@ -277,7 +278,7 @@ class ManufacturerOrderService:
 
         return len(updated_items), shipments_created
 
-    async def _create_shipment_for_order(self, order) -> bool:
+    async def _create_shipment_for_order(self, order: Order) -> bool:
         """Create a shipment for the delivered order.
 
         This method is idempotent - if a shipment already exists for the order,
@@ -296,13 +297,10 @@ class ManufacturerOrderService:
         )
         return True
 
-    async def _calculate_estimated_shipping_date(self, order) -> "date | None":
+    async def _calculate_estimated_shipping_date(self, order: Order) -> date | None:
         """注文の納品予定日を計算する."""
         if not self._settings_service:
             return None
-
-        from datetime import date, timedelta
-        from app.utils.business_day_calculator import add_business_days
 
         prep_days = await self._settings_service.get_shipping_preparation_days_value()
         company_holidays = await self._settings_service.get_company_holiday_dates()

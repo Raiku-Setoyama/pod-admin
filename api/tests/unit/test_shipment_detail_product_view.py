@@ -116,6 +116,7 @@ def create_mock_shipment(
     shipment.shipped_at = None
     shipment.delivered_at = None
     shipment.note = None
+    shipment.estimated_shipping_date = None
     shipment.created_at = datetime.now(timezone.utc)
     shipment.updated_at = datetime.now(timezone.utc)
     shipment.items = []
@@ -403,6 +404,7 @@ class TestShipmentDetailProductView:
         shipment.shipped_at = None
         shipment.delivered_at = None
         shipment.note = None
+        shipment.estimated_shipping_date = None
         shipment.created_at = datetime.now(timezone.utc)
         shipment.updated_at = datetime.now(timezone.utc)
 

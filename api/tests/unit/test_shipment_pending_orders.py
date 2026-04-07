@@ -293,6 +293,7 @@ class TestShipmentServiceListWithPendingOrders:
         mock_shipment.shipped_at = None
         mock_shipment.delivered_at = None
         mock_shipment.note = None
+        mock_shipment.estimated_shipping_date = None
         mock_shipment.created_at = datetime.now(timezone.utc)
         mock_shipment.updated_at = datetime.now(timezone.utc)
         mock_shipment.items = []
