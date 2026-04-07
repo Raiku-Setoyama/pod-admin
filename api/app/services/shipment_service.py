@@ -72,21 +72,36 @@ class ShipmentService:
 
     async def create(self, data: ShipmentCreate) -> ShipmentResponse:
         """Create a new shipment."""
-        # Verify all orders exist and are in the correct status
+        orders = []
         for order_id in data.order_ids:
             order = await self._order_repo.find_by_id(order_id)
             if not order:
                 raise ValidationError(f"Order {order_id} not found")
             if order.status != OrderStatus.DELIVERED.value:
                 raise ValidationError(f"Order {order_id} is not in delivered status")
-            # Check if shipment already exists for this order (prevent duplicates)
             if await self._shipment_repo.exists_for_order(order_id):
                 raise ValidationError(f"Order {order_id} already has a shipment")
+            orders.append(order)
 
-        # Create shipment (customer info is accessed via first order relationship)
-        shipment = await self._shipment_repo.create(order_ids=data.order_ids)
+        estimated_date = await self._calculate_estimated_shipping_date_for_orders(orders)
+        shipment = await self._shipment_repo.create(
+            order_ids=data.order_ids,
+            estimated_shipping_date=estimated_date,
+        )
 
         return self._to_response(shipment)
+
+    async def _calculate_estimated_shipping_date_for_orders(
+        self, orders: list
+    ) -> date | None:
+        """複数注文から納品予定日を計算する."""
+        if not self._settings_service:
+            return None
+
+        prep_days = await self._settings_service.get_shipping_preparation_days_value()
+        company_holidays = await self._settings_service.get_company_holiday_dates()
+
+        return self._calculate_estimated_shipping_date(orders, prep_days, company_holidays)
 
     async def get_by_id(self, shipment_id: str) -> ShipmentResponse:
         """Get a shipment by ID."""
@@ -151,8 +166,8 @@ class ShipmentService:
             if not order or not order.items:
                 continue
             for order_item in order.items:
-                product = getattr(order_item, "product", None)
-                if product and hasattr(product, "lead_time_days") and product.lead_time_days:
+                product = order_item.product if order_item.product else None
+                if product and product.lead_time_days is not None:
                     d = order.ordered_at.date() + timedelta(days=product.lead_time_days)
                     delivery_dates.append(d)
 
@@ -195,13 +210,6 @@ class ShipmentService:
         shipment_total = 0
         pending_total = 0
 
-        # Fetch settings for estimated shipping date calculation (once per request)
-        prep_days = 5  # default
-        company_holidays: set[date] = set()
-        if self._settings_service:
-            prep_days = await self._settings_service.get_shipping_preparation_days_value()
-            company_holidays = await self._settings_service.get_company_holiday_dates()
-
         # If filtering by PendingOrderStatus, skip shipments
         if pending_order_status is None:
             # Get shipments
@@ -224,10 +232,7 @@ class ShipmentService:
             # Convert shipments to responses
             for shipment in shipments:
                 response = self._to_response(shipment)
-                orders_for_calc = [si.order for si in shipment.items if si.order]
-                response.estimated_shipping_date = self._calculate_estimated_shipping_date(
-                    orders_for_calc, prep_days, company_holidays
-                )
+                response.estimated_shipping_date = shipment.estimated_shipping_date
                 items.append(response)
 
         # If filtering by ShipmentStatus, skip pending orders
@@ -241,9 +246,8 @@ class ShipmentService:
             # Convert pending orders to responses
             for order in pending_orders:
                 response = self._to_pending_order_response(order)
-                response.estimated_shipping_date = self._calculate_estimated_shipping_date(
-                    [order], prep_days, company_holidays
-                )
+                # pending orderは納品予定日なし（フロントで「-」表示）
+                response.estimated_shipping_date = None
                 items.append(response)
 
         # Calculate total
