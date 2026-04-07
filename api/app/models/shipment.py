@@ -1,10 +1,10 @@
 """Shipment models."""
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -38,6 +38,7 @@ class Shipment(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     shipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    estimated_shipping_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     shipping_email_sent: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
