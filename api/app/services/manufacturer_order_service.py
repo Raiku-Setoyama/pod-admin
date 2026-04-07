@@ -33,10 +33,12 @@ class ManufacturerOrderService:
         order_repo: OrderRepository,
         manufacturer_repo: ManufacturerRepository,
         shipment_repo: ShipmentRepository,
+        settings_service: "SettingsService | None" = None,
     ):
         self._order_repo = order_repo
         self._manufacturer_repo = manufacturer_repo
         self._shipment_repo = shipment_repo
+        self._settings_service = settings_service
         self._order_list_gen = OrderListGenerator()
 
     async def get_order_summary_list(
@@ -275,7 +277,7 @@ class ManufacturerOrderService:
 
         return len(updated_items), shipments_created
 
-    async def _create_shipment_for_order(self, order: Order) -> bool:
+    async def _create_shipment_for_order(self, order) -> bool:
         """Create a shipment for the delivered order.
 
         This method is idempotent - if a shipment already exists for the order,
@@ -284,13 +286,40 @@ class ManufacturerOrderService:
         Returns:
             bool: True if a shipment was created, False if it already existed
         """
-        # Check if shipment already exists (prevent duplicates)
         if await self._shipment_repo.exists_for_order(order.id):
             return False
 
-        # Customer info is now accessed via shipment.first_order relationship
-        await self._shipment_repo.create(order_ids=[order.id])
+        estimated_date = await self._calculate_estimated_shipping_date(order)
+        await self._shipment_repo.create(
+            order_ids=[order.id],
+            estimated_shipping_date=estimated_date,
+        )
         return True
+
+    async def _calculate_estimated_shipping_date(self, order) -> "date | None":
+        """注文の納品予定日を計算する."""
+        if not self._settings_service:
+            return None
+
+        from datetime import date, timedelta
+        from app.utils.business_day_calculator import add_business_days
+
+        prep_days = await self._settings_service.get_shipping_preparation_days_value()
+        company_holidays = await self._settings_service.get_company_holiday_dates()
+
+        delivery_dates: list[date] = []
+        if order.items:
+            for order_item in order.items:
+                product = order_item.product if order_item.product else None
+                if product and product.lead_time_days is not None:
+                    d = order.ordered_at.date() + timedelta(days=product.lead_time_days)
+                    delivery_dates.append(d)
+
+        if not delivery_dates:
+            return None
+
+        latest_delivery = max(delivery_dates)
+        return add_business_days(latest_delivery, prep_days, company_holidays)
 
     # Product type -> manufacturing data extension mapping
     _MANUFACTURING_EXT: dict[str, str] = {

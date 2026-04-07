@@ -170,7 +170,9 @@ class TestOrderStatusTransition:
 
         # Assert
         assert order.status == OrderStatus.DELIVERED.value
-        mock_shipment_repo.create.assert_called_once_with(order_ids=["order-123"])
+        mock_shipment_repo.create.assert_called_once_with(
+            order_ids=["order-123"], estimated_shipping_date=None
+        )
 
     @pytest.mark.asyncio
     async def test_manufacturing_to_delivered_creates_shipment(

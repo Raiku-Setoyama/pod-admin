@@ -67,11 +67,13 @@ class OrderService:
         product_repo: ProductRepository,
         shipment_repo: ShipmentRepository,
         order_source_repo: OrderSourceRepository | None = None,
+        settings_service: "SettingsService | None" = None,
     ):
         self._order_repo = order_repo
         self._product_repo = product_repo
         self._shipment_repo = shipment_repo
         self._order_source_repo = order_source_repo
+        self._settings_service = settings_service
 
     async def create(
         self,
@@ -255,19 +257,40 @@ class OrderService:
         the same transaction as the order status update, ensuring atomicity.
 
         顧客情報は Shipment から Order のリレーションを経由して取得します。
-
-        Args:
-            order: The order that was just marked as delivered.
-
-        Raises:
-            Exception: If shipment creation fails, the entire transaction
-                       (including order status update) will be rolled back.
         """
-        # Check if shipment already exists (prevent duplicates)
         if await self._shipment_repo.exists_for_order(order.id):
             return
 
-        await self._shipment_repo.create(order_ids=[order.id])
+        estimated_date = await self._calculate_estimated_shipping_date(order)
+        await self._shipment_repo.create(
+            order_ids=[order.id],
+            estimated_shipping_date=estimated_date,
+        )
+
+    async def _calculate_estimated_shipping_date(self, order) -> "date | None":
+        """注文の納品予定日を計算する."""
+        if not self._settings_service:
+            return None
+
+        from datetime import date, timedelta
+        from app.utils.business_day_calculator import add_business_days
+
+        prep_days = await self._settings_service.get_shipping_preparation_days_value()
+        company_holidays = await self._settings_service.get_company_holiday_dates()
+
+        delivery_dates: list[date] = []
+        if order.items:
+            for order_item in order.items:
+                product = order_item.product if order_item.product else None
+                if product and product.lead_time_days is not None:
+                    d = order.ordered_at.date() + timedelta(days=product.lead_time_days)
+                    delivery_dates.append(d)
+
+        if not delivery_dates:
+            return None
+
+        latest_delivery = max(delivery_dates)
+        return add_business_days(latest_delivery, prep_days, company_holidays)
 
     async def _to_response(
         self, order: Order, shipment: Shipment | None = None

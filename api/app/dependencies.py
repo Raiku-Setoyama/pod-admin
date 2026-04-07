@@ -133,16 +133,6 @@ def get_manufacturer_service(
     return ManufacturerService(manufacturer_repo)
 
 
-def get_order_service(
-    order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
-    product_repo: Annotated[ProductRepository, Depends(get_product_repository)],
-    shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
-    order_source_repo: Annotated[OrderSourceRepository, Depends(get_order_source_repository)],
-) -> OrderService:
-    """Get order service."""
-    return OrderService(order_repo, product_repo, shipment_repo, order_source_repo)
-
-
 def get_email_service() -> EmailService | None:
     """Get email service (None if SendGrid not configured)."""
     if not settings.SENDGRID_API_KEY:
@@ -160,6 +150,17 @@ def get_settings_service(
 ) -> SettingsService:
     """Get settings service."""
     return SettingsService(system_setting_repo, company_holiday_repo)
+
+
+def get_order_service(
+    order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
+    product_repo: Annotated[ProductRepository, Depends(get_product_repository)],
+    shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
+    order_source_repo: Annotated[OrderSourceRepository, Depends(get_order_source_repository)],
+    settings_service: Annotated[SettingsService, Depends(get_settings_service)],
+) -> OrderService:
+    """Get order service."""
+    return OrderService(order_repo, product_repo, shipment_repo, order_source_repo, settings_service)
 
 
 def get_shipment_service(
@@ -204,9 +205,10 @@ def get_manufacturer_order_service(
     order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
     manufacturer_repo: Annotated[ManufacturerRepository, Depends(get_manufacturer_repository)],
     shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
+    settings_service: Annotated[SettingsService, Depends(get_settings_service)],
 ) -> ManufacturerOrderService:
     """Get manufacturer order service."""
-    return ManufacturerOrderService(order_repo, manufacturer_repo, shipment_repo)
+    return ManufacturerOrderService(order_repo, manufacturer_repo, shipment_repo, settings_service)
 
 
 def get_manufacturer_portal_service(
