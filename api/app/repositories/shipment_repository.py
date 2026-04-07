@@ -150,12 +150,16 @@ class ShipmentRepository:
 
         return shipments, total
 
-    async def create(self, order_ids: list[str]) -> Shipment:
+    async def create(
+        self,
+        order_ids: list[str],
+        estimated_shipping_date: date | None = None,
+    ) -> Shipment:
         """Create a new shipment.
 
         顧客情報は order_ids の最初の注文から参照します。
         """
-        shipment = Shipment()
+        shipment = Shipment(estimated_shipping_date=estimated_shipping_date)
         self._db.add(shipment)
         await self._db.flush()
 
