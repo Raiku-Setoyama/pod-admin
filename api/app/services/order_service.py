@@ -272,7 +272,7 @@ class OrderService:
         )
 
     async def _calculate_estimated_shipping_date(self, order: Order) -> date | None:
-        """注文の納品予定日を計算する."""
+        """配送予定日を計算する。OrderItemの納品予定日から算出."""
         if not self._settings_service:
             return None
 
@@ -282,10 +282,8 @@ class OrderService:
         delivery_dates: list[date] = []
         if order.items:
             for order_item in order.items:
-                product = order_item.product if order_item.product else None
-                if product and product.lead_time_days is not None:
-                    d = order.ordered_at.date() + timedelta(days=product.lead_time_days)
-                    delivery_dates.append(d)
+                if order_item.expected_delivery_date is not None:
+                    delivery_dates.append(order_item.expected_delivery_date)
 
         if not delivery_dates:
             return None

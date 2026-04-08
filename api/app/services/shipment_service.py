@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import mimetypes
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from urllib.parse import urlparse
 
 from fastapi import HTTPException, UploadFile
@@ -160,16 +160,14 @@ class ShipmentService:
         prep_days: int,
         company_holidays: set[date],
     ) -> date | None:
-        """配送予定日を計算する."""
+        """配送予定日を計算する。OrderItemの納品予定日から算出."""
         delivery_dates: list[date] = []
         for order in orders:
             if not order or not order.items:
                 continue
             for order_item in order.items:
-                product = order_item.product if order_item.product else None
-                if product and product.lead_time_days is not None:
-                    d = order.ordered_at.date() + timedelta(days=product.lead_time_days)
-                    delivery_dates.append(d)
+                if order_item.expected_delivery_date is not None:
+                    delivery_dates.append(order_item.expected_delivery_date)
 
         if not delivery_dates:
             return None

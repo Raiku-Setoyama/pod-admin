@@ -13,7 +13,7 @@ FEAT-0018: 全メーカー分の発注明細を一覧で確認できる「すべ
 """
 
 import pytest
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -50,6 +50,8 @@ def _make_order_item_tuple(
     lead_time_days: int = 7,
 ) -> tuple:
     """リポジトリの find_all_ordered_items_detail の戻り値形式に合わせたタプルを生成"""
+    effective_ordered_at = ordered_at or datetime(2026, 2, 24, 10, 0, 0)
+
     order_item = MagicMock()
     order_item.id = item_id or str(uuid4())
     order_item.order_id = order_id or str(uuid4())
@@ -64,11 +66,12 @@ def _make_order_item_tuple(
     order_item.color = color
     order_item.design_image_url = design_image_url
     order_item.thumbnail_image_url = thumbnail_image_url
+    order_item.expected_delivery_date = effective_ordered_at.date() + timedelta(days=lead_time_days)
 
     return (
         order_item,
         order_number,
-        ordered_at or datetime(2026, 2, 24, 10, 0, 0),
+        effective_ordered_at,
         customer_name,
         cost,
         status,

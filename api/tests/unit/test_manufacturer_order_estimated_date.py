@@ -1,6 +1,6 @@
 """Test ManufacturerOrderService persists estimated_shipping_date on shipment creation."""
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -27,15 +27,14 @@ async def test_create_shipment_persists_estimated_shipping_date():
         settings_service=settings_service,
     )
 
-    product = MagicMock()
-    product.lead_time_days = 7
+    ordered_at = datetime(2026, 4, 1, tzinfo=timezone.utc)
 
     order_item = MagicMock(spec=OrderItem)
-    order_item.product = product
+    order_item.expected_delivery_date = ordered_at.date() + timedelta(days=7)
 
     order = MagicMock(spec=Order)
     order.id = "order-1"
-    order.ordered_at = datetime(2026, 4, 1, tzinfo=timezone.utc)
+    order.ordered_at = ordered_at
     order.items = [order_item]
 
     shipment_repo.exists_for_order = AsyncMock(return_value=False)
@@ -64,15 +63,14 @@ async def test_create_shipment_without_settings_service():
         settings_service=None,
     )
 
-    product = MagicMock()
-    product.lead_time_days = 7
+    ordered_at = datetime(2026, 4, 1, tzinfo=timezone.utc)
 
     order_item = MagicMock(spec=OrderItem)
-    order_item.product = product
+    order_item.expected_delivery_date = ordered_at.date() + timedelta(days=7)
 
     order = MagicMock(spec=Order)
     order.id = "order-1"
-    order.ordered_at = datetime(2026, 4, 1, tzinfo=timezone.utc)
+    order.ordered_at = ordered_at
     order.items = [order_item]
 
     shipment_repo.exists_for_order = AsyncMock(return_value=False)

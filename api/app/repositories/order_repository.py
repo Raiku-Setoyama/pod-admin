@@ -257,7 +257,6 @@ class OrderRepository:
             受注明細のタプルリスト（OrderItem, order_number, ordered_at, customer_name, cost, item_status, order_status, lead_time_days）
         """
         from app.models.product import Product
-        from app.models.manufacturer import Manufacturer
 
         query = (
             select(
@@ -268,11 +267,10 @@ class OrderRepository:
                 Product.cost,
                 OrderItem.status,  # item_status
                 Order.status,  # order_status（後方互換性のため）
-                Manufacturer.lead_time_days,
+                Product.lead_time_days,
             )
             .join(Order, OrderItem.order_id == Order.id)
             .join(Product, OrderItem.product_id == Product.id)
-            .join(Manufacturer, Product.manufacturer_id == Manufacturer.id)
             .where(Product.manufacturer_id == manufacturer_id)
         )
 
@@ -299,15 +297,15 @@ class OrderRepository:
             )
             query = query.where(search_filter)
 
-        # 納品予定日フィルター（ordered_at + lead_time_days）
+        # 納品予定日フィルター
         if expected_delivery_from:
             query = query.where(
-                func.date(Order.ordered_at) + Manufacturer.lead_time_days >= expected_delivery_from
+                OrderItem.expected_delivery_date >= expected_delivery_from
             )
 
         if expected_delivery_to:
             query = query.where(
-                func.date(Order.ordered_at) + Manufacturer.lead_time_days <= expected_delivery_to
+                OrderItem.expected_delivery_date <= expected_delivery_to
             )
 
         query = query.order_by(Order.ordered_at.desc())
@@ -354,7 +352,7 @@ class OrderRepository:
                 Order.status,
                 Manufacturer.id.label("manufacturer_id"),
                 Manufacturer.name.label("manufacturer_name"),
-                Manufacturer.lead_time_days,
+                Product.lead_time_days,
             )
             .join(Order, OrderItem.order_id == Order.id)
             .join(Product, OrderItem.product_id == Product.id)
@@ -391,15 +389,15 @@ class OrderRepository:
             )
             query = query.where(search_filter)
 
-        # 納品予定日フィルター（ordered_at + lead_time_days）
+        # 納品予定日フィルター
         if expected_delivery_from:
             query = query.where(
-                func.date(Order.ordered_at) + Manufacturer.lead_time_days >= expected_delivery_from
+                OrderItem.expected_delivery_date >= expected_delivery_from
             )
 
         if expected_delivery_to:
             query = query.where(
-                func.date(Order.ordered_at) + Manufacturer.lead_time_days <= expected_delivery_to
+                OrderItem.expected_delivery_date <= expected_delivery_to
             )
 
         query = query.order_by(Order.ordered_at.desc())

@@ -9,7 +9,7 @@ FEAT-0012: 発注詳細画面にステータスフィルター・キーワード
 """
 
 import pytest
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -66,6 +66,7 @@ class TestGetOrderItemsByManufacturerStatusFilter:
             OrderStatus.DELIVERED,
         ]
         for i, status in enumerate(statuses):
+            ordered_at = datetime.now()
             order_item = MagicMock()
             order_item.id = str(uuid4())
             order_item.order_id = str(uuid4())
@@ -81,11 +82,12 @@ class TestGetOrderItemsByManufacturerStatusFilter:
             order_item.design_image_url = None
             order_item.thumbnail_image_url = None
             order_item.status = status.value
+            order_item.expected_delivery_date = ordered_at.date() + timedelta(days=7)
 
             items.append((
                 order_item,
                 f"ORD-{i+1:04d}",  # order_number
-                datetime.now(),  # ordered_at
+                ordered_at,  # ordered_at
                 "顧客名",  # customer_name
                 500,  # cost
                 status.value,  # item_status (OrderItem.status)

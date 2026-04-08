@@ -1,6 +1,6 @@
 """Test estimated_shipping_date is persisted when OrderService creates a shipment."""
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,11 +11,8 @@ from app.services.order_service import OrderService
 
 def _make_order(ordered_at: datetime, lead_time_days: int = 10) -> MagicMock:
     """Create a mock Order with items."""
-    product = MagicMock()
-    product.lead_time_days = lead_time_days
-
     order_item = MagicMock(spec=OrderItem)
-    order_item.product = product
+    order_item.expected_delivery_date = ordered_at.date() + timedelta(days=lead_time_days)
 
     order = MagicMock(spec=Order)
     order.id = "order-1"

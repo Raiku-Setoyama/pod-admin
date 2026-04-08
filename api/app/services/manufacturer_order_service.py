@@ -1,7 +1,7 @@
 """Manufacturer order service for managing orders by manufacturer."""
 
 import os
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from urllib.parse import urlparse
 
 import httpx
@@ -119,9 +119,6 @@ class ManufacturerOrderService:
         total_amount = 0
 
         for order_item, order_number, ordered_at, customer_name, cost, item_status, order_status, lead_time_days in rows:
-            # 納品予定日を計算
-            expected_delivery_date = ordered_at.date() + timedelta(days=lead_time_days)
-
             items.append(
                 ManufacturerOrderItemResponse(
                     id=order_item.id,
@@ -143,7 +140,7 @@ class ManufacturerOrderService:
                     status=item_status,  # OrderItem.statusを使用
                     item_status=item_status,  # 新フィールド
                     lead_time_days=lead_time_days,
-                    expected_delivery_date=expected_delivery_date,
+                    expected_delivery_date=order_item.expected_delivery_date,
                 )
             )
             total_quantity += order_item.quantity
@@ -197,9 +194,6 @@ class ManufacturerOrderService:
         total_amount = 0
 
         for order_item, order_number, ordered_at, customer_name, cost, order_status, mfr_id, mfr_name, lead_time_days in rows:
-            # 納品予定日を計算
-            expected_delivery_date = ordered_at.date() + timedelta(days=lead_time_days)
-
             items.append(
                 AllManufacturerOrderItemResponse(
                     id=order_item.id,
@@ -222,7 +216,7 @@ class ManufacturerOrderService:
                     manufacturer_id=mfr_id,
                     manufacturer_name=mfr_name,
                     lead_time_days=lead_time_days,
-                    expected_delivery_date=expected_delivery_date,
+                    expected_delivery_date=order_item.expected_delivery_date,
                 )
             )
             total_quantity += order_item.quantity
@@ -298,7 +292,7 @@ class ManufacturerOrderService:
         return True
 
     async def _calculate_estimated_shipping_date(self, order: Order) -> date | None:
-        """注文の納品予定日を計算する."""
+        """配送予定日を計算する。OrderItemの納品予定日から算出."""
         if not self._settings_service:
             return None
 
@@ -308,10 +302,8 @@ class ManufacturerOrderService:
         delivery_dates: list[date] = []
         if order.items:
             for order_item in order.items:
-                product = order_item.product if order_item.product else None
-                if product and product.lead_time_days is not None:
-                    d = order.ordered_at.date() + timedelta(days=product.lead_time_days)
-                    delivery_dates.append(d)
+                if order_item.expected_delivery_date is not None:
+                    delivery_dates.append(order_item.expected_delivery_date)
 
         if not delivery_dates:
             return None
