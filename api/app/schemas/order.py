@@ -1,6 +1,6 @@
 """Order schemas."""
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
 
@@ -66,6 +66,7 @@ class OrderItemResponse(BaseModel):
     color: str | None = None
     design_image_url: str | None = None
     thumbnail_image_url: str | None = None
+    expected_delivery_date: date | None = None
     created_at: datetime
     updated_at: datetime
 

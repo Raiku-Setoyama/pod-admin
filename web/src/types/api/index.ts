@@ -20,6 +20,7 @@ export interface OrderItem {
   color: string | null;
   design_image_url: string | null;
   thumbnail_image_url: string | null;
+  expected_delivery_date: string | null;
   status?: OrderItemStatus;  // 製品単位のステータス
   created_at: string;
   updated_at: string;

@@ -88,7 +88,7 @@ class OrderService:
             raise DuplicateError("Order", "order_number", data.order_number)
 
         # Validate items and find product_ids
-        product_ids: dict[int, str] = {}  # index -> product_id
+        products: dict[int, "Product"] = {}  # index -> product
         for idx, item_data in enumerate(data.items):
             # Validate attributes based on product_type
             self._validate_item_attributes(item_data)
@@ -99,7 +99,7 @@ class OrderService:
             )
             if not product:
                 raise ProductNotFoundError(item_data.product_type.value)
-            product_ids[idx] = product.id
+            products[idx] = product
 
         # Calculate total price
         total_price = sum(item.price * item.quantity for item in data.items)
@@ -122,9 +122,11 @@ class OrderService:
 
         # Create order items
         for idx, item_data in enumerate(data.items):
+            product = products[idx]
+            expected_delivery_date = data.ordered_at.date() + timedelta(days=product.lead_time_days)
             order_item = OrderItem(
                 uid=item_data.uid,
-                product_id=product_ids[idx],
+                product_id=product.id,
                 product_name=item_data.product_name,
                 product_type=item_data.product_type.value,
                 price=item_data.price,
@@ -134,6 +136,7 @@ class OrderService:
                 color=item_data.color,
                 design_image_url=item_data.design_image_url,
                 thumbnail_image_url=item_data.thumbnail_image_url,
+                expected_delivery_date=expected_delivery_date,
             )
             order.items.append(order_item)
 
@@ -324,6 +327,7 @@ class OrderService:
                 color=item.color,
                 design_image_url=item.design_image_url,
                 thumbnail_image_url=item.thumbnail_image_url,
+                expected_delivery_date=item.expected_delivery_date,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
             )
