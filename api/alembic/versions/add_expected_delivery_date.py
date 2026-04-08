@@ -22,6 +22,19 @@ def upgrade() -> None:
         "order_items",
         sa.Column("expected_delivery_date", sa.Date(), nullable=True),
     )
+    # 既存データのバックフィル: ordered_at + Product.lead_time_days
+    op.execute(
+        """
+        UPDATE order_items
+        SET expected_delivery_date = (
+            SELECT DATE(orders.ordered_at) + products.lead_time_days
+            FROM orders
+            JOIN products ON products.id = order_items.product_id
+            WHERE orders.id = order_items.order_id
+        )
+        WHERE expected_delivery_date IS NULL
+        """
+    )
 
 
 def downgrade() -> None:
