@@ -1,10 +1,11 @@
 """Order model."""
 
+import datetime as dt
 from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, CustomerAddressMixin, TimestampMixin, UUIDPrimaryKeyMixin
@@ -194,6 +195,9 @@ class OrderItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     color: Mapped[str | None] = mapped_column(String(50), nullable=True)
     design_image_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     thumbnail_image_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+
+    # メーカーからの納品予定日（注文作成時に営業日計算で算出、確定値）
+    expected_delivery_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
 
     # Relationships
     order: Mapped["Order"] = relationship(back_populates="items")

@@ -18,7 +18,7 @@ dependencies = [
     # Authentication
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
-    "bcrypt>=4.0.1,<4.1.0",  # passlib互換性のためバージョン固定
+    "bcrypt>=4.0.1,<4.1.0", # passlib互換性のためバージョン固定
     # File Processing
     "openpyxl>=3.1.0",
     "chardet>=5.0.0",
@@ -31,6 +31,8 @@ dependencies = [
     "jinja2>=3.1.0",
     # Email
     "sendgrid>=6.11.0",
+    # Japanese holidays
+    "jpholiday>=0.1.9",
 ]
 
 [project.optional-dependencies]

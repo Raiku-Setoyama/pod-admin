@@ -9,6 +9,7 @@ import logging
 import mimetypes
 from datetime import date, datetime
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import HTTPException
@@ -28,13 +29,13 @@ from app.models.order import (
     TshirtPosition,
     TshirtSize,
 )
-from app.models.product import ProductType
+from app.models.product import Product, ProductType
+from app.models.shipment import Shipment, ShipmentStatus
+from app.repositories.company_holiday_repository import CompanyHolidayRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.order_source_repository import OrderSourceRepository
 from app.repositories.product_repository import ProductRepository
 from app.repositories.shipment_repository import ShipmentRepository
-from app.utils.zip_builder import ZipBuilder
-from app.models.shipment import Shipment
 from app.schemas.order import (
     ManufacturingDataInfo,
     OrderBulkStatusUpdateResponse,
@@ -45,7 +46,7 @@ from app.schemas.order import (
     OrderResponse,
     OrderShipmentInfo,
 )
-from app.models.shipment import ShipmentStatus
+from app.utils.business_day_calculator import add_business_days
 from app.utils.exceptions import (
     DuplicateError,
     InvalidStatusTransitionError,
@@ -54,6 +55,7 @@ from app.utils.exceptions import (
     ProductNotFoundError,
     ValidationError,
 )
+from app.utils.zip_builder import ZipBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -67,11 +69,13 @@ class OrderService:
         product_repo: ProductRepository,
         shipment_repo: ShipmentRepository,
         order_source_repo: OrderSourceRepository | None = None,
+        company_holiday_repo: CompanyHolidayRepository | None = None,
     ):
         self._order_repo = order_repo
         self._product_repo = product_repo
         self._shipment_repo = shipment_repo
         self._order_source_repo = order_source_repo
+        self._company_holiday_repo = company_holiday_repo
 
     async def create(
         self,
@@ -84,19 +88,24 @@ class OrderService:
         if existing:
             raise DuplicateError("Order", "order_number", data.order_number)
 
-        # Validate items and find product_ids
-        product_ids: dict[int, str] = {}  # index -> product_id
+        # Validate items and find products
+        products: dict[int, Product] = {}  # index -> Product
         for idx, item_data in enumerate(data.items):
             # Validate attributes based on product_type
             self._validate_item_attributes(item_data)
 
-            # Find product by product_type and get product_id
+            # Find product by product_type and get product
             product = await self._product_repo.find_by_product_type(
                 product_type=item_data.product_type,
             )
             if not product:
                 raise ProductNotFoundError(item_data.product_type.value)
-            product_ids[idx] = product.id
+            products[idx] = product
+
+        # Fetch company holidays for business day calculation
+        company_holidays: set[date] | None = None
+        if self._company_holiday_repo:
+            company_holidays = await self._company_holiday_repo.find_all_dates()
 
         # Calculate total price
         total_price = sum(item.price * item.quantity for item in data.items)
@@ -117,11 +126,24 @@ class OrderService:
             total_price=total_price,
         )
 
-        # Create order items
+        # Create order items with expected_delivery_date
+        # JSTに正規化してからdate()を取得（UTCのままだと深夜帯で日付がずれる）
+        jst = ZoneInfo("Asia/Tokyo")
+        ordered_at_jst = data.ordered_at.astimezone(jst) if data.ordered_at.tzinfo else data.ordered_at
+        ordered_date = ordered_at_jst.date()
         for idx, item_data in enumerate(data.items):
+            product = products[idx]
+
+            # Calculate expected_delivery_date using business day calculation
+            expected_delivery = add_business_days(
+                ordered_date,
+                product.lead_time_days,
+                company_holidays,
+            )
+
             order_item = OrderItem(
                 uid=item_data.uid,
-                product_id=product_ids[idx],
+                product_id=product.id,
                 product_name=item_data.product_name,
                 product_type=item_data.product_type.value,
                 price=item_data.price,
@@ -131,6 +153,7 @@ class OrderService:
                 color=item_data.color,
                 design_image_url=item_data.design_image_url,
                 thumbnail_image_url=item_data.thumbnail_image_url,
+                expected_delivery_date=expected_delivery,
             )
             order.items.append(order_item)
 
@@ -303,6 +326,7 @@ class OrderService:
                 color=item.color,
                 design_image_url=item.design_image_url,
                 thumbnail_image_url=item.thumbnail_image_url,
+                expected_delivery_date=item.expected_delivery_date,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
             )

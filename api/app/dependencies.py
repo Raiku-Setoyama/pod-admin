@@ -11,6 +11,7 @@ from app.database import get_db
 from app.models.manufacturer import Manufacturer
 from app.models.user import User, UserRole
 from app.repositories.chat_repository import ChatRepository
+from app.repositories.company_holiday_repository import CompanyHolidayRepository
 from app.repositories.manufacturer_repository import ManufacturerRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.order_source_repository import OrderSourceRepository
@@ -20,16 +21,16 @@ from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.chat_service import ChatService
 from app.services.dashboard_service import DashboardService
+from app.services.email_service import EmailService
 from app.services.external_service import ExternalService
 from app.services.invoice_service import InvoiceService
-from app.services.manufacturer_service import ManufacturerService
 from app.services.manufacturer_order_service import ManufacturerOrderService
 from app.services.manufacturer_portal_service import ManufacturerPortalService
+from app.services.manufacturer_service import ManufacturerService
 from app.services.order_image_service import OrderImageService
 from app.services.order_list_service import OrderListService
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
-from app.services.email_service import EmailService
 from app.services.shipment_service import ShipmentService
 from app.utils.exceptions import ForbiddenError, UnauthorizedError
 from app.utils.file_storage import FileStorage, LocalFileStorage
@@ -93,6 +94,13 @@ def get_order_source_repository(
     return OrderSourceRepository(db)
 
 
+def get_company_holiday_repository(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> CompanyHolidayRepository:
+    """Get company holiday repository."""
+    return CompanyHolidayRepository(db)
+
+
 # Service dependencies
 def get_auth_service(
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
@@ -121,9 +129,10 @@ def get_order_service(
     product_repo: Annotated[ProductRepository, Depends(get_product_repository)],
     shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
     order_source_repo: Annotated[OrderSourceRepository, Depends(get_order_source_repository)],
+    company_holiday_repo: Annotated[CompanyHolidayRepository, Depends(get_company_holiday_repository)],
 ) -> OrderService:
     """Get order service."""
-    return OrderService(order_repo, product_repo, shipment_repo, order_source_repo)
+    return OrderService(order_repo, product_repo, shipment_repo, order_source_repo, company_holiday_repo)
 
 
 def get_email_service() -> EmailService | None:

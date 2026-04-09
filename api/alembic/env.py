@@ -18,6 +18,7 @@ from app.models.order import Order, OrderItem  # noqa: F401
 from app.models.product import Product  # noqa: F401
 from app.models.shipment import Shipment, ShipmentItem  # noqa: F401
 from app.models.user import User  # noqa: F401
+from app.models.company_holiday import CompanyHoliday  # noqa: F401
 
 # Alembic Config object
 config = context.config
