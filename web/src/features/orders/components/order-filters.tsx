@@ -23,18 +23,22 @@ interface OrderFiltersProps {
   search: string;
   status: DisplayStatus | null;
   dateRange?: DateRange;
+  shippingDateRange?: DateRange;
   onSearchChange: (value: string) => void;
   onStatusChange: (value: DisplayStatus | null) => void;
   onDateRangeChange?: (range: DateRange | undefined) => void;
+  onShippingDateRangeChange?: (range: DateRange | undefined) => void;
 }
 
 export function OrderFilters({
   search,
   status,
   dateRange,
+  shippingDateRange,
   onSearchChange,
   onStatusChange,
   onDateRangeChange,
+  onShippingDateRangeChange,
 }: OrderFiltersProps) {
   return (
     <div className="flex flex-wrap items-center gap-4">
@@ -71,6 +75,14 @@ export function OrderFilters({
           value={dateRange}
           onChange={onDateRangeChange}
           placeholder="受注日"
+        />
+      )}
+
+      {onShippingDateRangeChange && (
+        <DateRangePicker
+          value={shippingDateRange}
+          onChange={onShippingDateRangeChange}
+          placeholder="配送予定日"
         />
       )}
     </div>

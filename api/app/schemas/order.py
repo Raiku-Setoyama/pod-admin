@@ -1,5 +1,6 @@
 """Order schemas."""
 
+import datetime as dt
 from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
@@ -128,6 +129,7 @@ class OrderResponse(BaseModel):
     customer_email: str | None = None
     ordered_at: datetime
     total_price: int
+    estimated_shipping_date: dt.date | None = None
     items: list[OrderItemResponse] = []
     shipment: OrderShipmentInfo | None = None
     # Legacy fields (for backward compatibility)

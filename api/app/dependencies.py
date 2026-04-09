@@ -10,6 +10,7 @@ from app.config import settings
 from app.database import get_db
 from app.models.manufacturer import Manufacturer
 from app.models.user import User, UserRole
+from app.repositories.app_setting_repository import AppSettingRepository
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.company_holiday_repository import CompanyHolidayRepository
 from app.repositories.manufacturer_repository import ManufacturerRepository
@@ -101,6 +102,13 @@ def get_company_holiday_repository(
     return CompanyHolidayRepository(db)
 
 
+def get_app_setting_repository(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AppSettingRepository:
+    """Get app setting repository."""
+    return AppSettingRepository(db)
+
+
 # Service dependencies
 def get_auth_service(
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
@@ -130,9 +138,13 @@ def get_order_service(
     shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
     order_source_repo: Annotated[OrderSourceRepository, Depends(get_order_source_repository)],
     company_holiday_repo: Annotated[CompanyHolidayRepository, Depends(get_company_holiday_repository)],
+    app_setting_repo: Annotated[AppSettingRepository, Depends(get_app_setting_repository)],
 ) -> OrderService:
     """Get order service."""
-    return OrderService(order_repo, product_repo, shipment_repo, order_source_repo, company_holiday_repo)
+    return OrderService(
+        order_repo, product_repo, shipment_repo, order_source_repo,
+        company_holiday_repo, app_setting_repo,
+    )
 
 
 def get_email_service() -> EmailService | None:

@@ -31,6 +31,7 @@ from app.models.order import (
 )
 from app.models.product import Product, ProductType
 from app.models.shipment import Shipment, ShipmentStatus
+from app.repositories.app_setting_repository import AppSettingRepository
 from app.repositories.company_holiday_repository import CompanyHolidayRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.order_source_repository import OrderSourceRepository
@@ -45,6 +46,11 @@ from app.schemas.order import (
     OrderListResponse,
     OrderResponse,
     OrderShipmentInfo,
+)
+from app.services.estimated_shipping_service import (
+    SHIPPING_PREPARATION_DAYS_DEFAULT,
+    calculate_estimated_shipping_date,
+    get_shipping_preparation_days,
 )
 from app.utils.business_day_calculator import add_business_days
 from app.utils.exceptions import (
@@ -70,12 +76,14 @@ class OrderService:
         shipment_repo: ShipmentRepository,
         order_source_repo: OrderSourceRepository | None = None,
         company_holiday_repo: CompanyHolidayRepository | None = None,
+        app_setting_repo: AppSettingRepository | None = None,
     ):
         self._order_repo = order_repo
         self._product_repo = product_repo
         self._shipment_repo = shipment_repo
         self._order_source_repo = order_source_repo
         self._company_holiday_repo = company_holiday_repo
+        self._app_setting_repo = app_setting_repo
 
     async def create(
         self,
@@ -157,6 +165,15 @@ class OrderService:
             )
             order.items.append(order_item)
 
+        # Calculate estimated_shipping_date
+        shipping_days = SHIPPING_PREPARATION_DAYS_DEFAULT
+        if self._app_setting_repo:
+            shipping_days = await get_shipping_preparation_days(self._app_setting_repo)
+        delivery_dates = [item.expected_delivery_date for item in order.items]
+        order.estimated_shipping_date = calculate_estimated_shipping_date(
+            delivery_dates, shipping_days, company_holidays
+        )
+
         order = await self._order_repo.create(order)
         return await self._to_response(order)
 
@@ -190,6 +207,8 @@ class OrderService:
         ordered_from: date | None = None,
         ordered_to: date | None = None,
         search: str | None = None,
+        shipping_from: date | None = None,
+        shipping_to: date | None = None,
     ) -> OrderListResponse:
         """List orders with pagination and filters."""
         orders, total = await self._order_repo.find_all(
@@ -200,6 +219,8 @@ class OrderService:
             ordered_from=ordered_from,
             ordered_to=ordered_to,
             search=search,
+            shipping_from=shipping_from,
+            shipping_to=shipping_to,
         )
 
         # Fetch shipment info for all orders in batch (N+1 avoidance)
@@ -363,6 +384,7 @@ class OrderService:
             customer_email=order.customer_email,
             ordered_at=order.ordered_at,
             total_price=order.total_price,
+            estimated_shipping_date=order.estimated_shipping_date,
             items=items,
             shipment=shipment_info,
             # Legacy fields (for backward compatibility)

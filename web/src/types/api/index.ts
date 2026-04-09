@@ -54,6 +54,7 @@ export interface Order {
   customer_email: string | null;
   ordered_at: string;
   total_price: number;
+  estimated_shipping_date: string | null;
   items: OrderItem[];
   shipment: OrderShipmentInfo | null;
   // Legacy fields (for backward compatibility)
@@ -423,4 +424,29 @@ export interface ManufacturerProfileUpdate {
   bank_account_holder?: string | null;
   representative_name?: string | null;
   invoice_notes?: string | null;
+}
+
+// App Settings types
+export interface AppSetting {
+  key: string;
+  value: string;
+  description: string | null;
+  updated_at: string;
+}
+
+export interface AppSettingListResponse {
+  items: AppSetting[];
+}
+
+// Company Holiday types
+export interface CompanyHoliday {
+  id: string;
+  date: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompanyHolidayListResponse {
+  items: CompanyHoliday[];
 }

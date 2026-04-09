@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { DateRange } from "react-day-picker";
 import { downloadFileByPost } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { PageContainer } from "@/components/layout/page-container";
@@ -18,12 +19,18 @@ import type { Order, OrderStatus, ShipmentStatus } from "@/types/api";
 // 表示用ステータス（Shipmentステータスを含む）
 type DisplayStatus = OrderStatus | ShipmentStatus;
 
+function formatDateParam(date: Date | undefined): string | undefined {
+  if (!date) return undefined;
+  return date.toISOString().split("T")[0];
+}
+
 export default function OrdersPage() {
   const router = useRouter();
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<DisplayStatus | null>(null);
+  const [shippingDateRange, setShippingDateRange] = useState<DateRange | undefined>();
 
   // 一括更新用state
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -34,6 +41,8 @@ export default function OrdersPage() {
     limit,
     search,
     status,
+    shipping_from: formatDateParam(shippingDateRange?.from),
+    shipping_to: formatDateParam(shippingDateRange?.to),
   });
 
   const handlePageChange = (newPage: number) => {
@@ -98,8 +107,10 @@ export default function OrdersPage() {
         <OrderFilters
           search={search}
           status={status}
+          shippingDateRange={shippingDateRange}
           onSearchChange={setSearch}
           onStatusChange={setStatus}
+          onShippingDateRangeChange={setShippingDateRange}
         />
 
         {isLoading ? (

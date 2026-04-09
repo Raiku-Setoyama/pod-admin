@@ -148,6 +148,9 @@ class Order(Base, UUIDPrimaryKeyMixin, CustomerAddressMixin, TimestampMixin):
     # Total price (sum of all items)
     total_price: Mapped[int] = mapped_column(Integer, default=0)
 
+    # 配送予定日（MAX(items.expected_delivery_date) + 発送準備日数）
+    estimated_shipping_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+
     # Timestamps
     ordered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
