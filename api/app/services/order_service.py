@@ -7,7 +7,7 @@ import csv
 import io
 import logging
 import mimetypes
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from urllib.parse import urlparse
 
 import httpx
@@ -120,10 +120,17 @@ class OrderService:
             total_price=total_price,
         )
 
+        # Fetch company holidays for business day calculation
+        company_holidays: set[date] = set()
+        if self._settings_service:
+            company_holidays = await self._settings_service.get_company_holiday_dates()
+
         # Create order items
         for idx, item_data in enumerate(data.items):
             product = products[idx]
-            expected_delivery_date = data.ordered_at.date() + timedelta(days=product.lead_time_days)
+            expected_delivery_date = add_business_days(
+                data.ordered_at.date(), product.lead_time_days, company_holidays
+            )
             order_item = OrderItem(
                 uid=item_data.uid,
                 product_id=product.id,
