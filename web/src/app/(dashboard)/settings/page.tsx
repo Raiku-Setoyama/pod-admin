@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { Trash2, Plus } from "lucide-react";
@@ -27,7 +27,7 @@ import type {
 
 export default function SettingsPage() {
   const [shippingDays, setShippingDays] = useState<string>("");
-  const [shippingDaysLoaded, setShippingDaysLoaded] = useState(false);
+  const [shippingDaysInitialized, setShippingDaysInitialized] = useState(false);
   const [isSavingDays, setIsSavingDays] = useState(false);
 
   // 休日追加フォーム
@@ -38,18 +38,19 @@ export default function SettingsPage() {
   // 設定取得
   const { data: settingsData, mutate: mutateSettings } = useSWR<AppSettingListResponse>(
     "/settings",
-    async (url: string) => {
-      const data = await apiClient<AppSettingListResponse>(url);
-      if (!shippingDaysLoaded) {
-        const daysSetting = data.items.find((s) => s.key === "shipping_preparation_days");
-        if (daysSetting) {
-          setShippingDays(daysSetting.value);
-        }
-        setShippingDaysLoaded(true);
-      }
-      return data;
-    }
+    apiClient,
   );
+
+  // 初回データ取得時にフォームへ反映
+  useEffect(() => {
+    if (settingsData && !shippingDaysInitialized) {
+      const daysSetting = settingsData.items.find((s) => s.key === "shipping_preparation_days");
+      if (daysSetting) {
+        setShippingDays(daysSetting.value);
+      }
+      setShippingDaysInitialized(true);
+    }
+  }, [settingsData, shippingDaysInitialized]);
 
   // 休日一覧取得
   const {
