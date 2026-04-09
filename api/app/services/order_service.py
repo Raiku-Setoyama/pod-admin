@@ -9,6 +9,7 @@ import logging
 import mimetypes
 from datetime import date, datetime
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import HTTPException
@@ -28,7 +29,7 @@ from app.models.order import (
     TshirtPosition,
     TshirtSize,
 )
-from app.models.product import ProductType
+from app.models.product import Product, ProductType
 from app.models.shipment import Shipment, ShipmentStatus
 from app.repositories.company_holiday_repository import CompanyHolidayRepository
 from app.repositories.order_repository import OrderRepository
@@ -88,8 +89,6 @@ class OrderService:
             raise DuplicateError("Order", "order_number", data.order_number)
 
         # Validate items and find products
-        from app.models.product import Product
-
         products: dict[int, Product] = {}  # index -> Product
         for idx, item_data in enumerate(data.items):
             # Validate attributes based on product_type
@@ -128,7 +127,10 @@ class OrderService:
         )
 
         # Create order items with expected_delivery_date
-        ordered_date = data.ordered_at.date()
+        # JSTに正規化してからdate()を取得（UTCのままだと深夜帯で日付がずれる）
+        jst = ZoneInfo("Asia/Tokyo")
+        ordered_at_jst = data.ordered_at.astimezone(jst) if data.ordered_at.tzinfo else data.ordered_at
+        ordered_date = ordered_at_jst.date()
         for idx, item_data in enumerate(data.items):
             product = products[idx]
 
