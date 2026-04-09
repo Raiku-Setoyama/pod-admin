@@ -41,6 +41,7 @@ const createMockOrder = (overrides: Partial<Order> = {}): Order => ({
   customer_address_city: 'Chiyoda',
   customer_address_building: null,
   customer_full_address: 'Tokyo Chiyoda',
+  estimated_shipping_date: null,
   customer_phone: '090-1234-5678',
   customer_email: 'test@example.com',
   ordered_at: '2024-01-15T14:30:00Z',

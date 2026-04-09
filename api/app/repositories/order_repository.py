@@ -49,6 +49,8 @@ class OrderRepository:
         ordered_from: date | None = None,
         ordered_to: date | None = None,
         search: str | None = None,
+        shipping_from: date | None = None,
+        shipping_to: date | None = None,
     ) -> tuple[list[Order], int]:
         """Find all orders with pagination and filters."""
         query = select(Order).options(
@@ -93,6 +95,14 @@ class OrderRepository:
             )
             query = query.where(search_filter)
             count_query = count_query.where(search_filter)
+
+        if shipping_from:
+            query = query.where(Order.estimated_shipping_date >= shipping_from)
+            count_query = count_query.where(Order.estimated_shipping_date >= shipping_from)
+
+        if shipping_to:
+            query = query.where(Order.estimated_shipping_date <= shipping_to)
+            count_query = count_query.where(Order.estimated_shipping_date <= shipping_to)
 
         # Get total count
         total_result = await self._db.execute(count_query)

@@ -88,6 +88,8 @@ async def list_orders(
     ordered_from: date | None = None,
     ordered_to: date | None = None,
     search: str | None = None,
+    shipping_from: date | None = None,
+    shipping_to: date | None = None,
 ) -> OrderListResponse:
     """List orders with pagination and filters."""
     return await service.list(
@@ -98,6 +100,8 @@ async def list_orders(
         ordered_from=ordered_from,
         ordered_to=ordered_to,
         search=search,
+        shipping_from=shipping_from,
+        shipping_to=shipping_to,
     )
 
 

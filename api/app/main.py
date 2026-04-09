@@ -8,12 +8,14 @@ from app.config import settings
 from app.routers import (
     auth,
     chat,
+    company_holidays,
     dashboard,
     external,
     manufacturer_portal,
     manufacturers,
     orders,
     products,
+    settings as settings_router,
     shipments,
 )
 from app.utils.exceptions import AppException
@@ -76,6 +78,8 @@ app.include_router(shipments.router, prefix=settings.API_V1_PREFIX)
 app.include_router(chat.router, prefix=settings.API_V1_PREFIX)
 app.include_router(dashboard.router, prefix=settings.API_V1_PREFIX)
 app.include_router(external.router, prefix=settings.API_V1_PREFIX)
+app.include_router(settings_router.router, prefix=settings.API_V1_PREFIX)
+app.include_router(company_holidays.router, prefix=settings.API_V1_PREFIX)
 
 
 # Test endpoints for exception handling (only in debug mode)
