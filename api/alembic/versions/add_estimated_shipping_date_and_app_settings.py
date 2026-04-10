@@ -1,6 +1,6 @@
 """Add estimated_shipping_date to orders and create app_settings table.
 
-Revision ID: add_estimated_shipping_date_settings
+Revision ID: add_est_ship_date_settings
 Revises: add_expected_delivery_date
 Create Date: 2026-04-09
 
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = "add_estimated_shipping_date_settings"
+revision = "add_est_ship_date_settings"
 down_revision = "add_expected_delivery_date"
 branch_labels = None
 depends_on = None
