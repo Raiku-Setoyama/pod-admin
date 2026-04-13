@@ -12,14 +12,12 @@ interface UseOrdersParams {
   search?: string;
   ordered_from?: string;
   ordered_to?: string;
-  shipping_from?: string;
-  shipping_to?: string;
 }
 
 export function useOrders(params: UseOrdersParams = {}) {
   const {
     page = 1, limit = 20, status, search,
-    ordered_from, ordered_to, shipping_from, shipping_to,
+    ordered_from, ordered_to,
   } = params;
 
   const queryParams = new URLSearchParams();
@@ -29,8 +27,6 @@ export function useOrders(params: UseOrdersParams = {}) {
   if (search) queryParams.set("search", search);
   if (ordered_from) queryParams.set("ordered_from", ordered_from);
   if (ordered_to) queryParams.set("ordered_to", ordered_to);
-  if (shipping_from) queryParams.set("shipping_from", shipping_from);
-  if (shipping_to) queryParams.set("shipping_to", shipping_to);
 
   const { data, error, isLoading, mutate } = useSWR<OrderListResponse>(
     `/orders?${queryParams.toString()}`,

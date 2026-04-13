@@ -38,16 +38,6 @@ function formatDate(dateString: string): string {
   });
 }
 
-function formatDateOnly(dateString: string | null): string {
-  if (!dateString) return "-";
-  const date = new Date(dateString + "T00:00:00");
-  return date.toLocaleDateString("ja-JP", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-}
-
 function getOrderSummary(order: Order): { productCount: number; totalQuantity: number; productNames: string } {
   if (order.items && order.items.length > 0) {
     const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -106,14 +96,13 @@ export function OrderList({ orders, onRowClick, selectedIds = [], onSelectChange
             <TableHead>購入者</TableHead>
             <TableHead>商品数</TableHead>
             <TableHead>受注日</TableHead>
-            <TableHead>配送予定日</TableHead>
             <TableHead>ステータス</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {orders.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={hasSelection ? 8 : 7} className="h-24 text-center text-muted-foreground">
+              <TableCell colSpan={hasSelection ? 7 : 6} className="h-24 text-center text-muted-foreground">
                 該当する受注がありません
               </TableCell>
             </TableRow>
@@ -152,7 +141,6 @@ export function OrderList({ orders, onRowClick, selectedIds = [], onSelectChange
                       : `${summary.totalQuantity}点`}
                   </TableCell>
                   <TableCell>{formatDate(order.ordered_at)}</TableCell>
-                  <TableCell>{formatDateOnly(order.estimated_shipping_date)}</TableCell>
                   <TableCell>
                     <StatusBadge status={getDisplayStatus(order)} />
                   </TableCell>
