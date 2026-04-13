@@ -60,11 +60,6 @@ function getDisplayId(item: ShipmentOrPendingOrder): string {
   return item.id.slice(0, 8);
 }
 
-// Helper to get estimated shipping date
-function getEstimatedShippingDate(item: ShipmentOrPendingOrder): string | null {
-  return item.estimated_shipping_date ?? null;
-}
-
 function formatDate(dateString: string): string {
   const date = new Date(dateString);
   return date.toLocaleDateString("ja-JP", {
@@ -76,8 +71,9 @@ function formatDate(dateString: string): string {
   });
 }
 
-function formatDateOnly(dateString: string): string {
-  const date = new Date(dateString);
+function formatDateOnly(dateString: string | null): string {
+  if (!dateString) return "-";
+  const date = new Date(dateString + "T00:00:00");
   return date.toLocaleDateString("ja-JP", {
     year: "numeric",
     month: "2-digit",
@@ -174,12 +170,7 @@ export function ShipmentList({
                   <TableCell>{getItemCount(item)}点</TableCell>
                   <TableCell>{getTrackingNumber(item)}</TableCell>
                   <TableCell>{formatDate(item.created_at)}</TableCell>
-                  <TableCell>
-                    {(() => {
-                      const esd = getEstimatedShippingDate(item);
-                      return esd ? formatDateOnly(esd) : "-";
-                    })()}
-                  </TableCell>
+                  <TableCell>{formatDateOnly(item.estimated_shipping_date)}</TableCell>
                   <TableCell>
                     <StatusBadge status={item.status} />
                   </TableCell>
