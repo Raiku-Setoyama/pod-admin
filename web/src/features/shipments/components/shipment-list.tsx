@@ -60,6 +60,11 @@ function getDisplayId(item: ShipmentOrPendingOrder): string {
   return item.id.slice(0, 8);
 }
 
+// Helper to get estimated shipping date
+function getEstimatedShippingDate(item: ShipmentOrPendingOrder): string | null {
+  return item.estimated_shipping_date ?? null;
+}
+
 function formatDate(dateString: string): string {
   const date = new Date(dateString);
   return date.toLocaleDateString("ja-JP", {
@@ -68,6 +73,15 @@ function formatDate(dateString: string): string {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+  });
+}
+
+function formatDateOnly(dateString: string): string {
+  const date = new Date(dateString);
+  return date.toLocaleDateString("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
   });
 }
 
@@ -119,13 +133,14 @@ export function ShipmentList({
             <TableHead>商品数</TableHead>
             <TableHead>伝票番号</TableHead>
             <TableHead>作成日</TableHead>
+            <TableHead>配送予定日</TableHead>
             <TableHead>ステータス</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {shipments.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+              <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                 該当する配送がありません
               </TableCell>
             </TableRow>
@@ -159,6 +174,12 @@ export function ShipmentList({
                   <TableCell>{getItemCount(item)}点</TableCell>
                   <TableCell>{getTrackingNumber(item)}</TableCell>
                   <TableCell>{formatDate(item.created_at)}</TableCell>
+                  <TableCell>
+                    {(() => {
+                      const esd = getEstimatedShippingDate(item);
+                      return esd ? formatDateOnly(esd) : "-";
+                    })()}
+                  </TableCell>
                   <TableCell>
                     <StatusBadge status={item.status} />
                   </TableCell>
