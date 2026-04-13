@@ -51,6 +51,7 @@ function createMockShipment(overrides: Partial<Shipment> = {}): Shipment {
     customer_address_building: null,
     customer_full_address: '東京都千代田区1-1-1',
     customer_phone: '090-1234-5678',
+    estimated_shipping_date: null,
     items: [],
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',

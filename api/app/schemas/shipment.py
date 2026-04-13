@@ -1,6 +1,6 @@
 """Shipment schemas."""
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Literal, Union
 
@@ -44,6 +44,7 @@ class PendingOrderResponse(BaseModel):
     customer_address: str
     item_count: int
     items_delivered: int
+    estimated_shipping_date: date | None = None
     status: PendingOrderStatus
     created_at: datetime
     order_items: list[OrderItemSummary] = []
@@ -114,6 +115,7 @@ class ShipmentResponse(BaseModel):
     customer_address_city: str
     customer_address_building: str | None = None
     customer_phone: str
+    estimated_shipping_date: date | None = None
     items: list[ShipmentItemResponse]
     created_at: datetime
     updated_at: datetime

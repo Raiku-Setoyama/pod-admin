@@ -259,6 +259,7 @@ class ShipmentService:
             customer_address=customer_address,
             item_count=item_count,
             items_delivered=items_delivered,
+            estimated_shipping_date=order.estimated_shipping_date,
             status=status,
             created_at=order.ordered_at,
             order_items=order_items_summary,
@@ -869,6 +870,14 @@ class ShipmentService:
                     thumbnail_image_url=None,
                 ))
 
+        # estimated_shipping_date: MAX of all related orders' estimated_shipping_date
+        estimated_shipping_date = None
+        for item in shipment.items:
+            order = item.order
+            if order and order.estimated_shipping_date:
+                if estimated_shipping_date is None or order.estimated_shipping_date > estimated_shipping_date:
+                    estimated_shipping_date = order.estimated_shipping_date
+
         return ShipmentResponse(
             id=shipment.id,
             status=ShipmentStatus(shipment.status),
@@ -885,6 +894,7 @@ class ShipmentService:
             customer_address_city=first_order.customer_address_city if first_order else "",
             customer_address_building=first_order.customer_address_building if first_order else None,
             customer_phone=first_order.customer_phone if first_order else "",
+            estimated_shipping_date=estimated_shipping_date,
             items=items,
             created_at=shipment.created_at,
             updated_at=shipment.updated_at,

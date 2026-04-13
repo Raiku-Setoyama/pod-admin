@@ -190,6 +190,7 @@ export interface PendingOrder {
   customer_address: string;
   item_count: number;
   items_delivered: number;
+  estimated_shipping_date: string | null;
   status: PendingOrderStatus;
   created_at: string;
   order_items: OrderItemSummary[];
@@ -221,6 +222,7 @@ export interface Shipment {
   customer_address_building: string | null;
   customer_full_address: string;
   customer_phone: string | null;
+  estimated_shipping_date: string | null;
   items: ShipmentItem[];
   created_at: string;
   updated_at: string;

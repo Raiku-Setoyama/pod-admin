@@ -71,6 +71,16 @@ function formatDate(dateString: string): string {
   });
 }
 
+function formatDateOnly(dateString: string | null): string {
+  if (!dateString) return "-";
+  const date = new Date(dateString + "T00:00:00");
+  return date.toLocaleDateString("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
 export function ShipmentList({
   shipments,
   onRowClick,
@@ -119,13 +129,14 @@ export function ShipmentList({
             <TableHead>商品数</TableHead>
             <TableHead>伝票番号</TableHead>
             <TableHead>作成日</TableHead>
+            <TableHead>配送予定日</TableHead>
             <TableHead>ステータス</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {shipments.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+              <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                 該当する配送がありません
               </TableCell>
             </TableRow>
@@ -159,6 +170,7 @@ export function ShipmentList({
                   <TableCell>{getItemCount(item)}点</TableCell>
                   <TableCell>{getTrackingNumber(item)}</TableCell>
                   <TableCell>{formatDate(item.created_at)}</TableCell>
+                  <TableCell>{formatDateOnly(item.estimated_shipping_date)}</TableCell>
                   <TableCell>
                     <StatusBadge status={item.status} />
                   </TableCell>
