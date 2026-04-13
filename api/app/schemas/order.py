@@ -94,7 +94,6 @@ class OrderCreate(BaseModel):
         description="受注番号（7桁数字）",
         examples=["0000001"],
     )
-    ordered_at: datetime
     customer: CustomerInfo
     items: list[OrderItemCreate] = Field(..., min_length=1)
 
