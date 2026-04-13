@@ -72,5 +72,5 @@ RUN uv sync --frozen --no-dev
 
 # Run with uvicorn (production mode)
 # NOTE: --reset flag included temporarily for seeding. Remove after deploy.
-CMD ["sh", "-c", "echo '=== Running Alembic migrations ===' && uv run alembic current && uv run alembic upgrade head && echo '=== Alembic done ===' && uv run alembic current && uv run python scripts/seed_demo.py --no-reset && uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uv run python scripts/fix_schema.py && uv run alembic upgrade head && uv run python scripts/seed_demo.py --no-reset && uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
 # CMD ["sh", "-c", "uv run alembic upgrade head && uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
