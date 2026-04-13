@@ -119,6 +119,9 @@ class OrderService:
         total_price = sum(item.price * item.quantity for item in data.items)
 
         # Create order with split address fields
+        # ordered_at はアプリケーション側で JST 現在時刻を設定
+        jst = ZoneInfo("Asia/Tokyo")
+        now_jst = datetime.now(jst)
         customer = data.customer
         order = Order(
             order_number=data.order_number,
@@ -130,15 +133,12 @@ class OrderService:
             customer_address_building=customer.address_building,
             customer_phone=customer.phone,
             customer_email=customer.email,
-            ordered_at=data.ordered_at,
+            ordered_at=now_jst,
             total_price=total_price,
         )
 
         # Create order items with expected_delivery_date
-        # JSTに正規化してからdate()を取得（UTCのままだと深夜帯で日付がずれる）
-        jst = ZoneInfo("Asia/Tokyo")
-        ordered_at_jst = data.ordered_at.astimezone(jst) if data.ordered_at.tzinfo else data.ordered_at
-        ordered_date = ordered_at_jst.date()
+        ordered_date = now_jst.date()
         for idx, item_data in enumerate(data.items):
             product = products[idx]
 

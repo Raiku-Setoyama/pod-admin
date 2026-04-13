@@ -47,7 +47,6 @@ async def create_order(
     Request body (JSON):
     {
         "order_number": "0000001",
-        "ordered_at": "2024-01-15T10:30:00+09:00",
         "customer": {
             "name": "山田太郎",
             "postal_code": "123-4567",
