@@ -49,11 +49,6 @@ async def main() -> None:
     print("users, app_settings, company_holidays）は残ります。")
     print()
 
-    confirm = input("続行しますか？ (y/N): ").strip().lower()
-    if confirm != "y":
-        print("キャンセルしました。")
-        return
-
     session_maker = get_session_maker()
 
     async with session_maker() as session:
