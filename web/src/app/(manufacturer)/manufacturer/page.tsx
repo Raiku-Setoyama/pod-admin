@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   useManufacturerOrderItems,
@@ -18,17 +19,25 @@ import {
 } from "@/features/manufacturer-portal/hooks/use-manufacturer-orders";
 import { ManufacturerOrderFilters } from "@/features/purchase-orders/components/manufacturer-order-filters";
 import { InvoiceDialog } from "@/features/invoice";
+import { StatusBadge } from "@/components/common/status-badge";
 import { Loader2, Package, Download } from "lucide-react";
 import type { OrderStatus } from "@/types/api";
+import type { StatusType } from "@/constants/status";
 
-function formatDate(dateString: string): string {
+const productTypeLabels: Record<string, string> = {
+  acrylic_keychain: "アクリルキーホルダー",
+  acrylic_stand: "アクリルスタンド",
+  sticker: "ステッカー",
+  tote_bag: "トートバッグ",
+  tshirt: "Tシャツ",
+};
+
+function formatDateShort(dateString: string): string {
   const date = new Date(dateString);
   return date.toLocaleDateString("ja-JP", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
   });
 }
 
@@ -189,18 +198,20 @@ export default function ManufacturerDashboardPage() {
                       onCheckedChange={handleSelectAll}
                     />
                   </TableHead>
-                  <TableHead>注文日</TableHead>
                   <TableHead>注文番号</TableHead>
                   <TableHead>製品番号</TableHead>
                   <TableHead>商品名</TableHead>
-                  <TableHead className="text-center">個数</TableHead>
+                  <TableHead>商品タイプ</TableHead>
+                  <TableHead>ステータス</TableHead>
+                  <TableHead className="text-center">数量</TableHead>
+                  <TableHead>納品予定日</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading || isFiltering ? (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={8}
                       className="h-24 text-center text-muted-foreground"
                     >
                       <div className="flex items-center justify-center gap-2">
@@ -212,7 +223,7 @@ export default function ManufacturerDashboardPage() {
                 ) : items.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={8}
                       className="h-24 text-center text-muted-foreground"
                     >
                       発注中のアイテムはありません
@@ -229,13 +240,21 @@ export default function ManufacturerDashboardPage() {
                           }
                         />
                       </TableCell>
-                      <TableCell>{formatDate(item.ordered_at)}</TableCell>
                       <TableCell className="font-medium">
                         {item.order_number}
                       </TableCell>
                       <TableCell>{item.uid || "-"}</TableCell>
                       <TableCell>{item.product_name}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">
+                          {productTypeLabels[item.product_type] || item.product_type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={item.status as StatusType} />
+                      </TableCell>
                       <TableCell className="text-center">{item.quantity}</TableCell>
+                      <TableCell>{formatDateShort(item.expected_delivery_date)}</TableCell>
                     </TableRow>
                   ))
                 )}

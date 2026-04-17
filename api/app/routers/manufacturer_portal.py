@@ -118,16 +118,19 @@ async def get_order_items(
     ordered_from: date | None = None,
     ordered_to: date | None = None,
     product_type: str | None = None,
+    status: str | None = None,
 ) -> ManufacturerOrderItemListResponse:
-    """発注中アイテム一覧を取得
+    """発注アイテム一覧を取得
 
-    ログイン中のメーカーに紐づく発注中（ORDERED）ステータスの受注明細一覧を返します。
+    ログイン中のメーカーに紐づく受注明細一覧を返します。
+    statusでフィルタ可能（ordered, manufacturing, delivered）。
     """
     return await service.get_order_items_by_manufacturer(
         manufacturer.id,
         ordered_from=ordered_from,
         ordered_to=ordered_to,
         product_type=product_type,
+        status=status,
     )
 
 

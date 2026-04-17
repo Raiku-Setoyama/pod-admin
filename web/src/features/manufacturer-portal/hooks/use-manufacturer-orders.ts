@@ -21,6 +21,8 @@ export interface ManufacturerOrderItem {
   ordered_at: string;
   customer_name: string;
   status: string;
+  lead_time_days: number;
+  expected_delivery_date: string;
 }
 
 // 発注アイテム一覧レスポンス

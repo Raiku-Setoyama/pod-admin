@@ -98,6 +98,8 @@ function createMockOrderItemsData(): ManufacturerOrderItemListResponse {
         ordered_at: '2024-01-15T10:00:00Z',
         customer_name: '田中太郎',
         status: 'ordered',  // New field
+        lead_time_days: 10,
+        expected_delivery_date: '2024-01-25',
       },
       {
         id: 'item-002',
@@ -117,6 +119,8 @@ function createMockOrderItemsData(): ManufacturerOrderItemListResponse {
         ordered_at: '2024-01-14T10:00:00Z',
         customer_name: '鈴木花子',
         status: 'manufacturing',  // New field
+        lead_time_days: 10,
+        expected_delivery_date: '2024-01-24',
       },
       {
         id: 'item-003',
@@ -136,6 +140,8 @@ function createMockOrderItemsData(): ManufacturerOrderItemListResponse {
         ordered_at: '2024-01-13T10:00:00Z',
         customer_name: '山田一郎',
         status: 'delivered',  // New field
+        lead_time_days: 10,
+        expected_delivery_date: '2024-01-23',
       },
     ],
     total: 3,
