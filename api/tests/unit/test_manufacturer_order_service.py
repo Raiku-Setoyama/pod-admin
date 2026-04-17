@@ -473,8 +473,9 @@ class TestFeat0012NamingRules:
 
             side_effect = default_download
 
-        with patch.object(service, '_download_file', side_effect=side_effect):
-            with patch('app.services.manufacturer_order_service.datetime') as mock_dt:
+        with patch.object(service, '_download_file', side_effect=side_effect), \
+             patch('app.services.manufacturer_order_service.load_stand_file', return_value=b"STAND_CONTENT"), \
+             patch('app.services.manufacturer_order_service.datetime') as mock_dt:
                 mock_dt.now.return_value = fixed_now
                 mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
                 zip_bytes, filename = await service.generate_order_documents(

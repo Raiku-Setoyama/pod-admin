@@ -3,18 +3,18 @@
 FEAT-0012: アクリルフィギュアのスタンドファイル設定
 
 テスト対象: stand_file_config モジュール
-- get_stand_file_path() がデフォルトファイルパスを返す
-- サイズ指定時に正しいファイルパスを返す
-- 未定義サイズ時にデフォルトにフォールバックする
-- サイズ別マッピングの設定構造が拡張可能である
+- get_stand_file_path() がサイズに応じたフルパスを返す
+- load_stand_file() がファイル内容を返す / ファイルがなければ None を返す
 """
 
-import pytest
+from pathlib import Path
 
 from app.utils.stand_file_config import (
     get_stand_file_path,
+    load_stand_file,
     STAND_FILE_MAPPING,
-    DEFAULT_STAND_FILE_PATH,
+    STAND_TEMPLATES_DIR,
+    DEFAULT_STAND_FILENAME,
 )
 
 
@@ -22,58 +22,73 @@ class TestGetStandFilePath:
     """get_stand_file_path() のテスト"""
 
     def test_returns_default_when_no_size_given(self):
-        """サイズ未指定時にデフォルトのスタンドファイルパスを返す
-
-        given: サイズ引数なし（None）
-        when: get_stand_file_path() を呼ぶ
-        then: DEFAULT_STAND_FILE_PATH が返る
-        """
+        """サイズ未指定時にデフォルトのスタンドファイルパスを返す"""
         result = get_stand_file_path()
-        assert result == DEFAULT_STAND_FILE_PATH
+        assert result == STAND_TEMPLATES_DIR / DEFAULT_STAND_FILENAME
 
     def test_returns_default_when_size_is_none(self):
-        """サイズが None の場合にデフォルトを返す
-
-        given: size=None
-        when: get_stand_file_path(size=None) を呼ぶ
-        then: DEFAULT_STAND_FILE_PATH が返る
-        """
+        """サイズが None の場合にデフォルトを返す"""
         result = get_stand_file_path(size=None)
-        assert result == DEFAULT_STAND_FILE_PATH
+        assert result == STAND_TEMPLATES_DIR / DEFAULT_STAND_FILENAME
 
     def test_returns_mapped_path_for_known_size(self):
-        """マッピングに登録済みのサイズで正しいパスを返す
-
-        given: STAND_FILE_MAPPING にサイズが登録されている
-        when: そのサイズで get_stand_file_path() を呼ぶ
-        then: マッピングされたパスが返る
-        """
-        # STAND_FILE_MAPPING に少なくとも1つのエントリがあることを前提
-        if STAND_FILE_MAPPING:
-            first_size = next(iter(STAND_FILE_MAPPING))
-            expected_path = STAND_FILE_MAPPING[first_size]
-            result = get_stand_file_path(size=first_size)
-            assert result == expected_path
+        """マッピングに登録済みのサイズで正しいパスを返す"""
+        result = get_stand_file_path(size="50x50mm")
+        assert result == STAND_TEMPLATES_DIR / STAND_FILE_MAPPING["50x50mm"]
 
     def test_fallback_to_default_for_unknown_size(self):
-        """未定義サイズ時にデフォルトにフォールバック
-
-        given: STAND_FILE_MAPPING に存在しないサイズ
-        when: get_stand_file_path(size="999x999mm") を呼ぶ
-        then: DEFAULT_STAND_FILE_PATH が返る
-        """
+        """未定義サイズ時にデフォルトにフォールバック"""
         result = get_stand_file_path(size="999x999mm")
-        assert result == DEFAULT_STAND_FILE_PATH
+        assert result == STAND_TEMPLATES_DIR / DEFAULT_STAND_FILENAME
 
-    def test_returns_string_path(self):
-        """戻り値が文字列であること"""
+    def test_returns_path_object(self):
+        """戻り値が Path であること"""
         result = get_stand_file_path()
-        assert isinstance(result, str)
+        assert isinstance(result, Path)
 
-    def test_default_path_is_not_empty(self):
-        """デフォルトパスが空でないこと"""
-        assert DEFAULT_STAND_FILE_PATH
-        assert len(DEFAULT_STAND_FILE_PATH) > 0
+
+class TestLoadStandFile:
+    """load_stand_file() のテスト"""
+
+    def test_returns_content_when_file_exists(self, tmp_path, monkeypatch):
+        """ファイルが存在する場合に内容を返す"""
+        template_dir = tmp_path / "stand_templates"
+        template_dir.mkdir()
+        template_file = template_dir / DEFAULT_STAND_FILENAME
+        template_file.write_bytes(b"AI_FILE_CONTENT")
+
+        monkeypatch.setattr(
+            "app.utils.stand_file_config.STAND_TEMPLATES_DIR", template_dir
+        )
+
+        result = load_stand_file()
+        assert result == b"AI_FILE_CONTENT"
+
+    def test_returns_none_when_file_not_found(self, tmp_path, monkeypatch):
+        """ファイルが存在しない場合に None を返す"""
+        template_dir = tmp_path / "stand_templates"
+        template_dir.mkdir()
+
+        monkeypatch.setattr(
+            "app.utils.stand_file_config.STAND_TEMPLATES_DIR", template_dir
+        )
+
+        result = load_stand_file()
+        assert result is None
+
+    def test_returns_correct_file_for_size(self, tmp_path, monkeypatch):
+        """サイズ指定時に対応するファイルの内容を返す"""
+        template_dir = tmp_path / "stand_templates"
+        template_dir.mkdir()
+        template_file = template_dir / STAND_FILE_MAPPING["100x100mm"]
+        template_file.write_bytes(b"100MM_CONTENT")
+
+        monkeypatch.setattr(
+            "app.utils.stand_file_config.STAND_TEMPLATES_DIR", template_dir
+        )
+
+        result = load_stand_file(size="100x100mm")
+        assert result == b"100MM_CONTENT"
 
 
 class TestStandFileMapping:
@@ -86,13 +101,15 @@ class TestStandFileMapping:
     def test_mapping_keys_are_strings(self):
         """マッピングのキー（サイズ）が文字列であること"""
         for key in STAND_FILE_MAPPING:
-            assert isinstance(key, str), f"Key '{key}' is not a string"
+            assert isinstance(key, str)
 
     def test_mapping_values_are_strings(self):
-        """マッピングの値（ファイルパス）が文字列であること"""
-        for key, value in STAND_FILE_MAPPING.items():
-            assert isinstance(value, str), f"Value for key '{key}' is not a string"
+        """マッピングの値（ファイル名）が文字列であること"""
+        for value in STAND_FILE_MAPPING.values():
+            assert isinstance(value, str)
 
-    def test_default_stand_file_path_is_defined(self):
-        """DEFAULT_STAND_FILE_PATH が定義されている"""
-        assert DEFAULT_STAND_FILE_PATH is not None
+    def test_all_filenames_end_with_ai(self):
+        """全ファイル名が .ai で終わること"""
+        for value in STAND_FILE_MAPPING.values():
+            assert value.endswith(".ai")
+        assert DEFAULT_STAND_FILENAME.endswith(".ai")

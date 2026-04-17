@@ -21,7 +21,7 @@ from app.schemas.manufacturer import (
 )
 from app.utils.exceptions import NotFoundError, NoOrderedItemsError
 from app.utils.order_list_generator import OrderListGenerator, get_product_type_name
-from app.utils.stand_file_config import get_stand_file_path
+from app.utils.stand_file_config import load_stand_file
 from app.utils.zip_builder import ZipBuilder
 
 
@@ -477,16 +477,15 @@ class ManufacturerOrderService:
 
                 # 製造データ②（アクリルフィギュアのみ: _stand.ai）
                 if item_product_type == "acrylic_stand":
-                    stand_path = get_stand_file_path(item.get("size"))
-                    # スタンドファイルの内容を読み込む（静的サンプル）
-                    stand_content = self._load_stand_file(stand_path)
-                    stand_filename = (
-                        f"{product_detail}【個数】{quantity}個"
-                        f"_{order_number}_{uid}_{mmdd}_stand.ai"
-                    )
-                    zip_builder.add_file(
-                        f"{order_folder}/{stand_filename}", stand_content
-                    )
+                    stand_content = load_stand_file(item.get("size"))
+                    if stand_content:
+                        stand_filename = (
+                            f"{product_detail}【個数】{quantity}個"
+                            f"_{order_number}_{uid}_{mmdd}_stand.ai"
+                        )
+                        zip_builder.add_file(
+                            f"{order_folder}/{stand_filename}", stand_content
+                        )
 
         # ZIP生成
         zip_bytes = zip_builder.build()
@@ -506,15 +505,6 @@ class ManufacturerOrderService:
         zip_name = f"TAPI_{manufacturer.name}_発注資料.zip"
 
         return zip_bytes, zip_name
-
-    @staticmethod
-    def _load_stand_file(stand_path: str) -> bytes:
-        """スタンドファイルの内容を取得する。
-
-        現時点では静的なプレースホルダー内容を返す。
-        将来的にはファイルシステムやストレージからの読み込みに変更可能。
-        """
-        return b"STAND_FILE_CONTENT"
 
     async def _download_file(self, url: str) -> tuple[bytes | None, str]:
         """URLからファイルをダウンロード"""
