@@ -50,7 +50,7 @@ class EmailService:
             True if sent successfully, False otherwise. Never raises exceptions.
         """
         try:
-            subject = "【Center River】ご注文商品を発送いたしました"
+            subject = "【RKSYO】ご注文商品を発送いたしました"
 
             # Render HTML template
             template = self._jinja_env.get_template("shipping_notification.html")
