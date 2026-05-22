@@ -62,7 +62,7 @@ export function TrackingImport({ onImportComplete }: TrackingImportProps) {
 
   const handleTemplateDownload = async () => {
     try {
-      await downloadFile("/shipments/import-template", "import-template.xlsx");
+      await downloadFile("/shipments/import-template", "import-template.csv");
     } catch {
       setError("テンプレートのダウンロードに失敗しました");
     }

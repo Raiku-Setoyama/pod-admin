@@ -52,6 +52,17 @@ function getTrackingNumber(item: ShipmentOrPendingOrder): string {
   return item.tracking_number || "-";
 }
 
+// Helper to get order numbers
+function getOrderNumbers(item: ShipmentOrPendingOrder): string[] {
+  if (isPendingOrder(item)) {
+    return [item.order_number];
+  }
+  const numbers = item.items
+    .map((i) => i.order_number)
+    .filter((n): n is string => n != null);
+  return [...new Set(numbers)];
+}
+
 // Helper to get display ID
 function getDisplayId(item: ShipmentOrPendingOrder): string {
   if (isPendingOrder(item)) {
@@ -125,6 +136,7 @@ export function ShipmentList({
               />
             </TableHead>
             <TableHead>配送ID</TableHead>
+            <TableHead>注文番号</TableHead>
             <TableHead>宛先</TableHead>
             <TableHead>商品数</TableHead>
             <TableHead>伝票番号</TableHead>
@@ -136,7 +148,7 @@ export function ShipmentList({
         <TableBody>
           {shipments.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+              <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                 該当する配送がありません
               </TableCell>
             </TableRow>
@@ -160,6 +172,13 @@ export function ShipmentList({
                   </TableCell>
                   <TableCell>
                     <div className="font-medium">{getDisplayId(item)}</div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="text-xs space-y-0.5">
+                      {getOrderNumbers(item).map((num) => (
+                        <div key={num}>{num}</div>
+                      ))}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <div>{customerInfo.name}</div>
