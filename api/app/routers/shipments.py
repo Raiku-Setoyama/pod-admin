@@ -46,6 +46,8 @@ async def list_shipments(
     shipped_to: date | None = None,
     delivered_from: date | None = None,
     delivered_to: date | None = None,
+    estimated_shipping_date_from: date | None = None,
+    estimated_shipping_date_to: date | None = None,
     sort_by: Literal["created_at", "shipped_at", "delivered_at"] = "created_at",
     sort_order: Literal["asc", "desc"] = "desc",
 ) -> ShipmentListWithPendingResponse:
@@ -82,6 +84,8 @@ async def list_shipments(
         shipped_to=shipped_to,
         delivered_from=delivered_from,
         delivered_to=delivered_to,
+        estimated_shipping_date_from=estimated_shipping_date_from,
+        estimated_shipping_date_to=estimated_shipping_date_to,
         sort_by=sort_by,
         sort_order=sort_order,
     )

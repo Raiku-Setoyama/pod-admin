@@ -551,6 +551,8 @@ class OrderRepository:
         page: int = 1,
         limit: int = 20,
         status: "PendingOrderStatus | None" = None,
+        estimated_shipping_date_from: date | None = None,
+        estimated_shipping_date_to: date | None = None,
     ) -> tuple[list[Order], int]:
         """Find orders that don't have associated shipments.
 
@@ -590,6 +592,11 @@ class OrderRepository:
                 .distinct()
             )
             base_conditions.append(Order.id.in_(non_delivered_items))
+
+        if estimated_shipping_date_from:
+            base_conditions.append(Order.estimated_shipping_date >= estimated_shipping_date_from)
+        if estimated_shipping_date_to:
+            base_conditions.append(Order.estimated_shipping_date <= estimated_shipping_date_to)
 
         # Query for orders without shipments
         query = (

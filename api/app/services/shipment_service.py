@@ -151,6 +151,8 @@ class ShipmentService:
         shipped_to: date | None = None,
         delivered_from: date | None = None,
         delivered_to: date | None = None,
+        estimated_shipping_date_from: date | None = None,
+        estimated_shipping_date_to: date | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
     ) -> ShipmentListWithPendingResponse:
@@ -185,6 +187,8 @@ class ShipmentService:
                 shipped_to=shipped_to,
                 delivered_from=delivered_from,
                 delivered_to=delivered_to,
+                estimated_shipping_date_from=estimated_shipping_date_from,
+                estimated_shipping_date_to=estimated_shipping_date_to,
                 sort_by=sort_by,
                 sort_order=sort_order,
             )
@@ -198,6 +202,8 @@ class ShipmentService:
                 page=page,
                 limit=limit,
                 status=pending_order_status,
+                estimated_shipping_date_from=estimated_shipping_date_from,
+                estimated_shipping_date_to=estimated_shipping_date_to,
             )
             # Convert pending orders to responses
             for order in pending_orders:

@@ -62,6 +62,8 @@ class ShipmentRepository:
         shipped_to: date | None = None,
         delivered_from: date | None = None,
         delivered_to: date | None = None,
+        estimated_shipping_date_from: date | None = None,
+        estimated_shipping_date_to: date | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
     ) -> tuple[list[Shipment], int]:
@@ -125,6 +127,23 @@ class ShipmentRepository:
         if delivered_to:
             query = query.where(func.date(Shipment.delivered_at) <= delivered_to)
             count_query = count_query.where(func.date(Shipment.delivered_at) <= delivered_to)
+
+        if estimated_shipping_date_from or estimated_shipping_date_to:
+            # estimated_shipping_date is on Order, join via ShipmentItem
+            est_date_subquery = select(ShipmentItem.shipment_id).join(
+                Order, ShipmentItem.order_id == Order.id
+            )
+            if estimated_shipping_date_from:
+                est_date_subquery = est_date_subquery.where(
+                    Order.estimated_shipping_date >= estimated_shipping_date_from
+                )
+            if estimated_shipping_date_to:
+                est_date_subquery = est_date_subquery.where(
+                    Order.estimated_shipping_date <= estimated_shipping_date_to
+                )
+            est_date_filter = Shipment.id.in_(est_date_subquery)
+            query = query.where(est_date_filter)
+            count_query = count_query.where(est_date_filter)
 
         # Get total count
         total_result = await self._db.execute(count_query)

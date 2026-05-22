@@ -19,6 +19,8 @@ interface UseShipmentsParams {
   shipped_to?: string;
   delivered_from?: string;
   delivered_to?: string;
+  estimated_shipping_date_from?: string;
+  estimated_shipping_date_to?: string;
   sort_by?: SortBy;
   sort_order?: SortOrder;
 }
@@ -37,6 +39,8 @@ export function useShipments(params: UseShipmentsParams = {}) {
     shipped_to,
     delivered_from,
     delivered_to,
+    estimated_shipping_date_from,
+    estimated_shipping_date_to,
     sort_by = "created_at",
     sort_order = "desc",
   } = params;
@@ -56,6 +60,8 @@ export function useShipments(params: UseShipmentsParams = {}) {
   if (shipped_to) queryParams.set("shipped_to", shipped_to);
   if (delivered_from) queryParams.set("delivered_from", delivered_from);
   if (delivered_to) queryParams.set("delivered_to", delivered_to);
+  if (estimated_shipping_date_from) queryParams.set("estimated_shipping_date_from", estimated_shipping_date_from);
+  if (estimated_shipping_date_to) queryParams.set("estimated_shipping_date_to", estimated_shipping_date_to);
 
   const { data, error, isLoading, mutate } = useSWR<ShipmentListWithPendingResponse>(
     `/shipments?${queryParams.toString()}`,

@@ -47,6 +47,7 @@ export default function ShipmentsPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<ShipmentFilterStatus | null>(null);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const [estimatedShippingDateRange, setEstimatedShippingDateRange] = useState<DateRange | undefined>(undefined);
 
   // 一括更新用state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -74,6 +75,8 @@ export default function ShipmentsPage() {
     search: search || undefined,
     created_from: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
     created_to: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
+    estimated_shipping_date_from: estimatedShippingDateRange?.from ? format(estimatedShippingDateRange.from, "yyyy-MM-dd") : undefined,
+    estimated_shipping_date_to: estimatedShippingDateRange?.to ? format(estimatedShippingDateRange.to, "yyyy-MM-dd") : undefined,
   });
 
   // Helper functions to separate selected IDs by type
@@ -105,6 +108,7 @@ export default function ShipmentsPage() {
     setSearch("");
     setStatus(null);
     setDateRange(undefined);
+    setEstimatedShippingDateRange(undefined);
     setPage(1);
   };
 
@@ -300,9 +304,11 @@ export default function ShipmentsPage() {
           search={search}
           status={status}
           dateRange={dateRange}
+          estimatedShippingDateRange={estimatedShippingDateRange}
           onSearchChange={(value) => { setSearch(value); setPage(1); }}
           onStatusChange={(value) => { setStatus(value); setPage(1); }}
           onDateRangeChange={(range) => { setDateRange(range); setPage(1); }}
+          onEstimatedShippingDateRangeChange={(range) => { setEstimatedShippingDateRange(range); setPage(1); }}
           onReset={handleReset}
         />
 
