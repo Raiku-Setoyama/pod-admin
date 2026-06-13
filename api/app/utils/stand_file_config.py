@@ -18,7 +18,6 @@ STAND_FILE_MAPPING: dict[str, str] = {
     "50x50mm": "アクリルフィギュアスタンド_50mm_台座.ai",
     "70x70mm": "アクリルフィギュアスタンド_70mm_台座.ai",
     "100x100mm": "アクリルフィギュアスタンド_100mm_台座.ai",
-    "160x160mm": "アクリルフィギュアスタンド_160mm_台座.ai",
 }
 
 # Default filename (used when size is not in STAND_FILE_MAPPING)

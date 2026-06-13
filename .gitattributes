@@ -1,0 +1,2 @@
+# Adobe Illustrator (.ai) は PDF ベースのバイナリ。改行/エンコーディング変換を一切行わない。
+*.ai binary
