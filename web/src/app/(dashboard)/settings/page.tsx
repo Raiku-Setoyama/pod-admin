@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, X } from "lucide-react";
 import { PageContainer } from "@/components/layout/page-container";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -25,10 +27,30 @@ import type {
   CompanyHoliday,
 } from "@/types/api";
 
+const NOTIFICATION_ENABLED_KEY = "external_order_notification_enabled";
+const NOTIFICATION_RECIPIENTS_KEY = "external_order_notification_recipients";
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function parseRecipients(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((addr) => addr.trim())
+    .filter(Boolean);
+}
+
 export default function SettingsPage() {
   const [shippingDays, setShippingDays] = useState<string>("");
   const [shippingDaysInitialized, setShippingDaysInitialized] = useState(false);
   const [isSavingDays, setIsSavingDays] = useState(false);
+
+  // 外部注文の通知
+  const [notificationEnabled, setNotificationEnabled] = useState(false);
+  const [recipients, setRecipients] = useState<string[]>([]);
+  const [newRecipient, setNewRecipient] = useState("");
+  const [notificationInitialized, setNotificationInitialized] = useState(false);
+  const [isSavingNotification, setIsSavingNotification] = useState(false);
+  const [notificationError, setNotificationError] = useState<string | null>(null);
 
   // 休日追加フォーム
   const [newHolidayDate, setNewHolidayDate] = useState("");
@@ -51,6 +73,19 @@ export default function SettingsPage() {
       setShippingDaysInitialized(true);
     }
   }, [settingsData, shippingDaysInitialized]);
+
+  // 通知設定の初回反映
+  useEffect(() => {
+    if (settingsData && !notificationInitialized) {
+      const enabledSetting = settingsData.items.find((s) => s.key === NOTIFICATION_ENABLED_KEY);
+      setNotificationEnabled(enabledSetting?.value === "true");
+      const recipientsSetting = settingsData.items.find(
+        (s) => s.key === NOTIFICATION_RECIPIENTS_KEY,
+      );
+      setRecipients(parseRecipients(recipientsSetting?.value));
+      setNotificationInitialized(true);
+    }
+  }, [settingsData, notificationInitialized]);
 
   // 休日一覧取得
   const {
@@ -78,6 +113,49 @@ export default function SettingsPage() {
       toast.error("更新に失敗しました");
     } finally {
       setIsSavingDays(false);
+    }
+  };
+
+  const handleAddRecipient = () => {
+    const email = newRecipient.trim();
+    if (!email) return;
+    if (!EMAIL_REGEX.test(email)) {
+      setNotificationError(`メールアドレスの形式が正しくありません: ${email}`);
+      return;
+    }
+    if (recipients.includes(email)) {
+      setNotificationError("既に登録されているメールアドレスです");
+      return;
+    }
+    setRecipients([...recipients, email]);
+    setNewRecipient("");
+    setNotificationError(null);
+  };
+
+  const handleRemoveRecipient = (email: string) => {
+    setRecipients(recipients.filter((r) => r !== email));
+  };
+
+  const handleSaveNotification = async () => {
+    setIsSavingNotification(true);
+    setNotificationError(null);
+    try {
+      await apiClient(`/settings/${NOTIFICATION_ENABLED_KEY}`, {
+        method: "PUT",
+        body: { value: notificationEnabled ? "true" : "false" },
+      });
+      await apiClient(`/settings/${NOTIFICATION_RECIPIENTS_KEY}`, {
+        method: "PUT",
+        body: { value: recipients.join(",") },
+      });
+      toast.success("外部注文の通知設定を更新しました");
+      mutateSettings();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "更新に失敗しました";
+      setNotificationError(message);
+      toast.error(message);
+    } finally {
+      setIsSavingNotification(false);
     }
   };
 
@@ -160,6 +238,92 @@ export default function SettingsPage() {
                 </Button>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* 外部注文の通知 */}
+        <Card>
+          <CardHeader>
+            <CardTitle>外部注文の通知</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              外部販売サイトから注文を受け付けた際に、指定したメールアドレスへ通知メールを送信します。
+            </p>
+
+            <div className="flex items-center gap-3">
+              <Switch
+                id="notification-enabled"
+                checked={notificationEnabled}
+                onCheckedChange={setNotificationEnabled}
+              />
+              <Label htmlFor="notification-enabled">通知を有効にする</Label>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="recipient-email">通知先メールアドレス</Label>
+              <p className="text-sm text-muted-foreground">
+                複数登録できます。入力して「追加」を押すか Enter で登録してください。
+              </p>
+              <div className="flex items-end gap-3">
+                <Input
+                  id="recipient-email"
+                  type="email"
+                  placeholder="例: staff@example.com"
+                  value={newRecipient}
+                  onChange={(e) => setNewRecipient(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddRecipient();
+                    }
+                  }}
+                />
+                <Button onClick={handleAddRecipient} variant="secondary" size="sm">
+                  <Plus className="h-4 w-4 mr-1" />
+                  追加
+                </Button>
+              </div>
+
+              {recipients.length > 0 ? (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {recipients.map((email) => (
+                    <Badge key={email} variant="secondary" className="gap-1 pr-1">
+                      {email}
+                      <button
+                        type="button"
+                        aria-label={`${email} を削除`}
+                        onClick={() => handleRemoveRecipient(email)}
+                        className="rounded-full p-0.5 hover:bg-muted-foreground/20"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">通知先が登録されていません。</p>
+              )}
+
+              {notificationEnabled && recipients.length === 0 && (
+                <p className="text-sm text-amber-600">
+                  宛先が未登録のため、現在は通知が送信されません。
+                </p>
+              )}
+              {notificationError && (
+                <p className="text-sm text-destructive" role="alert">
+                  {notificationError}
+                </p>
+              )}
+            </div>
+
+            <Button
+              onClick={handleSaveNotification}
+              disabled={isSavingNotification}
+              size="sm"
+            >
+              {isSavingNotification ? "保存中..." : "保存"}
+            </Button>
           </CardContent>
         </Card>
 

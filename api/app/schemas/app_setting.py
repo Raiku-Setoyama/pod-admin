@@ -19,7 +19,8 @@ class AppSettingResponse(BaseModel):
 class AppSettingUpdate(BaseModel):
     """App setting update schema."""
 
-    value: str = Field(..., min_length=1, max_length=500)
+    # 空文字を許可する設定（例: 通知先メールアドレスの全削除）があるため min_length=0
+    value: str = Field(..., min_length=0, max_length=500)
 
 
 class AppSettingListResponse(BaseModel):
