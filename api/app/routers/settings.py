@@ -20,6 +20,12 @@ from app.schemas.app_setting import (
     AppSettingUpdate,
 )
 from app.services.estimated_shipping_service import recalculate_all_estimated_shipping_dates
+from app.services.external_order_notification import (
+    NOTIFICATION_ENABLED_KEY,
+    NOTIFICATION_RECIPIENTS_KEY,
+    validate_setting_value,
+)
+from app.utils.exceptions import AppException
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -57,6 +63,15 @@ async def update_setting(
                 status_code=422,
                 detail="発送準備日数は0〜365の整数で指定してください",
             ) from None
+
+    # Validate external order notification settings.
+    # AppException を使うことで、フロントの共通エラー envelope（error.message）に
+    # 日本語メッセージが乗り、422 として画面に表示できる。
+    if key in (NOTIFICATION_ENABLED_KEY, NOTIFICATION_RECIPIENTS_KEY):
+        try:
+            validate_setting_value(key, data.value)
+        except ValueError as e:
+            raise AppException(422, "VALIDATION_ERROR", str(e)) from None
 
     setting = await repo.upsert(key, data.value)
 

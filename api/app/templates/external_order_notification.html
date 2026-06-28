@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0; padding:0; background-color:#f5f5f5; font-family:'Helvetica Neue',Arial,'Hiragino Kaku Gothic ProN',sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5; padding:20px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff; border-radius:8px; overflow:hidden;">
+          <!-- Header -->
+          <tr>
+            <td style="background-color:#16a34a; padding:24px 32px; text-align:center;">
+              <h1 style="margin:0; color:#ffffff; font-size:20px; font-weight:bold;">新規注文を受け付けました</h1>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:32px;">
+              <p style="margin:0 0 24px; font-size:14px; color:#555555; line-height:1.6;">
+                外部販売サイトから新しい注文を受け付けました。内容をご確認ください。
+              </p>
+              <!-- Order Info -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8fafc; border-radius:6px; margin-bottom:24px;">
+                <tr>
+                  <td style="padding:20px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding:4px 0; font-size:13px; color:#666666; width:100px;">注文番号</td>
+                        <td style="padding:4px 0; font-size:14px; color:#333333; font-weight:bold;">{{ order_number }}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:4px 0; font-size:13px; color:#666666;">販売サイト</td>
+                        <td style="padding:4px 0; font-size:14px; color:#333333;">{{ source_code or "-" }}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:4px 0; font-size:13px; color:#666666;">受注日時</td>
+                        <td style="padding:4px 0; font-size:14px; color:#333333;">{{ ordered_at }}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:4px 0; font-size:13px; color:#666666;">顧客名</td>
+                        <td style="padding:4px 0; font-size:14px; color:#333333;">{{ customer_name }}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              <!-- Order Items -->
+              <h2 style="margin:0 0 12px; font-size:15px; color:#333333;">注文商品</h2>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb; border-radius:6px; overflow:hidden; margin-bottom:16px;">
+                {% for item in order_items %}
+                <tr style="{% if not loop.last %}border-bottom:1px solid #e5e7eb;{% endif %}">
+                  <td style="padding:12px; font-size:14px; color:#333333;">
+                    {{ item.product_name }}
+                  </td>
+                  <td style="padding:12px; font-size:14px; color:#555555; text-align:right; white-space:nowrap;">
+                    x {{ item.quantity }}
+                  </td>
+                </tr>
+                {% endfor %}
+              </table>
+              <!-- Total -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+                <tr>
+                  <td style="padding:8px 12px; font-size:14px; color:#666666; text-align:right;">合計金額</td>
+                  <td style="padding:8px 12px; font-size:16px; color:#333333; font-weight:bold; text-align:right; white-space:nowrap; width:120px;">{{ total_price }}円</td>
+                </tr>
+              </table>
+              {% if order_detail_url %}
+              <p style="margin:0 0 8px; text-align:center;">
+                <a href="{{ order_detail_url }}" style="display:inline-block; background-color:#16a34a; color:#ffffff; font-size:14px; text-decoration:none; padding:12px 24px; border-radius:6px;">管理画面で注文を確認する</a>
+              </p>
+              {% endif %}
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="background-color:#f8fafc; padding:20px 32px; text-align:center; border-top:1px solid #e5e7eb;">
+              <p style="margin:0; font-size:12px; color:#999999;">POD Admin 受注通知</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

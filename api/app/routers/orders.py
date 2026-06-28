@@ -3,11 +3,12 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from app.dependencies import (
     get_current_admin,
+    get_external_order_notification_service,
     get_file_storage,
     get_order_image_service,
     get_order_service,
@@ -28,6 +29,7 @@ from app.schemas.order import (
     OrderThumbnailDownloadRequest,
 )
 from urllib.parse import quote
+from app.services.external_order_notification import ExternalOrderNotificationService
 from app.services.order_image_service import OrderImageService
 from app.services.order_service import OrderService
 from app.utils.exceptions import OrderNotFoundError, ValidationError
@@ -39,7 +41,11 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 @router.post("", response_model=OrderResponse, status_code=201)
 async def create_order(
     data: OrderCreate,
+    background_tasks: BackgroundTasks,
     service: OrderService = Depends(get_order_service),
+    notification_service: ExternalOrderNotificationService = Depends(
+        get_external_order_notification_service
+    ),
     api_key_info: tuple[str, str] = Depends(verify_api_key),
 ) -> OrderResponse:
     """Create a new order from external sales site (API Key authentication).
@@ -73,7 +79,10 @@ async def create_order(
     }
     """
     _, order_source_id = api_key_info
-    return await service.create(data, order_source_id=order_source_id)
+    order = await service.create(data, order_source_id=order_source_id)
+    # 受注通知メールはレスポンス送出後に非同期送信（注文受付はブロックしない）
+    await notification_service.enqueue_if_enabled(background_tasks, order=order)
+    return order
 
 
 @router.get("", response_model=OrderListResponse)

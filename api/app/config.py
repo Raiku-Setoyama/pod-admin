@@ -51,5 +51,8 @@ class Settings(BaseSettings):
     SENDGRID_FROM_EMAIL: str = ""
     CONTACT_EMAIL: str = ""
 
+    # 管理画面のベースURL（受注通知メールの注文詳細リンク用、未設定ならリンクを描画しない）
+    ADMIN_BASE_URL: str = ""
+
 
 settings = Settings()

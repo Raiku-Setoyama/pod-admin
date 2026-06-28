@@ -23,6 +23,7 @@ from app.services.auth_service import AuthService
 from app.services.chat_service import ChatService
 from app.services.dashboard_service import DashboardService
 from app.services.email_service import EmailService
+from app.services.external_order_notification import ExternalOrderNotificationService
 from app.services.external_service import ExternalService
 from app.services.invoice_service import InvoiceService
 from app.services.manufacturer_order_service import ManufacturerOrderService
@@ -155,7 +156,16 @@ def get_email_service() -> EmailService | None:
         api_key=settings.SENDGRID_API_KEY,
         from_email=settings.SENDGRID_FROM_EMAIL,
         contact_email=settings.CONTACT_EMAIL,
+        admin_base_url=settings.ADMIN_BASE_URL,
     )
+
+
+def get_external_order_notification_service(
+    app_setting_repo: Annotated[AppSettingRepository, Depends(get_app_setting_repository)],
+    email_service: Annotated[EmailService | None, Depends(get_email_service)],
+) -> ExternalOrderNotificationService:
+    """Get external order notification service."""
+    return ExternalOrderNotificationService(app_setting_repo, email_service)
 
 
 def get_shipment_service(
