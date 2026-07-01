@@ -38,10 +38,14 @@ from app.repositories.order_source_repository import OrderSourceRepository
 from app.repositories.product_repository import ProductRepository
 from app.repositories.shipment_repository import ShipmentRepository
 from app.schemas.order import (
+    CustomerInfo,
     ManufacturingDataInfo,
+    MfgDataItemInfo,
     OrderBulkStatusUpdateResponse,
     OrderCreate,
+    OrderCreateV2,
     OrderItemCreate,
+    OrderItemCreateV2,
     OrderItemResponse,
     OrderListResponse,
     OrderResponse,
@@ -56,6 +60,7 @@ from app.utils.business_day_calculator import add_business_days
 from app.utils.exceptions import (
     DuplicateError,
     InvalidStatusTransitionError,
+    ManufacturingDataNotReadyError,
     NotFoundError,
     OrderNotFoundError,
     ProductNotFoundError,
@@ -90,15 +95,51 @@ class OrderService:
         data: OrderCreate,
         order_source_id: str | None = None,
     ) -> OrderResponse:
-        """Create a new order from external sales site."""
+        """Create a new order from external sales site (v1: 完成デザインURL方式)."""
+        return await self._create_order(
+            order_number=data.order_number,
+            customer=data.customer,
+            items=data.items,
+            order_source_id=order_source_id,
+            build_item=self._build_v1_item,
+        )
+
+    async def create_v2(
+        self,
+        data: OrderCreateV2,
+        order_source_id: str | None = None,
+    ) -> OrderResponse:
+        """Create a new order from external sales site (v2: 製造データ生成方式).
+
+        完成デザインは受け取らず、元データ（PNGレイヤーURL）を source_images に保存する。
+        製造データの生成・紐付けは ManufacturingDataService.prepare_for_order が担う。
+        """
+        return await self._create_order(
+            order_number=data.order_number,
+            customer=data.customer,
+            items=data.items,
+            order_source_id=order_source_id,
+            build_item=self._build_v2_item,
+        )
+
+    async def _create_order(
+        self,
+        *,
+        order_number: str,
+        customer: CustomerInfo,
+        items: list,
+        order_source_id: str | None,
+        build_item,
+    ) -> OrderResponse:
+        """v1/v2 共通の注文作成ロジック（明細組み立てのみ build_item に委譲）."""
         # Check for duplicate order number
-        existing = await self._order_repo.find_by_order_number(data.order_number)
+        existing = await self._order_repo.find_by_order_number(order_number)
         if existing:
-            raise DuplicateError("Order", "order_number", data.order_number)
+            raise DuplicateError("Order", "order_number", order_number)
 
         # Validate items and find products
         products: dict[int, Product] = {}  # index -> Product
-        for idx, item_data in enumerate(data.items):
+        for idx, item_data in enumerate(items):
             # Validate attributes based on product_type
             self._validate_item_attributes(item_data)
 
@@ -116,15 +157,14 @@ class OrderService:
             company_holidays = await self._company_holiday_repo.find_all_dates()
 
         # Calculate total price
-        total_price = sum(item.price * item.quantity for item in data.items)
+        total_price = sum(item.price * item.quantity for item in items)
 
         # Create order with split address fields
         # ordered_at はアプリケーション側で JST 現在時刻を設定
         jst = ZoneInfo("Asia/Tokyo")
         now_jst = datetime.now(jst)
-        customer = data.customer
         order = Order(
-            order_number=data.order_number,
+            order_number=order_number,
             order_source_id=order_source_id,
             customer_name=customer.name,
             customer_postal_code=customer.postal_code,
@@ -139,7 +179,7 @@ class OrderService:
 
         # Create order items with expected_delivery_date
         ordered_date = now_jst.date()
-        for idx, item_data in enumerate(data.items):
+        for idx, item_data in enumerate(items):
             product = products[idx]
 
             # Calculate expected_delivery_date using business day calculation
@@ -148,22 +188,7 @@ class OrderService:
                 product.lead_time_days,
                 company_holidays,
             )
-
-            order_item = OrderItem(
-                uid=item_data.uid,
-                product_id=product.id,
-                product_name=item_data.product_name,
-                product_type=item_data.product_type.value,
-                price=item_data.price,
-                quantity=item_data.quantity,
-                size=item_data.size,
-                position=item_data.position,
-                color=item_data.color,
-                design_image_url=item_data.design_image_url,
-                thumbnail_image_url=item_data.thumbnail_image_url,
-                expected_delivery_date=expected_delivery,
-            )
-            order.items.append(order_item)
+            order.items.append(build_item(item_data, product, expected_delivery))
 
         # Calculate estimated_shipping_date
         shipping_days = SHIPPING_PREPARATION_DAYS_DEFAULT
@@ -176,6 +201,48 @@ class OrderService:
 
         order = await self._order_repo.create(order)
         return await self._to_response(order)
+
+    @staticmethod
+    def _build_v1_item(
+        item_data: OrderItemCreate, product: Product, expected_delivery: date
+    ) -> OrderItem:
+        """v1 明細（完成デザインURL）を組み立てる."""
+        return OrderItem(
+            uid=item_data.uid,
+            product_id=product.id,
+            product_name=item_data.product_name,
+            product_type=item_data.product_type.value,
+            price=item_data.price,
+            quantity=item_data.quantity,
+            size=item_data.size,
+            position=item_data.position,
+            color=item_data.color,
+            design_image_url=item_data.design_image_url,
+            thumbnail_image_url=item_data.thumbnail_image_url,
+            expected_delivery_date=expected_delivery,
+        )
+
+    @staticmethod
+    def _build_v2_item(
+        item_data: OrderItemCreateV2, product: Product, expected_delivery: date
+    ) -> OrderItem:
+        """v2 明細（製造データ生成用の元データ）を組み立てる."""
+        return OrderItem(
+            uid=item_data.uid,
+            product_id=product.id,
+            product_name=item_data.product_name,
+            product_type=item_data.product_type.value,
+            price=item_data.price,
+            quantity=item_data.quantity,
+            size=item_data.size,
+            position=item_data.position,
+            color=item_data.color,
+            design_image_url=None,  # v2 は完成デザインを受け取らない
+            thumbnail_image_url=item_data.thumbnail_image_url,
+            expected_delivery_date=expected_delivery,
+            product_code=item_data.product_code,
+            source_images=[img.model_dump() for img in item_data.source_images],
+        )
 
     def _validate_item_attributes(self, item_data: OrderItemCreate) -> None:
         """Validate item attributes based on product_type."""
@@ -263,6 +330,13 @@ class OrderService:
         if current_status == OrderStatus.SHIPPED:
             raise InvalidStatusTransitionError(current_status.value, status.value)
 
+        # 発注ゲート: MANUFACTURING への遷移は製造データが ready の明細のみ許可。
+        # v1 明細（製造データ不要）は常に許可されるため旧挙動に影響しない。
+        if status == OrderStatus.MANUFACTURING:
+            unready = sum(1 for item in order.items if not item.is_manufacturing_ready)
+            if unready:
+                raise ManufacturingDataNotReadyError(unready)
+
         # delivered -> ordered/manufacturing の遷移時の処理
         if current_status == OrderStatus.DELIVERED and status in (
             OrderStatus.ORDERED,
@@ -348,6 +422,12 @@ class OrderService:
                 design_image_url=item.design_image_url,
                 thumbnail_image_url=item.thumbnail_image_url,
                 expected_delivery_date=item.expected_delivery_date,
+                product_code=item.product_code,
+                manufacturing_data=(
+                    MfgDataItemInfo.model_validate(item.manufacturing_data)
+                    if item.manufacturing_data
+                    else None
+                ),
                 created_at=item.created_at,
                 updated_at=item.updated_at,
             )

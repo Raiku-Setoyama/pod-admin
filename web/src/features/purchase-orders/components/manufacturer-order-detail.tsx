@@ -33,10 +33,15 @@ import { Download, Factory, Loader2, Package, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
 import { StatusBadge } from "@/components/common/status-badge";
+import { ManufacturingDataBadge } from "@/components/common/manufacturing-data-badge";
 import {
   getManufacturerOrderStatusUpdateOptions,
 } from "@/constants/status";
-import type { ManufacturerOrderItemListResponse, OrderStatus } from "@/types/api";
+import type {
+  ManufacturerOrderItem,
+  ManufacturerOrderItemListResponse,
+  OrderStatus,
+} from "@/types/api";
 import { ManufacturerOrderFilters } from "./manufacturer-order-filters";
 import { InvoiceDialog } from "@/features/invoice";
 
@@ -67,6 +72,18 @@ const productTypeLabels: Record<string, string> = {
   tote_bag: "トートバッグ",
   tshirt: "Tシャツ",
 };
+
+/**
+ * 発注不可（未ready）の明細か判定する。
+ * 発注中（ordered）かつ製造データが必要（v2）で ready でない場合、メーカー発注できない。
+ */
+function isOrderBlocked(item: ManufacturerOrderItem): boolean {
+  return (
+    item.status === "ordered" &&
+    !!item.manufacturing_status &&
+    item.manufacturing_status !== "ready"
+  );
+}
 
 function formatDate(dateString: string): string {
   const date = new Date(dateString);
@@ -200,9 +217,12 @@ export function ManufacturerOrderDetail({
     }
   };
 
+  // 発注可能な明細のみ選択対象とする（未ready = 製造データ待ちは発注不可）
+  const selectableItems = data.items.filter((item) => !isOrderBlocked(item));
+
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedIds(new Set(data.items.map((item) => item.id)));
+      setSelectedIds(new Set(selectableItems.map((item) => item.id)));
     } else {
       setSelectedIds(new Set());
     }
@@ -219,7 +239,7 @@ export function ManufacturerOrderDetail({
   };
 
   const isAllSelected =
-    data.items.length > 0 && selectedIds.size === data.items.length;
+    selectableItems.length > 0 && selectedIds.size === selectableItems.length;
   const isSomeSelected = selectedIds.size > 0 && !isAllSelected;
 
   return (
@@ -312,6 +332,7 @@ export function ManufacturerOrderDetail({
                   <TableHead>商品名</TableHead>
                   <TableHead>商品タイプ</TableHead>
                   <TableHead>ステータス</TableHead>
+                  <TableHead>製造データ</TableHead>
                   <TableHead className="text-center">数量</TableHead>
                   <TableHead className="text-right">単価</TableHead>
                   <TableHead className="text-right">金額</TableHead>
@@ -323,7 +344,7 @@ export function ManufacturerOrderDetail({
                 {isLoading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={11}
+                      colSpan={12}
                       className="h-24 text-center text-muted-foreground"
                     >
                       <div className="flex items-center justify-center gap-2">
@@ -335,7 +356,7 @@ export function ManufacturerOrderDetail({
                 ) : data.items.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={11}
+                      colSpan={12}
                       className="h-24 text-center text-muted-foreground"
                     >
                       発注中の明細がありません
@@ -347,6 +368,7 @@ export function ManufacturerOrderDetail({
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           checked={selectedIds.has(item.id)}
+                          disabled={isOrderBlocked(item)}
                           onCheckedChange={(checked) =>
                             handleItemSelect(item.id, !!checked)
                           }
@@ -365,6 +387,13 @@ export function ManufacturerOrderDetail({
                       </TableCell>
                       <TableCell>
                         <StatusBadge status={item.status} />
+                      </TableCell>
+                      <TableCell>
+                        {item.manufacturing_status ? (
+                          <ManufacturingDataBadge status={item.manufacturing_status} />
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-center">
                         {item.quantity}

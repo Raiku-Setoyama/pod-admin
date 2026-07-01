@@ -461,6 +461,11 @@ class OrderRepository:
         result = await self._db.execute(query)
         items = list(result.scalars().all())
 
+        # 発注ゲート: ORDERED→MANUFACTURING では、製造データが必要な明細のうち
+        # ready でないものは遷移させない（未readyは ORDERED のまま保留）。
+        if new_status == OrderItemStatus.MANUFACTURING:
+            items = [item for item in items if item.is_manufacturing_ready]
+
         # OrderItemのステータスを更新
         affected_order_ids: set[str] = set()
         for item in items:

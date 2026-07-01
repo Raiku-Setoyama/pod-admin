@@ -14,6 +14,7 @@ from app.repositories.app_setting_repository import AppSettingRepository
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.company_holiday_repository import CompanyHolidayRepository
 from app.repositories.manufacturer_repository import ManufacturerRepository
+from app.repositories.manufacturing_data_repository import ManufacturingDataRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.order_source_repository import OrderSourceRepository
 from app.repositories.product_repository import ProductRepository
@@ -25,8 +26,10 @@ from app.services.dashboard_service import DashboardService
 from app.services.email_service import EmailService
 from app.services.external_order_notification import ExternalOrderNotificationService
 from app.services.external_service import ExternalService
+from app.services.illustrator_vm_client import IllustratorVmClient
 from app.services.invoice_service import InvoiceService
 from app.services.manufacturer_order_service import ManufacturerOrderService
+from app.services.manufacturing_data_service import ManufacturingDataService
 from app.services.manufacturer_portal_service import ManufacturerPortalService
 from app.services.manufacturer_service import ManufacturerService
 from app.services.order_image_service import OrderImageService
@@ -108,6 +111,13 @@ def get_app_setting_repository(
 ) -> AppSettingRepository:
     """Get app setting repository."""
     return AppSettingRepository(db)
+
+
+def get_manufacturing_data_repository(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ManufacturingDataRepository:
+    """Get manufacturing data repository."""
+    return ManufacturingDataRepository(db)
 
 
 # Service dependencies
@@ -209,9 +219,35 @@ def get_manufacturer_order_service(
     order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
     manufacturer_repo: Annotated[ManufacturerRepository, Depends(get_manufacturer_repository)],
     shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
+    file_storage: Annotated[
+        FileStorage, Depends(lambda: LocalFileStorage(settings.UPLOAD_DIR))
+    ],
 ) -> ManufacturerOrderService:
     """Get manufacturer order service."""
-    return ManufacturerOrderService(order_repo, manufacturer_repo, shipment_repo)
+    return ManufacturerOrderService(
+        order_repo, manufacturer_repo, shipment_repo, file_storage=file_storage
+    )
+
+
+def get_illustrator_vm_client() -> IllustratorVmClient | None:
+    """Get illustrator-vm client (None if ILLUSTRATOR_VM_BASE_URL not configured)."""
+    return IllustratorVmClient.from_settings(settings)
+
+
+def get_manufacturing_data_service(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    md_repo: Annotated[ManufacturingDataRepository, Depends(get_manufacturing_data_repository)],
+    order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
+    vm_client: Annotated[IllustratorVmClient | None, Depends(get_illustrator_vm_client)],
+) -> ManufacturingDataService:
+    """Get manufacturing data service."""
+    return ManufacturingDataService(
+        md_repo=md_repo,
+        order_repo=order_repo,
+        session=db,
+        file_storage=LocalFileStorage(settings.UPLOAD_DIR),
+        vm_client=vm_client,
+    )
 
 
 def get_manufacturer_portal_service(

@@ -17,9 +17,21 @@ export default function OrderDetailPage() {
   const router = useRouter();
   const orderId = params.id as string;
 
-  const { data: order, isLoading, error } = useSWR<Order>(
+  const { data: order, isLoading, error, mutate } = useSWR<Order>(
     `/orders/${orderId}`,
-    fetcher
+    fetcher,
+    {
+      // 製造データ生成中（pending/generating）は完成までポーリングする
+      refreshInterval: (latest?: Order) =>
+        latest?.items?.some(
+          (item) =>
+            item.manufacturing_data &&
+            (item.manufacturing_data.status === "pending" ||
+              item.manufacturing_data.status === "generating")
+        )
+          ? 5000
+          : 0,
+    }
   );
 
   if (isLoading) {
@@ -56,7 +68,7 @@ export default function OrderDetailPage() {
         </Button>
       }
     >
-      <OrderDetail order={order} />
+      <OrderDetail order={order} onRefresh={() => mutate()} />
     </PageContainer>
   );
 }

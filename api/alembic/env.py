@@ -14,6 +14,7 @@ from app.models.base import Base
 # Import all models here to ensure they are registered with Base.metadata
 from app.models.chat_message import ChatAttachment, ChatMessage  # noqa: F401
 from app.models.manufacturer import Manufacturer  # noqa: F401
+from app.models.manufacturing_data import ManufacturingData  # noqa: F401
 from app.models.order import Order, OrderItem  # noqa: F401
 from app.models.product import Product  # noqa: F401
 from app.models.shipment import Shipment, ShipmentItem  # noqa: F401

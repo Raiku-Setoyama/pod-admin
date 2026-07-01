@@ -13,7 +13,9 @@ from app.routers import (
     external,
     manufacturer_portal,
     manufacturers,
+    manufacturing_data,
     orders,
+    orders_v2,
     products,
     settings as settings_router,
     shipments,
@@ -80,6 +82,10 @@ app.include_router(dashboard.router, prefix=settings.API_V1_PREFIX)
 app.include_router(external.router, prefix=settings.API_V1_PREFIX)
 app.include_router(settings_router.router, prefix=settings.API_V1_PREFIX)
 app.include_router(company_holidays.router, prefix=settings.API_V1_PREFIX)
+app.include_router(manufacturing_data.router, prefix=settings.API_V1_PREFIX)
+
+# v2 endpoints (製造データ生成方式の注文受付。後方互換のため別プレフィックス)
+app.include_router(orders_v2.router, prefix=settings.API_V2_PREFIX)
 
 
 # Test endpoints for exception handling (only in debug mode)

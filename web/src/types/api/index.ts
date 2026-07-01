@@ -8,6 +8,18 @@ export type OrderStatus =
 // OrderItemのステータス（製品単位）
 export type OrderItemStatus = "ordered" | "manufacturing" | "delivered";
 
+// 製造データ（v2）のステータス
+export type ManufacturingDataStatus = "pending" | "generating" | "ready" | "failed";
+
+// 明細に紐づく製造データ情報（v2）
+export interface MfgDataItemInfo {
+  id: string;
+  status: ManufacturingDataStatus;
+  output_filename: string | null;
+  file_size: number | null;
+  error_message: string | null;
+}
+
 export interface OrderItem {
   id: string;
   uid: string;
@@ -21,6 +33,9 @@ export interface OrderItem {
   design_image_url: string | null;
   thumbnail_image_url: string | null;
   status?: OrderItemStatus;  // 製品単位のステータス
+  // v2（製造データ生成）用フィールド
+  product_code?: string | null;
+  manufacturing_data?: MfgDataItemInfo | null;
   created_at: string;
   updated_at: string;
 }
@@ -116,6 +131,8 @@ export interface ManufacturerOrderItem {
   item_status?: OrderItemStatus | null;  // 新フィールド（製品単位のステータス）
   lead_time_days: number;  // メーカーのリードタイム（日数）
   expected_delivery_date: string;  // 納品予定日
+  // 製造データ状態（v2）: null なら製造データ不要（v1）。ready 以外は発注不可。
+  manufacturing_status?: ManufacturingDataStatus | null;
 }
 
 export interface ManufacturerOrderItemListResponse {

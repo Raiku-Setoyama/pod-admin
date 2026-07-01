@@ -6,11 +6,14 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, CustomerAddressMixin, TimestampMixin, UUIDPrimaryKeyMixin
+from app.models.manufacturing_data import MfgDataStatus
 
 if TYPE_CHECKING:
+    from app.models.manufacturing_data import ManufacturingData
     from app.models.order_source import OrderSource
     from app.models.product import Product
 
@@ -202,9 +205,34 @@ class OrderItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # メーカーからの納品予定日（注文作成時に営業日計算で算出、確定値）
     expected_delivery_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
 
+    # === 外部注文 v2（製造データ生成）用フィールド ===
+    # 旧 v1 明細は全て NULL のまま → 旧挙動を完全維持（発注ゲートの対象外）。
+    # rksyo の商品識別子（製造データキャッシュキー）
+    product_code: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
+    # 製造データ生成の元データ（PNGレイヤーURL群）
+    source_images: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # 紐づく製造データ（キャッシュ本体）
+    manufacturing_data_id: Mapped[str | None] = mapped_column(
+        ForeignKey("manufacturing_data.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
     # Relationships
     order: Mapped["Order"] = relationship(back_populates="items")
     product: Mapped["Product"] = relationship()  # 商品マスタへの参照
+    # 製造データは OrderItem 読み込み時に常に selectin ロード（async lazy-load 回避）
+    manufacturing_data: Mapped["ManufacturingData | None"] = relationship(lazy="selectin")
+
+    @property
+    def is_manufacturing_ready(self) -> bool:
+        """メーカー発注（ORDERED→MANUFACTURING）が可能かどうか.
+
+        製造データが不要な明細（v1 = manufacturing_data_id が NULL）は常に発注可。
+        製造データが必要な明細は、紐づく行が ready の場合のみ発注可。
+        """
+        if self.manufacturing_data_id is None:
+            return True
+        md = self.manufacturing_data
+        return md is not None and md.status == MfgDataStatus.READY.value
 
     def __repr__(self) -> str:
         return f"<OrderItem(id={self.id}, product_name={self.product_name}, quantity={self.quantity}, status={self.status})>"

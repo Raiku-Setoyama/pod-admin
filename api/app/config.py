@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "POD Admin API"
     VERSION: str = "0.1.0"
     API_V1_PREFIX: str = "/api/v1"
+    API_V2_PREFIX: str = "/api/v2"
     DEBUG: bool = False
 
     # Database
@@ -53,6 +54,20 @@ class Settings(BaseSettings):
 
     # 管理画面のベースURL（受注通知メールの注文詳細リンク用、未設定ならリンクを描画しない）
     ADMIN_BASE_URL: str = ""
+
+    # illustrator-vm（Product Manufacturing API）
+    # 未設定（空文字）の場合、製造データ生成クライアントは無効（None）となる。
+    ILLUSTRATOR_VM_BASE_URL: str = ""
+    # 認証ヘッダ（例: "Bearer xxx"）。VM は既定で認証なしのため通常は空でよい。
+    ILLUSTRATOR_VM_AUTH_HEADER: str = ""
+    # 1回の HTTP リクエストのタイムアウト秒（submit/status/download 個別）
+    ILLUSTRATOR_VM_REQUEST_TIMEOUT: float = 60.0
+    # ステータスポーリング間隔（秒）
+    ILLUSTRATOR_VM_POLL_INTERVAL: float = 5.0
+    # ジョブ完了待ちの最大秒数（VM は 1件最大約300秒）
+    ILLUSTRATOR_VM_MAX_POLL_SECONDS: float = 360.0
+    # 送信/取得の簡易リトライ回数（ネットワークエラー・503 時）
+    ILLUSTRATOR_VM_MAX_RETRIES: int = 3
 
 
 settings = Settings()

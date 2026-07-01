@@ -60,6 +60,10 @@ def _make_order_item(
     order_item.design_image_url = design_image_url
     order_item.thumbnail_image_url = thumbnail_image_url
     order_item.status = status.value  # OrderItem.status
+    # v1 明細（製造データなし）: 発注ゲート・生成ファイル封入の対象外
+    order_item.manufacturing_data_id = None
+    order_item.manufacturing_data = None
+    order_item.is_manufacturing_ready = True
 
     order = MagicMock()
     order.id = order_item.order_id

@@ -1,5 +1,6 @@
 """Manufacturer order service for managing orders by manufacturer."""
 
+import logging
 import os
 from datetime import date, datetime
 from urllib.parse import urlparse
@@ -10,6 +11,7 @@ from app.models.order import Order, OrderItemStatus, OrderStatus
 from app.repositories.order_repository import OrderRepository
 from app.repositories.manufacturer_repository import ManufacturerRepository
 from app.repositories.shipment_repository import ShipmentRepository
+from app.utils.file_storage import FileStorage
 from app.schemas.manufacturer import (
     ManufacturerOrderSummary,
     ManufacturerOrderSummaryListResponse,
@@ -24,6 +26,8 @@ from app.utils.order_list_generator import OrderListGenerator, get_product_type_
 from app.utils.stand_file_config import load_stand_file
 from app.utils.zip_builder import ZipBuilder
 
+logger = logging.getLogger(__name__)
+
 
 class ManufacturerOrderService:
     """Service for manufacturer order operations."""
@@ -33,10 +37,12 @@ class ManufacturerOrderService:
         order_repo: OrderRepository,
         manufacturer_repo: ManufacturerRepository,
         shipment_repo: ShipmentRepository,
+        file_storage: FileStorage | None = None,
     ):
         self._order_repo = order_repo
         self._manufacturer_repo = manufacturer_repo
         self._shipment_repo = shipment_repo
+        self._file_storage = file_storage
         self._order_list_gen = OrderListGenerator()
 
     async def get_order_summary_list(
@@ -138,6 +144,11 @@ class ManufacturerOrderService:
                     item_status=item_status,  # 新フィールド
                     lead_time_days=lead_time_days,
                     expected_delivery_date=order_item.expected_delivery_date,
+                    manufacturing_status=(
+                        order_item.manufacturing_data.status
+                        if order_item.manufacturing_data
+                        else None
+                    ),
                 )
             )
             total_quantity += order_item.quantity
@@ -295,6 +306,29 @@ class ManufacturerOrderService:
         "sticker": ".ai",
     }
 
+    @staticmethod
+    def _hold_unready_items(rows: list[tuple]) -> list[tuple]:
+        """製造データが必要な ORDERED 明細のうち ready でないものを除外する.
+
+        v1 明細（manufacturing_data_id が NULL）は対象外（従来通り常に含める）。
+        既に MANUFACTURING/DELIVERED の明細は発注済みのため保留しない。
+        """
+        included: list[tuple] = []
+        held = 0
+        for row in rows:
+            order_item = row[0]
+            item_status = row[5]
+            # 発注対象（ORDERED）かつ製造データ未readyの明細のみ保留する。
+            if item_status == OrderItemStatus.ORDERED.value and not order_item.is_manufacturing_ready:
+                held += 1
+                continue
+            included.append(row)
+        if held:
+            logger.info(
+                "Holding %d un-ready manufacturing item(s) from order documents", held
+            )
+        return included
+
     async def generate_order_documents(
         self,
         manufacturer_id: str,
@@ -354,6 +388,13 @@ class ManufacturerOrderService:
         if order_item_ids:
             rows = [row for row in rows if row[0].id in order_item_ids]
 
+        # 発注ゲート（未ready保留）: 製造データが必要な ORDERED 明細のうち ready でない
+        # ものは発注資料に含めず ORDERED のまま保留する（メーカー発注不可）。
+        # これは「ZIPの中身」を絞る責務。ORDERED→MANUFACTURING の状態遷移自体は
+        # OrderRepository.update_item_status_by_manufacturer 側で別途ガードされる
+        # （保留済みなので下記 ordered_item_ids には未ready分は含まれない）。
+        rows = self._hold_unready_items(rows)
+
         # ダウンロード対象の明細が0件の場合はエラー
         if not rows:
             raise NoOrderedItemsError()
@@ -377,6 +418,7 @@ class ManufacturerOrderService:
             if group_key not in items_by_group:
                 items_by_group[group_key] = []
 
+            md = order_item.manufacturing_data
             items_by_group[group_key].append(
                 {
                     "ordered_date": ordered_at,
@@ -391,6 +433,9 @@ class ManufacturerOrderService:
                     "cost": cost,
                     "design_image_url": order_item.design_image_url,
                     "thumbnail_image_url": order_item.thumbnail_image_url,
+                    # v2: 生成済み製造データ（保存先）。v1 は None。
+                    "manufacturing_data_id": order_item.manufacturing_data_id,
+                    "manufacturing_file_path": md.file_path if md else None,
                 }
             )
 
@@ -454,15 +499,11 @@ class ManufacturerOrderService:
                 # 注文番号フォルダのパスプレフィックス
                 order_folder = f"{type_folder}/{order_number}"
 
-                # デザイン画像（製造データ①）
-                if item.get("design_image_url"):
-                    content, _original_filename = await self._download_file(
-                        item["design_image_url"]
-                    )
-                    if content:
-                        zip_builder.add_file(
-                            f"{order_folder}/{mfg_filename}", content
-                        )
+                # 製造データ①: v2（生成済み）は保存済みファイルを封入、
+                # v1 は従来通り design_image_url をDLしてリネーム。
+                mfg_content = await self._load_manufacturing_content(item)
+                if mfg_content:
+                    zip_builder.add_file(f"{order_folder}/{mfg_filename}", mfg_content)
 
                 # サムネイル画像 → {注文番号}_{製造番号}.png
                 if item.get("thumbnail_image_url"):
@@ -505,6 +546,23 @@ class ManufacturerOrderService:
         zip_name = f"TAPI_{manufacturer.name}_発注資料.zip"
 
         return zip_bytes, zip_name
+
+    async def _load_manufacturing_content(self, item: dict) -> bytes | None:
+        """発注資料に封入する製造データ①のバイト列を取得する.
+
+        v2（生成済み製造データ）は FileStorage の保存済みファイルを使用し、
+        v1 は従来通り design_image_url をダウンロードしてリネーム相当で扱う。
+        """
+        # v2: 保存済み生成ファイル
+        if item.get("manufacturing_data_id") and item.get("manufacturing_file_path"):
+            if self._file_storage is None:
+                return None
+            return await self._file_storage.get(item["manufacturing_file_path"])
+        # v1: 完成デザインURLをダウンロード
+        if item.get("design_image_url"):
+            content, _original_filename = await self._download_file(item["design_image_url"])
+            return content
+        return None
 
     async def _download_file(self, url: str) -> tuple[bytes | None, str]:
         """URLからファイルをダウンロード"""
