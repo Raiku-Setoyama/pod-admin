@@ -33,6 +33,7 @@ dependencies = [
     "sendgrid>=6.11.0",
     # Japanese holidays
     "jpholiday>=0.1.9",
+    "google-cloud-storage>=3.12.0",
 ]
 
 [project.optional-dependencies]

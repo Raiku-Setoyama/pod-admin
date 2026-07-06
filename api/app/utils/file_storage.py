@@ -1,9 +1,10 @@
 """File storage utilities."""
 
+import asyncio
 import os
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol, cast
 from uuid import uuid4
 
 import aiofiles
@@ -17,6 +18,39 @@ class UploadFile(Protocol):
 
     def read(self) -> bytes: ...
     def seek(self, offset: int) -> None: ...
+
+
+class BytesUpload:
+    """UploadFile プロトコル互換の bytes ラッパー.
+
+    生成済みの製造データなど、既に手元にある bytes を FileStorage.save() で保存する用。
+    """
+
+    def __init__(self, content: bytes, filename: str | None = None) -> None:
+        self._content = content
+        self.filename = filename
+
+    def read(self) -> bytes:
+        return self._content
+
+    def seek(self, offset: int) -> None:
+        return None
+
+
+def _generate_stored_filename(original_filename: str | None) -> str:
+    """拡張子を保持したユニークな保存ファイル名を生成する。"""
+    ext = os.path.splitext(original_filename)[1] if original_filename else ""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    unique_id = str(uuid4())[:8]
+    return f"{timestamp}_{unique_id}{ext}"
+
+
+async def _read_upload(file: UploadFile) -> bytes:
+    """UploadFile の内容を読む（Starlette の UploadFile.read() は coroutine なので両対応）。"""
+    result: Any = file.read()
+    if hasattr(result, "__await__"):
+        result = await result
+    return cast(bytes, result)
 
 
 class FileStorage(ABC):
@@ -55,14 +89,7 @@ class LocalFileStorage(FileStorage):
 
     def _generate_filename(self, original_filename: str | None) -> str:
         """Generate a unique filename preserving the extension."""
-        if original_filename:
-            _, ext = os.path.splitext(original_filename)
-        else:
-            ext = ""
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        unique_id = str(uuid4())[:8]
-        return f"{timestamp}_{unique_id}{ext}"
+        return _generate_stored_filename(original_filename)
 
     async def save(self, file: UploadFile, prefix: str = "") -> str:
         """Save a file and return the relative path."""
@@ -75,10 +102,7 @@ class LocalFileStorage(FileStorage):
         if dir_path:
             os.makedirs(dir_path, exist_ok=True)
 
-        # Read content (handle both sync and async)
-        content = file.read()
-        if hasattr(content, "__await__"):
-            content = await content
+        content = await _read_upload(file)
 
         # Write file
         async with aiofiles.open(full_path, "wb") as f:
@@ -108,3 +132,57 @@ class LocalFileStorage(FileStorage):
         """Check if a file exists."""
         full_path = self._get_full_path(path)
         return await aiofiles.os.path.exists(full_path)
+
+
+class GCSFileStorage(FileStorage):
+    """Google Cloud Storage backend（Cloud Run のディスク揮発を回避し永続保存する）.
+
+    google-cloud-storage は遅延importするため、STORAGE_BACKEND=local の環境では
+    パッケージ未導入でも本モジュールを読み込める。同期SDKは asyncio.to_thread で実行。
+    """
+
+    def __init__(self, bucket_name: str, project: str | None = None) -> None:
+        from google.cloud import storage  # type: ignore[attr-defined]
+
+        self.bucket_name = bucket_name
+        client = storage.Client(project=project) if project else storage.Client()
+        self._bucket = client.bucket(bucket_name)
+
+    async def save(self, file: UploadFile, prefix: str = "") -> str:
+        key = os.path.join(prefix, _generate_stored_filename(file.filename))
+        content = await _read_upload(file)
+        blob = self._bucket.blob(key)
+        await asyncio.to_thread(blob.upload_from_string, content)
+        return key
+
+    async def delete(self, path: str) -> bool:
+        from google.cloud.exceptions import NotFound
+
+        blob = self._bucket.blob(path)
+        try:
+            await asyncio.to_thread(blob.delete)
+            return True
+        except NotFound:
+            return False
+
+    async def get(self, path: str) -> bytes | None:
+        from google.cloud.exceptions import NotFound
+
+        blob = self._bucket.blob(path)
+        try:
+            return cast(bytes, await asyncio.to_thread(blob.download_as_bytes))
+        except NotFound:
+            return None
+
+    async def exists(self, path: str) -> bool:
+        blob = self._bucket.blob(path)
+        return bool(await asyncio.to_thread(blob.exists))
+
+
+def build_file_storage() -> FileStorage:
+    """設定に応じた FileStorage 実装を返す（DI とバックグラウンドワーカー共通のファクトリ）。"""
+    from app.config import settings
+
+    if settings.STORAGE_BACKEND == "gcs" and settings.GCS_BUCKET:
+        return GCSFileStorage(settings.GCS_BUCKET, project=settings.GCS_PROJECT or None)
+    return LocalFileStorage(settings.UPLOAD_DIR)

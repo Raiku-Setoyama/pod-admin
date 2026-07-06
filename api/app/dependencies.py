@@ -14,6 +14,7 @@ from app.repositories.app_setting_repository import AppSettingRepository
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.company_holiday_repository import CompanyHolidayRepository
 from app.repositories.manufacturer_repository import ManufacturerRepository
+from app.repositories.manufacturing_data_repository import ManufacturingDataRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.order_source_repository import OrderSourceRepository
 from app.repositories.product_repository import ProductRepository
@@ -25,6 +26,7 @@ from app.services.dashboard_service import DashboardService
 from app.services.email_service import EmailService
 from app.services.external_order_notification import ExternalOrderNotificationService
 from app.services.external_service import ExternalService
+from app.services.illustrator_vm_client import IllustratorVmClient
 from app.services.invoice_service import InvoiceService
 from app.services.manufacturer_order_service import ManufacturerOrderService
 from app.services.manufacturer_portal_service import ManufacturerPortalService
@@ -35,7 +37,7 @@ from app.services.order_service import OrderService
 from app.services.product_service import ProductService
 from app.services.shipment_service import ShipmentService
 from app.utils.exceptions import ForbiddenError, UnauthorizedError
-from app.utils.file_storage import FileStorage, LocalFileStorage
+from app.utils.file_storage import FileStorage, LocalFileStorage, build_file_storage
 from app.utils.security import decode_token
 
 
@@ -108,6 +110,13 @@ def get_app_setting_repository(
 ) -> AppSettingRepository:
     """Get app setting repository."""
     return AppSettingRepository(db)
+
+
+def get_manufacturing_data_repository(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ManufacturingDataRepository:
+    """Get manufacturing data repository."""
+    return ManufacturingDataRepository(db)
 
 
 # Service dependencies
@@ -209,9 +218,13 @@ def get_manufacturer_order_service(
     order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
     manufacturer_repo: Annotated[ManufacturerRepository, Depends(get_manufacturer_repository)],
     shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
+    mfg_repo: Annotated[ManufacturingDataRepository, Depends(get_manufacturing_data_repository)],
+    file_storage: Annotated[FileStorage, Depends(build_file_storage)],
 ) -> ManufacturerOrderService:
     """Get manufacturer order service."""
-    return ManufacturerOrderService(order_repo, manufacturer_repo, shipment_repo)
+    return ManufacturerOrderService(
+        order_repo, manufacturer_repo, shipment_repo, mfg_repo, file_storage
+    )
 
 
 def get_manufacturer_portal_service(
@@ -247,7 +260,13 @@ def get_invoice_service(
 # File storage dependency
 def get_file_storage() -> FileStorage:
     """Get file storage."""
-    return LocalFileStorage(settings.UPLOAD_DIR)
+    return build_file_storage()
+
+
+# illustrator-vm client dependency
+def get_illustrator_vm_client() -> IllustratorVmClient | None:
+    """Get illustrator-vm client (None if ILLUSTRATOR_VM_URL not configured)."""
+    return IllustratorVmClient.from_settings()
 
 
 # Authentication dependencies

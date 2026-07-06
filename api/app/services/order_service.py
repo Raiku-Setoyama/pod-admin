@@ -38,6 +38,7 @@ from app.repositories.order_source_repository import OrderSourceRepository
 from app.repositories.product_repository import ProductRepository
 from app.repositories.shipment_repository import ShipmentRepository
 from app.schemas.order import (
+    CustomerInfo,
     ManufacturingDataInfo,
     OrderBulkStatusUpdateResponse,
     OrderCreate,
@@ -47,6 +48,7 @@ from app.schemas.order import (
     OrderResponse,
     OrderShipmentInfo,
 )
+from app.schemas.order_v2 import OrderCreateV2
 from app.services.estimated_shipping_service import (
     SHIPPING_PREPARATION_DAYS_DEFAULT,
     calculate_estimated_shipping_date,
@@ -61,6 +63,7 @@ from app.utils.exceptions import (
     ProductNotFoundError,
     ValidationError,
 )
+from app.utils.mfg_product_mapping import validate_v2_item
 from app.utils.zip_builder import ZipBuilder
 
 logger = logging.getLogger(__name__)
@@ -122,19 +125,8 @@ class OrderService:
         # ordered_at はアプリケーション側で JST 現在時刻を設定
         jst = ZoneInfo("Asia/Tokyo")
         now_jst = datetime.now(jst)
-        customer = data.customer
-        order = Order(
-            order_number=data.order_number,
-            order_source_id=order_source_id,
-            customer_name=customer.name,
-            customer_postal_code=customer.postal_code,
-            customer_address_prefecture=customer.address_prefecture,
-            customer_address_city=customer.address_city,
-            customer_address_building=customer.address_building,
-            customer_phone=customer.phone,
-            customer_email=customer.email,
-            ordered_at=now_jst,
-            total_price=total_price,
+        order = self._build_order(
+            data.order_number, order_source_id, data.customer, total_price, now_jst
         )
 
         # Create order items with expected_delivery_date
@@ -165,7 +157,112 @@ class OrderService:
             )
             order.items.append(order_item)
 
-        # Calculate estimated_shipping_date
+        return await self._finalize_order(order, company_holidays)
+
+    async def create_v2(
+        self,
+        data: OrderCreateV2,
+        order_source_id: str | None = None,
+    ) -> OrderResponse:
+        """Create an order from external sales site (v2: 製造データ生成の元データ付き).
+
+        v1 の create と異なり、明細は完成データURLではなく元データ(PNGレイヤー)の
+        source_images と product_code / variant を受け取り、製造データ生成に備える。
+        属性検証は VM 契約（mfg_product_mapping）に基づく。
+        """
+        existing = await self._order_repo.find_by_order_number(data.order_number)
+        if existing:
+            raise DuplicateError("Order", "order_number", data.order_number)
+
+        products: dict[int, Product] = {}
+        variants: dict[int, str | None] = {}
+        layers_by_idx: dict[int, list[dict[str, str]]] = {}
+        for idx, item_data in enumerate(data.items):
+            source_images = [
+                {"layer_type": si.layer_type, "url": si.url} for si in item_data.source_images
+            ]
+            # product_type / size / variant / 必須レイヤーを検証し VM マッピングを得る
+            mapping = validate_v2_item(
+                item_data.product_type.value,
+                item_data.size,
+                item_data.variant,
+                source_images,
+            )
+            variants[idx] = mapping.variant
+            layers_by_idx[idx] = source_images
+
+            product = await self._product_repo.find_by_product_type(
+                product_type=item_data.product_type,
+            )
+            if not product:
+                raise ProductNotFoundError(item_data.product_type.value)
+            products[idx] = product
+
+        company_holidays: set[date] | None = None
+        if self._company_holiday_repo:
+            company_holidays = await self._company_holiday_repo.find_all_dates()
+
+        total_price = sum(item.price * item.quantity for item in data.items)
+
+        jst = ZoneInfo("Asia/Tokyo")
+        now_jst = datetime.now(jst)
+        order = self._build_order(
+            data.order_number, order_source_id, data.customer, total_price, now_jst
+        )
+
+        ordered_date = now_jst.date()
+        for idx, item_data in enumerate(data.items):
+            product = products[idx]
+            expected_delivery = add_business_days(
+                ordered_date,
+                product.lead_time_days,
+                company_holidays,
+            )
+            order_item = OrderItem(
+                uid=item_data.uid,
+                product_id=product.id,
+                product_name=item_data.product_name,
+                product_type=item_data.product_type.value,
+                price=item_data.price,
+                quantity=item_data.quantity,
+                size=item_data.size,
+                thumbnail_image_url=item_data.thumbnail_image_url,
+                product_code=item_data.product_code,
+                variant=variants[idx],
+                source_images=layers_by_idx[idx],
+                expected_delivery_date=expected_delivery,
+            )
+            order.items.append(order_item)
+
+        return await self._finalize_order(order, company_holidays)
+
+    def _build_order(
+        self,
+        order_number: str,
+        order_source_id: str | None,
+        customer: CustomerInfo,
+        total_price: int,
+        ordered_at: datetime,
+    ) -> Order:
+        """Order 本体（顧客情報付き）を組み立てる（v1/v2 共通）."""
+        return Order(
+            order_number=order_number,
+            order_source_id=order_source_id,
+            customer_name=customer.name,
+            customer_postal_code=customer.postal_code,
+            customer_address_prefecture=customer.address_prefecture,
+            customer_address_city=customer.address_city,
+            customer_address_building=customer.address_building,
+            customer_phone=customer.phone,
+            customer_email=customer.email,
+            ordered_at=ordered_at,
+            total_price=total_price,
+        )
+
+    async def _finalize_order(
+        self, order: Order, company_holidays: set[date] | None
+    ) -> OrderResponse:
+        """配送予定日を確定し Order を永続化してレスポンスを返す（v1/v2 共通）."""
         shipping_days = SHIPPING_PREPARATION_DAYS_DEFAULT
         if self._app_setting_repo:
             shipping_days = await get_shipping_preparation_days(self._app_setting_repo)
@@ -173,7 +270,6 @@ class OrderService:
         order.estimated_shipping_date = calculate_estimated_shipping_date(
             delivery_dates, shipping_days, company_holidays
         )
-
         order = await self._order_repo.create(order)
         return await self._to_response(order)
 

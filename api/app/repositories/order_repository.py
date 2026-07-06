@@ -471,6 +471,27 @@ class OrderRepository:
 
         return items, affected_order_ids
 
+    async def find_manufacturer_items(
+        self,
+        manufacturer_id: str,
+        order_item_ids: list[str] | None = None,
+        statuses: list[str] | None = None,
+    ) -> list[OrderItem]:
+        """メーカーに紐づく OrderItem を読み取り専用で取得（発注ゲートの ready 判定用）."""
+        from app.models.product import Product
+
+        query = (
+            select(OrderItem)
+            .join(Product, OrderItem.product_id == Product.id)
+            .where(Product.manufacturer_id == manufacturer_id)
+        )
+        if statuses:
+            query = query.where(OrderItem.status.in_(statuses))
+        if order_item_ids:
+            query = query.where(OrderItem.id.in_(order_item_ids))
+        result = await self._db.execute(query)
+        return list(result.scalars().all())
+
     async def check_all_items_delivered(self, order_id: str) -> bool:
         """指定されたOrderの全OrderItemがdeliveredかどうかを確認
 

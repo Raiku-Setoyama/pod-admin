@@ -138,9 +138,22 @@ class InvalidStatusTransitionError(AppException):
 class NoOrderedItemsError(AppException):
     """No ordered items available for download error."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(
             400,
             "NO_ORDERED_ITEMS",
             "ダウンロード対象の発注中明細がありません",
+        )
+
+
+class ManufacturingDataNotReadyError(AppException):
+    """Manufacturing data not ready for the given order items (409)."""
+
+    def __init__(self, order_item_ids: list[str] | None = None) -> None:
+        details = {"order_item_ids": order_item_ids} if order_item_ids else None
+        super().__init__(
+            409,
+            "MANUFACTURING_DATA_NOT_READY",
+            "製造データが未完成の明細があるため発注できません",
+            details,
         )

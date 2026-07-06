@@ -6,9 +6,14 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, CustomerAddressMixin, TimestampMixin, UUIDPrimaryKeyMixin
+
+# ManufacturingData を runtime import して mapper registry に登録し、OrderItem.manufacturing_data
+# リレーションの名前解決を保証する（manufacturing_data は base のみ依存のため循環importにならない）。
+from app.models.manufacturing_data import ManufacturingData  # noqa: F401
 
 if TYPE_CHECKING:
     from app.models.order_source import OrderSource
@@ -199,12 +204,25 @@ class OrderItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     design_image_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     thumbnail_image_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
 
+    # 外部注文(v2)用: 製造データ生成の元データ（旧v1明細は全て NULL）
+    # product_code=キャッシュキー(rksyo商品識別子) / variant=VM互換値(clear/color) /
+    # source_images=元データPNGレイヤーのURL群 [{"layer_type": ..., "url": ...}]
+    product_code: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    variant: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    source_images: Mapped[list[dict[str, str]] | None] = mapped_column(JSONB, nullable=True)
+
+    # 生成済み製造データ（manufacturing_data キャッシュ行）への紐付け
+    manufacturing_data_id: Mapped[str | None] = mapped_column(
+        ForeignKey("manufacturing_data.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
     # メーカーからの納品予定日（注文作成時に営業日計算で算出、確定値）
     expected_delivery_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
 
     # Relationships
     order: Mapped["Order"] = relationship(back_populates="items")
     product: Mapped["Product"] = relationship()  # 商品マスタへの参照
+    manufacturing_data: Mapped["ManufacturingData | None"] = relationship()
 
     def __repr__(self) -> str:
         return f"<OrderItem(id={self.id}, product_name={self.product_name}, quantity={self.quantity}, status={self.status})>"

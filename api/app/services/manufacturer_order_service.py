@@ -1,28 +1,39 @@
 """Manufacturer order service for managing orders by manufacturer."""
 
+import logging
 import os
 from datetime import date, datetime
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
 
-from app.models.order import Order, OrderItemStatus, OrderStatus
-from app.repositories.order_repository import OrderRepository
+from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
+from app.models.order import Order, OrderItem, OrderItemStatus
 from app.repositories.manufacturer_repository import ManufacturerRepository
+from app.repositories.manufacturing_data_repository import ManufacturingDataRepository
+from app.repositories.order_repository import OrderRepository
 from app.repositories.shipment_repository import ShipmentRepository
 from app.schemas.manufacturer import (
+    AllManufacturerOrderItemListResponse,
+    AllManufacturerOrderItemResponse,
+    ManufacturerOrderItemListResponse,
+    ManufacturerOrderItemResponse,
+    ManufacturerOrderStatusUpdate,
     ManufacturerOrderSummary,
     ManufacturerOrderSummaryListResponse,
-    ManufacturerOrderItemResponse,
-    ManufacturerOrderItemListResponse,
-    ManufacturerOrderStatusUpdate,
-    AllManufacturerOrderItemResponse,
-    AllManufacturerOrderItemListResponse,
 )
-from app.utils.exceptions import NotFoundError, NoOrderedItemsError
+from app.utils.exceptions import (
+    ManufacturingDataNotReadyError,
+    NoOrderedItemsError,
+    NotFoundError,
+)
+from app.utils.file_storage import FileStorage
 from app.utils.order_list_generator import OrderListGenerator, get_product_type_name
 from app.utils.stand_file_config import load_stand_file
 from app.utils.zip_builder import ZipBuilder
+
+logger = logging.getLogger(__name__)
 
 
 class ManufacturerOrderService:
@@ -33,10 +44,14 @@ class ManufacturerOrderService:
         order_repo: OrderRepository,
         manufacturer_repo: ManufacturerRepository,
         shipment_repo: ShipmentRepository,
+        mfg_repo: ManufacturingDataRepository | None = None,
+        file_storage: FileStorage | None = None,
     ):
         self._order_repo = order_repo
         self._manufacturer_repo = manufacturer_repo
         self._shipment_repo = shipment_repo
+        self._mfg_repo = mfg_repo
+        self._file_storage = file_storage
         self._order_list_gen = OrderListGenerator()
 
     async def get_order_summary_list(
@@ -247,6 +262,10 @@ class ManufacturerOrderService:
         # Convert string status to OrderItemStatus enum
         new_status = OrderItemStatus(data.status)
 
+        # 製造中への遷移時は、製造データが未readyの明細を拒否（誤操作防止）
+        if new_status == OrderItemStatus.MANUFACTURING:
+            await self._assert_manufacturing_ready(manufacturer_id, data.order_item_ids)
+
         # OrderItem単位でステータス更新
         updated_items, affected_order_ids = await self._order_repo.update_item_status_by_manufacturer(
             manufacturer_id=manufacturer_id,
@@ -358,7 +377,18 @@ class ManufacturerOrderService:
         if not rows:
             raise NoOrderedItemsError()
 
-        # 発注中ステータスのorder_item_idsを記録（ステータス更新対象）
+        # 製造データが ready でない v2 明細は発注資料から除外し ORDERED のまま保留する
+        rows, held_count, mfg_content_by_item = await self._partition_by_readiness(rows)
+        if not rows:
+            raise NoOrderedItemsError()
+        if held_count:
+            logger.info(
+                "発注資料生成: 製造データ未readyの %d 明細を保留 (manufacturer=%s)",
+                held_count,
+                manufacturer_id,
+            )
+
+        # 発注中ステータスのorder_item_idsを記録（ステータス更新対象、保留分は含めない）
         # row[5]はitem_status
         ordered_item_ids = [
             row[0].id for row in rows if row[5] == OrderItemStatus.ORDERED.value
@@ -391,6 +421,7 @@ class ManufacturerOrderService:
                     "cost": cost,
                     "design_image_url": order_item.design_image_url,
                     "thumbnail_image_url": order_item.thumbnail_image_url,
+                    "mfg_content": mfg_content_by_item.get(order_item.id),
                 }
             )
 
@@ -454,15 +485,16 @@ class ManufacturerOrderService:
                 # 注文番号フォルダのパスプレフィックス
                 order_folder = f"{type_folder}/{order_number}"
 
-                # デザイン画像（製造データ①）
-                if item.get("design_image_url"):
+                # 製造データ①: v2は保存済み生成ファイルを封入、旧v1はdesign_image_urlをDL
+                mfg_content = item.get("mfg_content")
+                if mfg_content is not None:
+                    zip_builder.add_file(f"{order_folder}/{mfg_filename}", mfg_content)
+                elif item.get("design_image_url"):
                     content, _original_filename = await self._download_file(
                         item["design_image_url"]
                     )
                     if content:
-                        zip_builder.add_file(
-                            f"{order_folder}/{mfg_filename}", content
-                        )
+                        zip_builder.add_file(f"{order_folder}/{mfg_filename}", content)
 
                 # サムネイル画像 → {注文番号}_{製造番号}.png
                 if item.get("thumbnail_image_url"):
@@ -520,3 +552,78 @@ class ManufacturerOrderService:
         except Exception:
             pass
         return None, ""
+
+    def _is_mfg_item(self, order_item: OrderItem) -> bool:
+        """製造データ生成対象の v2 明細か（product_code か manufacturing_data_id を持つ）."""
+        return bool(order_item.product_code) or order_item.manufacturing_data_id is not None
+
+    async def _partition_by_readiness(
+        self, rows: list[tuple[Any, ...]]
+    ) -> tuple[list[tuple[Any, ...]], int, dict[str, bytes]]:
+        """rows を「発注可能」と「保留(未ready)」に分ける。
+
+        旧v1明細は常に発注可能。v2明細は ready かつ保存ファイルが存在する場合のみ発注可能で、
+        その生成ファイル bytes を返す。mfg_repo / file_storage 未設定時はゲート無効（全件発注可能）。
+        """
+        if self._mfg_repo is None or self._file_storage is None:
+            return list(rows), 0, {}
+
+        mfg_ids = [row[0].manufacturing_data_id for row in rows if row[0].manufacturing_data_id]
+        mfg_map: dict[str, ManufacturingData] = {}
+        if mfg_ids:
+            mfg_map = {md.id: md for md in await self._mfg_repo.find_by_ids(mfg_ids)}
+
+        includable: list[tuple[Any, ...]] = []
+        held_count = 0
+        content_by_item: dict[str, bytes] = {}
+        for row in rows:
+            order_item = row[0]
+            if not self._is_mfg_item(order_item):
+                includable.append(row)  # 旧v1明細はそのまま封入
+                continue
+            md = (
+                mfg_map.get(order_item.manufacturing_data_id)
+                if order_item.manufacturing_data_id
+                else None
+            )
+            content: bytes | None = None
+            if md is not None and md.status == MfgDataStatus.READY.value and md.file_path:
+                content = await self._file_storage.get(md.file_path)
+            if content is None:
+                held_count += 1  # 未ready or 保存ファイル消失 → 保留
+                continue
+            content_by_item[order_item.id] = content
+            includable.append(row)
+        return includable, held_count, content_by_item
+
+    async def _assert_manufacturing_ready(
+        self, manufacturer_id: str, order_item_ids: list[str] | None
+    ) -> None:
+        """→MANUFACTURING 対象に未ready の v2 明細があれば拒否する（管理者の誤操作防止）."""
+        if self._mfg_repo is None or self._file_storage is None:
+            return
+        candidates = await self._order_repo.find_manufacturer_items(
+            manufacturer_id,
+            order_item_ids=order_item_ids,
+            statuses=[OrderItemStatus.ORDERED.value, OrderItemStatus.DELIVERED.value],
+        )
+        mfg_items = [oi for oi in candidates if self._is_mfg_item(oi)]
+        if not mfg_items:
+            return
+        mfg_ids: list[str] = []
+        for oi in mfg_items:
+            if oi.manufacturing_data_id is not None:
+                mfg_ids.append(oi.manufacturing_data_id)
+        mfg_map: dict[str, ManufacturingData] = {}
+        if mfg_ids:
+            mfg_map = {md.id: md for md in await self._mfg_repo.find_by_ids(mfg_ids)}
+        not_ready: list[str] = []
+        for oi in mfg_items:
+            md = mfg_map.get(oi.manufacturing_data_id) if oi.manufacturing_data_id else None
+            ready = False
+            if md is not None and md.status == MfgDataStatus.READY.value and md.file_path:
+                ready = await self._file_storage.exists(md.file_path)
+            if not ready:
+                not_ready.append(oi.id)
+        if not_ready:
+            raise ManufacturingDataNotReadyError(not_ready)
