@@ -66,6 +66,7 @@ from app.utils.exceptions import (
     ProductNotFoundError,
     ValidationError,
 )
+from app.utils.mfg_product_mapping import MfgMappingError, build_vm_mapping
 from app.utils.zip_builder import ZipBuilder
 
 logger = logging.getLogger(__name__)
@@ -114,6 +115,12 @@ class OrderService:
         完成デザインは受け取らず、元データ（PNGレイヤーURL）を source_images に保存する。
         製造データの生成・紐付けは ManufacturingDataService.prepare_for_order が担う。
         """
+        # v2: 製造データを生成できる入力か（商品タイプ・サイズ・必須レイヤー）を intake で
+        # 同期検証する。ここで弾かないと生成不能な注文を 201 で受理してしまい、非同期生成が
+        # FAILED 行を作って発注ゲートが恒久的に保留する（利用者に是正機会を返せない）。
+        for item in data.items:
+            self._validate_v2_manufacturing_inputs(item)
+
         return await self._create_order(
             order_number=data.order_number,
             customer=data.customer,
@@ -121,6 +128,20 @@ class OrderService:
             order_source_id=order_source_id,
             build_item=self._build_v2_item,
         )
+
+    @staticmethod
+    def _validate_v2_manufacturing_inputs(item_data: OrderItemCreateV2) -> None:
+        """v2 明細が製造データを生成可能かを検証する（商品タイプ・サイズ・必須レイヤー）.
+
+        生成時と同じ build_vm_mapping を用いることで、intake の受理条件と生成の実行条件を
+        一致させる。マッピング不能（必須レイヤー欠落・未対応サイズ等）なら ValidationError で
+        同期的に拒否し、生成不能な注文を受理して恒久的に発注保留する事態を防ぐ。
+        """
+        layer_types = {img.layer_type for img in item_data.source_images}
+        try:
+            build_vm_mapping(item_data.product_type.value, item_data.size, layer_types)
+        except MfgMappingError as exc:
+            raise ValidationError(f"{exc} (uid: {item_data.uid})") from exc
 
     async def _create_order(
         self,
@@ -662,6 +683,16 @@ class OrderService:
 
             # Reject transition from shipped status
             if current_status == OrderStatus.SHIPPED:
+                failed_ids.append(order_id)
+                failed_count += 1
+                continue
+
+            # 発注ゲート: MANUFACTURING への一括遷移も製造データが ready の明細のみ許可する
+            # （単発 update_status の 409 ゲートと同一規則）。一括は best-effort のため、未ready
+            # 明細を含む注文は失敗として記録しスキップする（Shipment 削除等の副作用を起こす前に判定）。
+            if status == OrderStatus.MANUFACTURING and any(
+                not item.is_manufacturing_ready for item in order.items
+            ):
                 failed_ids.append(order_id)
                 failed_count += 1
                 continue

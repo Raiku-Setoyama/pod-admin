@@ -285,6 +285,104 @@ class TestV2Intake:
         assert gate.status_code == 409
         assert gate.json()["error"]["code"] == "MANUFACTURING_DATA_NOT_READY"
 
+    @pytest.mark.asyncio
+    async def test_bulk_status_gate_blocks_unready_v2_order(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        db_session: AsyncSession,
+        mfg_keychain_product: dict,
+        mfg_order_source: dict,
+    ):
+        # 一括ステータス更新でも、未ready の v2 注文は MANUFACTURING に遷移できない
+        # （単発 update_status の 409 ゲートと同一規則。一括では failed として記録しスキップ）。
+        product_code = f"RKSYO-{uuid4().hex[:6]}"
+        resp = await client.post(
+            "/api/v2/orders",
+            json={
+                "order_number": "1000050",
+                "customer": _customer(),
+                "items": [_keychain_item("2000050", product_code)],
+            },
+            headers={"X-API-Key": mfg_order_source["api_key"]},
+        )
+        assert resp.status_code == 201, resp.text
+        order_id = resp.json()["id"]
+
+        bulk = await client.patch(
+            "/api/v1/orders/bulk-status",
+            json={"order_ids": [order_id], "status": "manufacturing"},
+            headers=auth_headers,
+        )
+        assert bulk.status_code == 200, bulk.text
+        body = bulk.json()
+        assert body["updated_count"] == 0
+        assert body["failed_count"] == 1
+        assert order_id in body["failed_ids"]
+
+        # 注文ステータスは ordered のまま（ゲートで遷移がブロックされている）
+        status_value = (
+            await db_session.execute(
+                text("SELECT status FROM orders WHERE id = :oid"),
+                {"oid": order_id},
+            )
+        ).scalar()
+        assert status_value == "ordered"
+
+    @pytest.mark.asyncio
+    async def test_intake_rejects_item_missing_required_layer(
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        mfg_keychain_product: dict,
+        mfg_order_source: dict,
+    ):
+        # acrylic_keychain は color+cutline が必須。cutline を欠くと intake で 400 拒否され、
+        # 注文・製造データ行は一切作成されない（201受理→恒久保留を防ぐ）。
+        product_code = f"RKSYO-{uuid4().hex[:6]}"
+        payload = {
+            "order_number": "1000060",
+            "customer": _customer(),
+            "items": [
+                {
+                    "uid": "2000060",
+                    "product_type": "acrylic_keychain",
+                    "product_name": "アクリルキーホルダー（cutline欠落）",
+                    "price": 1200,
+                    "quantity": 1,
+                    "size": "50x50mm",
+                    "color": "アクリル",
+                    "product_code": product_code,
+                    "source_images": [
+                        {"layer_type": "color", "url": "https://example.com/color.png"}
+                    ],
+                    "thumbnail_image_url": "https://example.com/thumb.png",
+                }
+            ],
+        }
+        resp = await client.post(
+            "/api/v2/orders",
+            json=payload,
+            headers={"X-API-Key": mfg_order_source["api_key"]},
+        )
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+
+        # 生成不能な注文は受理されない（注文・製造データ行ともに未作成）
+        order_count = (
+            await db_session.execute(
+                text("SELECT COUNT(*) FROM orders WHERE order_number = '1000060'")
+            )
+        ).scalar()
+        assert order_count == 0
+        md_count = (
+            await db_session.execute(
+                text("SELECT COUNT(*) FROM manufacturing_data WHERE product_code = :pc"),
+                {"pc": product_code},
+            )
+        ).scalar()
+        assert md_count == 0
+
 
 class TestV1BackwardCompatibility:
     @pytest.mark.asyncio
