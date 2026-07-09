@@ -12,6 +12,7 @@ from app.dependencies import (
     get_chat_service,
     get_current_admin,
     get_invoice_service,
+    get_manufacturer_notification_service,
     get_manufacturer_order_service,
     get_manufacturer_service,
     get_order_list_service,
@@ -35,8 +36,13 @@ from app.schemas.manufacturer import (
     ManufacturerResponse,
     ManufacturerUpdate,
 )
+from app.schemas.manufacturer_notification import (
+    ManufacturerNotificationSettingsResponse,
+    ManufacturerNotificationSettingsUpdate,
+)
 from app.services.chat_service import ChatService
 from app.services.invoice_service import InvoiceService
+from app.services.manufacturer_notification import ManufacturerNotificationService
 from app.services.manufacturer_order_service import ManufacturerOrderService
 from app.services.manufacturer_service import ManufacturerService
 from app.services.order_list_service import OrderListService
@@ -160,6 +166,40 @@ async def delete_manufacturer(
 ) -> None:
     """Delete a manufacturer."""
     await service.delete(manufacturer_id)
+
+
+# === メーカー別 通知設定エンドポイント ===
+
+
+@router.get(
+    "/{manufacturer_id}/notification-settings",
+    response_model=ManufacturerNotificationSettingsResponse,
+)
+async def get_manufacturer_notification_settings(
+    manufacturer_id: str,
+    service: Annotated[
+        ManufacturerNotificationService, Depends(get_manufacturer_notification_service)
+    ],
+    current_user: Annotated[User, Depends(get_current_admin)],
+) -> ManufacturerNotificationSettingsResponse:
+    """メーカー別の通知設定を取得する（未登録ならデフォルト値を返す）."""
+    return await service.get_settings(manufacturer_id)
+
+
+@router.put(
+    "/{manufacturer_id}/notification-settings",
+    response_model=ManufacturerNotificationSettingsResponse,
+)
+async def update_manufacturer_notification_settings(
+    manufacturer_id: str,
+    data: ManufacturerNotificationSettingsUpdate,
+    service: Annotated[
+        ManufacturerNotificationService, Depends(get_manufacturer_notification_service)
+    ],
+    current_user: Annotated[User, Depends(get_current_admin)],
+) -> ManufacturerNotificationSettingsResponse:
+    """メーカー別の通知設定（To/CC・ON/OFF）を更新する."""
+    return await service.update_settings(manufacturer_id, data)
 
 
 @router.get("/{manufacturer_id}/order-list")

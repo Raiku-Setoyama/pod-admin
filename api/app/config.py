@@ -54,5 +54,12 @@ class Settings(BaseSettings):
     # 管理画面のベースURL（受注通知メールの注文詳細リンク用、未設定ならリンクを描画しない）
     ADMIN_BASE_URL: str = ""
 
+    # メーカーポータルのログインURL（メーカー日次発注通知メールに記載）
+    MANUFACTURER_LOGIN_URL: str = "https://pod-admin-beige.vercel.app/manufacturer-login"
+
+    # 内部エンドポイント（メーカー日次発注ダイジェスト）の共有シークレット。
+    # 未設定なら内部エンドポイントは無効（403）。外部トリガ(cron等)から X-Internal-Secret で認証する。
+    INTERNAL_API_SECRET: str = ""
+
 
 settings = Settings()

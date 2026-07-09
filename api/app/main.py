@@ -11,6 +11,7 @@ from app.routers import (
     company_holidays,
     dashboard,
     external,
+    internal,
     manufacturer_portal,
     manufacturers,
     orders,
@@ -78,6 +79,7 @@ app.include_router(shipments.router, prefix=settings.API_V1_PREFIX)
 app.include_router(chat.router, prefix=settings.API_V1_PREFIX)
 app.include_router(dashboard.router, prefix=settings.API_V1_PREFIX)
 app.include_router(external.router, prefix=settings.API_V1_PREFIX)
+app.include_router(internal.router, prefix=settings.API_V1_PREFIX)
 app.include_router(settings_router.router, prefix=settings.API_V1_PREFIX)
 app.include_router(company_holidays.router, prefix=settings.API_V1_PREFIX)
 

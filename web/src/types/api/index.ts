@@ -302,6 +302,21 @@ export interface ManufacturerListResponse {
   limit: number;
 }
 
+// メーカー別 通知設定（日次発注ダイジェストメール）
+export interface ManufacturerNotificationSettings {
+  manufacturer_id: string;
+  daily_digest_enabled: boolean;
+  to_emails: string[];
+  cc_emails: string[];
+  last_notified_at: string | null;
+}
+
+export interface ManufacturerNotificationSettingsUpdate {
+  daily_digest_enabled: boolean;
+  to_emails: string[];
+  cc_emails: string[];
+}
+
 // Product types
 export type ProductType =
   | "acrylic_keychain"

@@ -1,6 +1,6 @@
 """App setting repository."""
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.app_setting import AppSetting
@@ -39,3 +39,26 @@ class AppSettingRepository:
         await self._db.flush()
         await self._db.refresh(setting)
         return setting
+
+    async def claim_daily_run(self, key: str, date_str: str) -> bool:
+        """本日分の実行権を原子的に取得する（日次ガード）.
+
+        value を条件付きで date_str に更新する。既に value == date_str
+        （＝本日実行済み）の場合は何も更新せず False を返す。取得できたら True。
+
+        条件付き UPDATE の rowcount を使うことで、外部トリガの多重発火が
+        同時に到達しても本処理を実行するのは 1 回だけに保証する。
+        """
+        # 行が存在しない場合のみ空値で作成（通常はマイグレーションで seed 済み）
+        existing = await self.find_by_key(key)
+        if existing is None:
+            self._db.add(AppSetting(key=key, value=""))
+            await self._db.flush()
+
+        result = await self._db.execute(
+            update(AppSetting)
+            .where(AppSetting.key == key, AppSetting.value != date_str)
+            .values(value=date_str)
+            .returning(AppSetting.key)
+        )
+        return result.first() is not None

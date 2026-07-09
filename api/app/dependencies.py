@@ -1,5 +1,6 @@
 """Dependency injection functions."""
 
+import secrets
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
@@ -13,6 +14,9 @@ from app.models.user import User, UserRole
 from app.repositories.app_setting_repository import AppSettingRepository
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.company_holiday_repository import CompanyHolidayRepository
+from app.repositories.manufacturer_notification_settings_repository import (
+    ManufacturerNotificationSettingsRepository,
+)
 from app.repositories.manufacturer_repository import ManufacturerRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.order_source_repository import OrderSourceRepository
@@ -26,6 +30,8 @@ from app.services.email_service import EmailService
 from app.services.external_order_notification import ExternalOrderNotificationService
 from app.services.external_service import ExternalService
 from app.services.invoice_service import InvoiceService
+from app.services.manufacturer_daily_digest import ManufacturerDailyDigestService
+from app.services.manufacturer_notification import ManufacturerNotificationService
 from app.services.manufacturer_order_service import ManufacturerOrderService
 from app.services.manufacturer_portal_service import ManufacturerPortalService
 from app.services.manufacturer_service import ManufacturerService
@@ -110,6 +116,13 @@ def get_app_setting_repository(
     return AppSettingRepository(db)
 
 
+def get_manufacturer_notification_settings_repository(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ManufacturerNotificationSettingsRepository:
+    """Get manufacturer notification settings repository."""
+    return ManufacturerNotificationSettingsRepository(db)
+
+
 # Service dependencies
 def get_auth_service(
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
@@ -157,6 +170,7 @@ def get_email_service() -> EmailService | None:
         from_email=settings.SENDGRID_FROM_EMAIL,
         contact_email=settings.CONTACT_EMAIL,
         admin_base_url=settings.ADMIN_BASE_URL,
+        manufacturer_login_url=settings.MANUFACTURER_LOGIN_URL,
     )
 
 
@@ -166,6 +180,33 @@ def get_external_order_notification_service(
 ) -> ExternalOrderNotificationService:
     """Get external order notification service."""
     return ExternalOrderNotificationService(app_setting_repo, email_service)
+
+
+def get_manufacturer_notification_service(
+    notif_repo: Annotated[
+        ManufacturerNotificationSettingsRepository,
+        Depends(get_manufacturer_notification_settings_repository),
+    ],
+    manufacturer_repo: Annotated[ManufacturerRepository, Depends(get_manufacturer_repository)],
+) -> ManufacturerNotificationService:
+    """Get manufacturer notification settings CRUD service."""
+    return ManufacturerNotificationService(notif_repo, manufacturer_repo)
+
+
+def get_manufacturer_daily_digest_service(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
+    notif_repo: Annotated[
+        ManufacturerNotificationSettingsRepository,
+        Depends(get_manufacturer_notification_settings_repository),
+    ],
+    app_setting_repo: Annotated[AppSettingRepository, Depends(get_app_setting_repository)],
+    email_service: Annotated[EmailService | None, Depends(get_email_service)],
+) -> ManufacturerDailyDigestService:
+    """Get manufacturer daily digest batch service."""
+    return ManufacturerDailyDigestService(
+        db, order_repo, notif_repo, app_setting_repo, email_service
+    )
 
 
 def get_shipment_service(
@@ -330,3 +371,19 @@ async def verify_api_key(
         return x_api_key, order_source.id
 
     raise UnauthorizedError("Invalid API key")
+
+
+# Internal shared-secret authentication (for cron/GitHub Actions triggers)
+async def verify_internal_secret(
+    x_internal_secret: Annotated[str | None, Header(alias="X-Internal-Secret")] = None,
+) -> None:
+    """内部エンドポイント用の共有シークレット認証.
+
+    INTERNAL_API_SECRET が未設定なら内部エンドポイントは無効（403）。
+    ヘッダー X-Internal-Secret が一致しなければ 401。定数時間比較を用いる。
+    """
+    secret = settings.INTERNAL_API_SECRET
+    if not secret:
+        raise ForbiddenError("Internal API is not configured")
+    if not x_internal_secret or not secrets.compare_digest(x_internal_secret, secret):
+        raise UnauthorizedError("Invalid internal secret")

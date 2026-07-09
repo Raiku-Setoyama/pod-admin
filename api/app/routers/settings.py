@@ -25,6 +25,11 @@ from app.services.external_order_notification import (
     NOTIFICATION_RECIPIENTS_KEY,
     validate_setting_value,
 )
+from app.services.manufacturer_notification import (
+    DIGEST_ENABLED_KEY,
+    DIGEST_SEND_TIME_KEY,
+    validate_digest_setting_value,
+)
 from app.utils.exceptions import AppException
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -70,6 +75,13 @@ async def update_setting(
     if key in (NOTIFICATION_ENABLED_KEY, NOTIFICATION_RECIPIENTS_KEY):
         try:
             validate_setting_value(key, data.value)
+        except ValueError as e:
+            raise AppException(422, "VALIDATION_ERROR", str(e)) from None
+
+    # Validate manufacturer daily digest settings (送信時刻・マスタスイッチ).
+    if key in (DIGEST_ENABLED_KEY, DIGEST_SEND_TIME_KEY):
+        try:
+            validate_digest_setting_value(key, data.value)
         except ValueError as e:
             raise AppException(422, "VALIDATION_ERROR", str(e)) from None
 

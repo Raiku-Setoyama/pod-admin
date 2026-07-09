@@ -3,14 +3,13 @@
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { Trash2, Plus, X } from "lucide-react";
+import { Trash2, Plus } from "lucide-react";
 import { PageContainer } from "@/components/layout/page-container";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -20,6 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PageLoading } from "@/components/common/loading-spinner";
+import { EmailListInput } from "@/components/common/email-list-input";
 import { apiClient } from "@/lib/api/client";
 import type {
   AppSettingListResponse,
@@ -29,7 +29,9 @@ import type {
 
 const NOTIFICATION_ENABLED_KEY = "external_order_notification_enabled";
 const NOTIFICATION_RECIPIENTS_KEY = "external_order_notification_recipients";
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DIGEST_ENABLED_KEY = "manufacturer_daily_digest_enabled";
+const DIGEST_SEND_TIME_KEY = "manufacturer_daily_digest_send_time";
+const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function parseRecipients(value: string | undefined): string[] {
   if (!value) return [];
@@ -47,10 +49,15 @@ export default function SettingsPage() {
   // 外部注文の通知
   const [notificationEnabled, setNotificationEnabled] = useState(false);
   const [recipients, setRecipients] = useState<string[]>([]);
-  const [newRecipient, setNewRecipient] = useState("");
   const [notificationInitialized, setNotificationInitialized] = useState(false);
   const [isSavingNotification, setIsSavingNotification] = useState(false);
   const [notificationError, setNotificationError] = useState<string | null>(null);
+
+  // メーカー日次発注通知（全社共通）
+  const [digestEnabled, setDigestEnabled] = useState(false);
+  const [digestSendTime, setDigestSendTime] = useState("09:00");
+  const [digestInitialized, setDigestInitialized] = useState(false);
+  const [isSavingDigest, setIsSavingDigest] = useState(false);
 
   // 休日追加フォーム
   const [newHolidayDate, setNewHolidayDate] = useState("");
@@ -87,6 +94,19 @@ export default function SettingsPage() {
     }
   }, [settingsData, notificationInitialized]);
 
+  // メーカー日次発注通知の初回反映
+  useEffect(() => {
+    if (settingsData && !digestInitialized) {
+      const enabledSetting = settingsData.items.find((s) => s.key === DIGEST_ENABLED_KEY);
+      setDigestEnabled(enabledSetting?.value === "true");
+      const sendTimeSetting = settingsData.items.find((s) => s.key === DIGEST_SEND_TIME_KEY);
+      if (sendTimeSetting?.value) {
+        setDigestSendTime(sendTimeSetting.value);
+      }
+      setDigestInitialized(true);
+    }
+  }, [settingsData, digestInitialized]);
+
   // 休日一覧取得
   const {
     data: holidaysData,
@@ -116,26 +136,6 @@ export default function SettingsPage() {
     }
   };
 
-  const handleAddRecipient = () => {
-    const email = newRecipient.trim();
-    if (!email) return;
-    if (!EMAIL_REGEX.test(email)) {
-      setNotificationError(`メールアドレスの形式が正しくありません: ${email}`);
-      return;
-    }
-    if (recipients.includes(email)) {
-      setNotificationError("既に登録されているメールアドレスです");
-      return;
-    }
-    setRecipients([...recipients, email]);
-    setNewRecipient("");
-    setNotificationError(null);
-  };
-
-  const handleRemoveRecipient = (email: string) => {
-    setRecipients(recipients.filter((r) => r !== email));
-  };
-
   const handleSaveNotification = async () => {
     setIsSavingNotification(true);
     setNotificationError(null);
@@ -156,6 +156,30 @@ export default function SettingsPage() {
       toast.error(message);
     } finally {
       setIsSavingNotification(false);
+    }
+  };
+
+  const handleSaveDigest = async () => {
+    if (!TIME_REGEX.test(digestSendTime)) {
+      toast.error("送信時刻は HH:MM（24時間表記）で指定してください");
+      return;
+    }
+    setIsSavingDigest(true);
+    try {
+      await apiClient(`/settings/${DIGEST_ENABLED_KEY}`, {
+        method: "PUT",
+        body: { value: digestEnabled ? "true" : "false" },
+      });
+      await apiClient(`/settings/${DIGEST_SEND_TIME_KEY}`, {
+        method: "PUT",
+        body: { value: digestSendTime },
+      });
+      toast.success("メーカー日次発注通知の設定を更新しました");
+      mutateSettings();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "更新に失敗しました");
+    } finally {
+      setIsSavingDigest(false);
     }
   };
 
@@ -261,49 +285,15 @@ export default function SettingsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="recipient-email">通知先メールアドレス</Label>
-              <p className="text-sm text-muted-foreground">
-                複数登録できます。入力して「追加」を押すか Enter で登録してください。
-              </p>
-              <div className="flex items-end gap-3">
-                <Input
-                  id="recipient-email"
-                  type="email"
-                  placeholder="例: staff@example.com"
-                  value={newRecipient}
-                  onChange={(e) => setNewRecipient(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleAddRecipient();
-                    }
-                  }}
-                />
-                <Button onClick={handleAddRecipient} variant="secondary" size="sm">
-                  <Plus className="h-4 w-4 mr-1" />
-                  追加
-                </Button>
-              </div>
-
-              {recipients.length > 0 ? (
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {recipients.map((email) => (
-                    <Badge key={email} variant="secondary" className="gap-1 pr-1">
-                      {email}
-                      <button
-                        type="button"
-                        aria-label={`${email} を削除`}
-                        onClick={() => handleRemoveRecipient(email)}
-                        className="rounded-full p-0.5 hover:bg-muted-foreground/20"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">通知先が登録されていません。</p>
-              )}
+              <EmailListInput
+                id="recipient-email"
+                label="通知先メールアドレス"
+                description="複数登録できます。入力して「追加」を押すか Enter で登録してください。"
+                emails={recipients}
+                onChange={setRecipients}
+                placeholder="例: staff@example.com"
+                emptyText="通知先が登録されていません。"
+              />
 
               {notificationEnabled && recipients.length === 0 && (
                 <p className="text-sm text-amber-600">
@@ -323,6 +313,46 @@ export default function SettingsPage() {
               size="sm"
             >
               {isSavingNotification ? "保存中..." : "保存"}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* メーカー日次発注通知（全社共通） */}
+        <Card>
+          <CardHeader>
+            <CardTitle>メーカー日次発注通知</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              毎日決まった時刻に、新規の発注済み明細があるメーカーへ発注通知メールを送信します。
+              宛先や有効/無効はメーカーごとに各メーカーの編集画面で設定します。
+            </p>
+
+            <div className="flex items-center gap-3">
+              <Switch
+                id="digest-enabled"
+                checked={digestEnabled}
+                onCheckedChange={setDigestEnabled}
+              />
+              <Label htmlFor="digest-enabled">日次通知を有効にする（全体）</Label>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="digest-send-time">送信時刻（JST・全社共通）</Label>
+              <p className="text-sm text-muted-foreground">
+                この時刻を過ぎた最初のタイミングで、1 日 1 回送信されます。変更は翌日以降の送信に反映されます。
+              </p>
+              <Input
+                id="digest-send-time"
+                type="time"
+                value={digestSendTime}
+                onChange={(e) => setDigestSendTime(e.target.value)}
+                className="w-32"
+              />
+            </div>
+
+            <Button onClick={handleSaveDigest} disabled={isSavingDigest} size="sm">
+              {isSavingDigest ? "保存中..." : "保存"}
             </Button>
           </CardContent>
         </Card>

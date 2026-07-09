@@ -1,0 +1,51 @@
+name: メーカー日次発注通知トリガー
+
+# メーカー別 日次発注ダイジェストメールの外部トリガ。
+# pod-admin API 側で「JST が送信時刻以降 かつ 本日未実行」の場合のみ実際に送信されるため、
+# ここでは高頻度で叩くだけでよい（多重発火でも二重送信しない設計）。
+#
+# 必要な設定（リポジトリの Settings → Secrets and variables → Actions）:
+#   - Variables: API_BASE_URL  例) https://<your-app>.railway.app
+#   - Secrets:   INTERNAL_API_SECRET  （API の環境変数 INTERNAL_API_SECRET と同じ値）
+
+on:
+  schedule:
+    # 15 分ごと（UTC 実行だが送信可否は API 側が JST で判定するため問題なし）
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "時刻・日次ガードを無視して即時送信（手動テスト用）"
+        type: boolean
+        default: false
+
+# 同時実行を抑止（多重発火は API 側でも安全だが念のため直列化）
+concurrency:
+  group: manufacturer-daily-digest
+  cancel-in-progress: false
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call internal daily digest endpoint
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          INTERNAL_API_SECRET: ${{ secrets.INTERNAL_API_SECRET }}
+          FORCE: ${{ github.event.inputs.force || 'false' }}
+        run: |
+          if [ -z "$API_BASE_URL" ] || [ -z "$INTERNAL_API_SECRET" ]; then
+            echo "API_BASE_URL (variable) と INTERNAL_API_SECRET (secret) を設定してください" >&2
+            exit 1
+          fi
+          url="${API_BASE_URL%/}/api/v1/internal/manufacturer-daily-digest?force=${FORCE}"
+          http_code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
+            -X POST "$url" \
+            -H "X-Internal-Secret: ${INTERNAL_API_SECRET}")
+          echo "HTTP ${http_code}"
+          cat /tmp/resp.json || true
+          echo ""
+          if [ "$http_code" -ge 300 ]; then
+            echo "内部エンドポイントの呼び出しに失敗しました" >&2
+            exit 1
+          fi
