@@ -8,6 +8,7 @@ import { PageContainer } from "@/components/layout/page-container";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { OrderDetail } from "@/features/orders/components/order-detail";
 import { apiClient } from "@/lib/api/client";
+import { isManufacturingDataActive } from "@/constants/status";
 import type { Order } from "@/types/api";
 
 const fetcher = (url: string) => apiClient<Order>(url);
@@ -23,11 +24,8 @@ export default function OrderDetailPage() {
     {
       // 製造データ生成中（pending/generating）は完成までポーリングする
       refreshInterval: (latest?: Order) =>
-        latest?.items?.some(
-          (item) =>
-            item.manufacturing_data &&
-            (item.manufacturing_data.status === "pending" ||
-              item.manufacturing_data.status === "generating")
+        latest?.items?.some((item) =>
+          isManufacturingDataActive(item.manufacturing_data?.status)
         )
           ? 5000
           : 0,

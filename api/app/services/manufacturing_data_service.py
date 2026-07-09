@@ -43,6 +43,10 @@ _SOURCE_DOWNLOAD_TIMEOUT = 30.0
 # create_task の戻り値を保持しないとタスクが GC で途中消滅しうるため。
 _recovery_tasks: set[asyncio.Task[None]] = set()
 
+# 起動時復旧で同時に走らせる生成の上限。VM は直列・DB プールも有限のため、大量の宙吊り行が
+# 一斉に生成を始めて接続を枯渇させたり VM を過負荷にしたりしないよう抑制する。
+_RECOVERY_CONCURRENCY = 4
+
 
 class _BytesUpload:
     """FileStorage.save に生バイト列を渡すための最小アダプタ."""
@@ -212,19 +216,19 @@ class ManufacturingDataService:
         # （重複した VM ジョブ投入・生成ファイルの孤立を防ぐ）。
         claimed = await self._md_repo.claim_for_generation(md_id)
         if not claimed:
-            await self._commit()
             logger.info(
                 "manufacturing data %s is already generating or ready; skip duplicate",
                 md_id,
             )
             return
 
-        # claim 成功。行の状態を確定させる（attempts はここで加算）。
+        # claim（条件付き UPDATE）が status=generating・attempts+1・error クリアを原子的に
+        # 確定済み。commit で他ワーカーへ可視化し、in-memory instance を DB と同期させる
+        # （後続の flush が古い値で上書きしないため。追加の UPDATE は不要）。
+        await self._commit()
         md.status = MfgDataStatus.GENERATING.value
         md.attempts += 1
         md.error_message = None
-        await self._md_repo.update(md)
-        await self._commit()
 
         try:
             if self._vm_client is None:
@@ -282,39 +286,33 @@ class ManufacturingDataService:
     ) -> dict[str, bytes]:
         """必要なレイヤーの PNG を並列ダウンロードする.
 
-        個々のレイヤー DL 失敗では例外を送出せず、成功したレイヤーのみを返す。
-        必須レイヤー不足の判定は呼び出し側の missing チェックに委ねる。これにより、
-        optional レイヤー（white 等）の取得失敗で生成全体を落とすことを防ぐ
-        （return_exceptions=True で in-flight タスクの取りこぼしも起きない）。
+        個々のレイヤー DL 失敗は fetch 内で握って None を返し、成功したレイヤーだけ集める。
+        必須レイヤー不足の判定は呼び出し側の missing チェックに委ねる。これにより optional
+        レイヤー（white 等）の取得失敗で生成全体を落とさない。
         """
         targets = [img for img in source_images if img["layer_type"] in wanted]
         semaphore = asyncio.Semaphore(4)
 
         async with httpx.AsyncClient(timeout=_SOURCE_DOWNLOAD_TIMEOUT) as client:
 
-            async def fetch(img: dict) -> tuple[str, bytes]:
+            async def fetch(img: dict) -> tuple[str, bytes] | None:
                 async with semaphore:
-                    response = await client.get(img["url"])
-                    response.raise_for_status()
-                    return img["layer_type"], response.content
+                    try:
+                        response = await client.get(img["url"])
+                        response.raise_for_status()
+                        return img["layer_type"], response.content
+                    except Exception as exc:  # noqa: BLE001 - 1レイヤーの失敗で全体を止めない
+                        logger.warning(
+                            "failed to download source layer %s (%s): %s",
+                            img["layer_type"],
+                            img["url"],
+                            exc,
+                        )
+                        return None
 
-            results = await asyncio.gather(
-                *[fetch(img) for img in targets], return_exceptions=True
-            )
+            results = await asyncio.gather(*[fetch(img) for img in targets])
 
-        images: dict[str, bytes] = {}
-        for img, result in zip(targets, results, strict=True):
-            if isinstance(result, BaseException):
-                logger.warning(
-                    "failed to download source layer %s (%s): %s",
-                    img["layer_type"],
-                    img["url"],
-                    result,
-                )
-                continue
-            layer_type, content = result
-            images[layer_type] = content
-        return images
+        return dict(r for r in results if r is not None)
 
     async def _save_file(self, content: bytes, filename: str) -> str:
         """生成物を FileStorage に保存し、保存先パスを返す."""
@@ -408,20 +406,22 @@ async def recover_stranded_generations() -> None:
     """
     session_maker = get_session_maker()
     async with session_maker() as session:
-        repo = ManufacturingDataRepository(session)
-        stranded = await repo.find_stranded()
-        # 中断された generating は claim 可能な pending に戻す。
-        for md in stranded:
-            if md.status == MfgDataStatus.GENERATING.value:
-                md.status = MfgDataStatus.PENDING.value
+        # 宙吊り行を pending に戻し、再駆動対象の id を1文で回収する。
+        stranded_ids = await ManufacturingDataRepository(session).reclaim_stranded()
         await session.commit()
-        stranded_ids = [md.id for md in stranded]
 
     if not stranded_ids:
         return
 
     logger.info("recovering %d stranded manufacturing generation(s)", len(stranded_ids))
+    # 同時実行数を抑えて再駆動する（VM 直列・DB プール有限のため一斉起動を避ける）。
+    semaphore = asyncio.Semaphore(_RECOVERY_CONCURRENCY)
+
+    async def _drive(md_id: str) -> None:
+        async with semaphore:
+            await run_generation(md_id)
+
     for md_id in stranded_ids:
-        task = asyncio.create_task(run_generation(md_id))
+        task = asyncio.create_task(_drive(md_id))
         _recovery_tasks.add(task)
         task.add_done_callback(_recovery_tasks.discard)

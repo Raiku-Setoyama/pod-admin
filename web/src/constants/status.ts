@@ -103,6 +103,16 @@ export function getManufacturingDataStatusLabel(status: ManufacturingDataStatus)
   return MANUFACTURING_DATA_STATUS_LABELS[status] ?? status;
 }
 
+/**
+ * 製造データ生成が進行中（pending/generating）か。
+ * 生成完了まで一覧/詳細をポーリングする判定に使う（受注詳細・メーカー発注詳細で共有）。
+ */
+export function isManufacturingDataActive(
+  status: ManufacturingDataStatus | null | undefined
+): boolean {
+  return status === "pending" || status === "generating";
+}
+
 // ========================================
 // Combined Status (StatusBadge 用)
 // ========================================

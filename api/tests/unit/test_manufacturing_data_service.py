@@ -382,15 +382,8 @@ class TestRetry:
 
 class TestRecovery:
     @pytest.mark.asyncio
-    async def test_recover_resets_generating_and_reenqueues(self):
-        # 起動時復旧: generating(中断) を pending に戻し、pending/generating を再駆動する。
-        generating = ManufacturingData(product_code="p", product_type="sticker")
-        generating.id = "md-gen"
-        generating.status = MfgDataStatus.GENERATING.value
-        pending = ManufacturingData(product_code="q", product_type="sticker")
-        pending.id = "md-pend"
-        pending.status = MfgDataStatus.PENDING.value
-
+    async def test_recover_reenqueues_reclaimed_ids(self):
+        # 起動時復旧: 宙吊り行を reclaim（pending へ戻す）して得た id を再駆動する。
         session = AsyncMock()
         session_cm = MagicMock()
         session_cm.__aenter__ = AsyncMock(return_value=session)
@@ -398,7 +391,7 @@ class TestRecovery:
         session_maker = MagicMock(return_value=session_cm)
 
         repo = AsyncMock()
-        repo.find_stranded.return_value = [generating, pending]
+        repo.reclaim_stranded.return_value = ["md-gen", "md-pend"]
 
         started: list[str] = []
 
@@ -413,9 +406,6 @@ class TestRecovery:
             await mds.recover_stranded_generations()
             await asyncio.sleep(0.05)  # spawn したタスクを走らせる
 
-        # 中断された generating は claim 可能な pending に戻る
-        assert generating.status == MfgDataStatus.PENDING.value
-        assert pending.status == MfgDataStatus.PENDING.value
         session.commit.assert_awaited()
         assert set(started) == {"md-gen", "md-pend"}
 

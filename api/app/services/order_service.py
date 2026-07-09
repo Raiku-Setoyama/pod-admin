@@ -330,13 +330,21 @@ class OrderService:
         )
 
     @staticmethod
-    def _unready_ordered_item_count(order: Order) -> int:
-        """ORDERED のまま製造データが ready でない（＝メーカー発注できない）明細数を返す.
+    def _manufacturing_gate_unready_count(
+        order: Order, current_status: OrderStatus, target_status: OrderStatus
+    ) -> int:
+        """ORDERED→MANUFACTURING の前進遷移で発注できない明細数を返す（それ以外は 0）.
 
-        MANUFACTURING への前進遷移ゲート用の共通述語。既に MANUFACTURING/DELIVERED の明細や
-        v1 明細（is_manufacturing_ready=True）は対象外。update_status と bulk_update_status の
-        両ゲートで共有し、注文レベルと明細レベルの判定を一致させる。
+        既に MANUFACTURING の注文の再確定（no-op）や MANUFACTURING 以外への遷移では
+        ゲートは発動しない（明細単位ゲートとの不整合を避ける）。判定対象は
+        Order.unready_ordered_item_count（ORDERED かつ未ready）。update_status と
+        bulk_update_status で共有し、両ゲートの前進条件と述語を一致させる。
         """
+        if (
+            target_status != OrderStatus.MANUFACTURING
+            or current_status == OrderStatus.MANUFACTURING
+        ):
+            return 0
         return sum(
             1
             for item in order.items
@@ -367,17 +375,10 @@ class OrderService:
         if current_status == OrderStatus.SHIPPED:
             raise InvalidStatusTransitionError(current_status.value, status.value)
 
-        # 発注ゲート: ORDERED→MANUFACTURING の前進遷移でのみ発動する。
-        # 既に MANUFACTURING の注文（メーカーが明細単位で一部を製造中にしたケース等）を
-        # 再度 manufacturing にする no-op では発動しない（明細単位ゲートとの不整合を避ける）。
-        # 判定対象は「まだ ORDERED の未ready明細」のみ。v1 明細は常に ready で影響しない。
-        if (
-            status == OrderStatus.MANUFACTURING
-            and current_status != OrderStatus.MANUFACTURING
-        ):
-            unready = self._unready_ordered_item_count(order)
-            if unready:
-                raise ManufacturingDataNotReadyError(unready)
+        # 発注ゲート: ORDERED→MANUFACTURING の前進遷移でのみ、未ready の ORDERED 明細を拒否。
+        unready = self._manufacturing_gate_unready_count(order, current_status, status)
+        if unready:
+            raise ManufacturingDataNotReadyError(unready)
 
         # delivered -> ordered/manufacturing の遷移時の処理
         if current_status == OrderStatus.DELIVERED and status in (
@@ -708,14 +709,9 @@ class OrderService:
                 failed_count += 1
                 continue
 
-            # 発注ゲート: MANUFACTURING への前進遷移のみ、未ready の ORDERED 明細を含む注文を
-            # ブロックする（単発 update_status と同一述語 _unready_ordered_item_count）。一括は
-            # best-effort のため failed として記録しスキップする（Shipment 削除等の副作用の前に判定）。
-            if (
-                status == OrderStatus.MANUFACTURING
-                and current_status != OrderStatus.MANUFACTURING
-                and self._unready_ordered_item_count(order)
-            ):
+            # 発注ゲート: 単発 update_status と同一判定（前進遷移のみ・未ready の ORDERED 明細）。
+            # 一括は best-effort のため failed として記録しスキップ（Shipment 削除等の副作用の前に判定）。
+            if self._manufacturing_gate_unready_count(order, current_status, status):
                 failed_ids.append(order_id)
                 failed_count += 1
                 continue

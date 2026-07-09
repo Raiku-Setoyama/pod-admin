@@ -1,5 +1,6 @@
 import useSWR from "swr";
 import { apiClient } from "@/lib/api/client";
+import { isManufacturingDataActive } from "@/constants/status";
 import type {
   ManufacturerOrderSummaryListResponse,
   ManufacturerOrderItemListResponse,
@@ -59,10 +60,8 @@ export function useManufacturerOrderItems(
       // 発注可否ゲート（未ready=選択不可）を持つ画面なので、生成完了を検知して
       // 自動的に選択可能へ更新する（手動リロード不要）。
       refreshInterval: (latest?: ManufacturerOrderItemListResponse) =>
-        latest?.items?.some(
-          (item) =>
-            item.manufacturing_status === "pending" ||
-            item.manufacturing_status === "generating"
+        latest?.items?.some((item) =>
+          isManufacturingDataActive(item.manufacturing_status)
         )
           ? 5000
           : 0,
