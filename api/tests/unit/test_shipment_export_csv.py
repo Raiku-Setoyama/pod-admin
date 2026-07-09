@@ -1,4 +1,4 @@
-"""Unit tests for ShipmentService.export_csv() - 18th column addition.
+"""Unit tests for ShipmentService.export_csv().
 
 FEAT-0017: Add "商品名（処理用）" column to shipment CSV export.
 Tests verify that the 18th column is correctly added to both the header
@@ -9,6 +9,10 @@ AC-002: Data row 18th column is "{order_number}_{uid}" format
 AC-003: Multiple OrderItems produce correct values per row
 AC-004: uid=None produces "{order_number}_"
 AC-005: Existing 17 columns remain unchanged
+
+Issue #79: The "商品種類" column (4th) now uses the same
+"{商品種類} - {サイズ} - {位置} - {色}" format as the order list (発注リスト).
+See TestShipmentExportCsvProductDetail.
 """
 
 import csv
@@ -21,6 +25,7 @@ from app.models.order import Order, OrderItem
 from app.models.order_source import OrderSource
 from app.models.shipment import Shipment, ShipmentItem, ShipmentStatus
 from app.services.shipment_service import ShipmentService
+from app.utils.order_list_generator import OrderListGenerator
 
 # ---- Existing 17 header columns (must not change) ----
 EXPECTED_17_HEADERS = [
@@ -101,6 +106,9 @@ def create_mock_order_item(
     product_type: str = "acrylic_keychain",
     quantity: int = 1,
     uid: str | None = "ITEM-001",
+    size: str | None = None,
+    position: str | None = None,
+    color: str | None = None,
 ) -> MagicMock:
     """Create a mock OrderItem."""
     item = MagicMock(spec=OrderItem)
@@ -108,6 +116,9 @@ def create_mock_order_item(
     item.product_type = product_type
     item.quantity = quantity
     item.uid = uid
+    item.size = size
+    item.position = position
+    item.color = color
     return item
 
 
@@ -409,3 +420,75 @@ class TestShipmentExportCsvColumn18:
         assert row[14] == "千代田区1-1-1"  # 配送元住所2
         assert row[15] == "テストビル101"  # 配送元住所3
         assert row[16] == "テスト配送元"  # 配送元氏名
+
+
+# 商品種類 column index in the shipment export CSV (0-based)
+PRODUCT_TYPE_COL = 3
+# 商品種類 column index in the order list (発注リスト) CSV (0-based)
+ORDER_LIST_PRODUCT_TYPE_COL = 4
+
+
+class TestShipmentExportCsvProductDetail:
+    """Issue #79: 「商品種類」列を発注リストと同じ形式に統一.
+
+    Format: {商品種類} - {サイズ} - {位置} - {色}（半角 " - " 区切り、空要素はスキップ）。
+    """
+
+    async def _export_single_item(
+        self, shipment_service, mock_shipment_repo, order_item
+    ) -> str:
+        """Export one order item and return its 商品種類 cell value."""
+        order = create_mock_order(
+            order_items=[order_item],
+            order_source=create_mock_order_source(),
+        )
+        shipment = create_mock_shipment(shipment_items=[("si-001", order)])
+        mock_shipment_repo.find_by_id.return_value = shipment
+
+        csv_bytes, _ = await shipment_service.export_csv(["shipment-001"])
+        _, data_rows = parse_csv_bytes(csv_bytes)
+        return data_rows[0][PRODUCT_TYPE_COL]
+
+    @pytest.mark.asyncio
+    async def test_includes_size_position_color(
+        self, shipment_service, mock_shipment_repo
+    ):
+        """Tシャツはサイズ・位置・色を半角 ' - ' で連結して出力する."""
+        item = create_mock_order_item(
+            product_type="tshirt", size="L", position="正面", color="白"
+        )
+        detail = await self._export_single_item(
+            shipment_service, mock_shipment_repo, item
+        )
+        assert detail == "Tシャツ - L - 正面 - 白"
+
+    @pytest.mark.asyncio
+    async def test_acrylic_stand_maps_to_acrylic_figure_and_matches_order_list(
+        self, shipment_service, mock_shipment_repo
+    ):
+        """acrylic_stand は「アクリルフィギュア - …」となり発注リスト出力と完全一致する.
+
+        position=None のため空要素スキップ（余分な区切りが出ない）も同時に検証する。
+        商品種類名の網羅的な整形パターンは TestFormatProductDetail を参照。
+        """
+        item = create_mock_order_item(
+            product_type="acrylic_stand", size="100mm", position=None, color="クリア"
+        )
+        shipment_detail = await self._export_single_item(
+            shipment_service, mock_shipment_repo, item
+        )
+
+        # 発注リスト（order_list_generator）が同一入力から生成する文字列
+        order_list_bytes = OrderListGenerator().generate_order_list_csv(
+            [{
+                "product_type": "acrylic_stand",
+                "size": "100mm",
+                "position": None,
+                "color": "クリア",
+            }]
+        )
+        _, order_list_rows = parse_csv_bytes(order_list_bytes)
+        order_list_detail = order_list_rows[0][ORDER_LIST_PRODUCT_TYPE_COL]
+
+        assert shipment_detail == "アクリルフィギュア - 100mm - クリア"
+        assert shipment_detail == order_list_detail

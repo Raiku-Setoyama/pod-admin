@@ -6,7 +6,11 @@ from datetime import datetime
 import pytest
 from openpyxl import load_workbook
 
-from app.utils.order_list_generator import OrderListGenerator, get_product_type_name
+from app.utils.order_list_generator import (
+    OrderListGenerator,
+    format_product_detail,
+    get_product_type_name,
+)
 
 
 class TestOrderListGenerator:
@@ -368,6 +372,43 @@ class TestGetProductTypeName:
     def test_get_product_type_name_unknown(self):
         """Test unknown product type returns original value."""
         assert get_product_type_name("unknown_type") == "unknown_type"
+
+
+class TestFormatProductDetail:
+    """Tests for the shared format_product_detail helper (Issue #79)."""
+
+    def test_all_attributes(self):
+        """種類・サイズ・位置・色を半角 ' - ' で連結する."""
+        assert (
+            format_product_detail("tshirt", "L", "正面", "白")
+            == "Tシャツ - L - 正面 - 白"
+        )
+
+    def test_skips_missing_position(self):
+        """位置が None の場合は余分な区切りを出さずスキップする."""
+        assert (
+            format_product_detail("sticker", "100x100mm", None, "ホワイト")
+            == "ステッカー - 100x100mm - ホワイト"
+        )
+
+    def test_skips_empty_string_attributes(self):
+        """空文字の属性はスキップする."""
+        assert format_product_detail("tote_bag", "", "", "") == "トートバッグ"
+
+    def test_type_name_only_when_no_attributes(self):
+        """属性が無い場合は商品種類名のみを返す."""
+        assert format_product_detail("acrylic_keychain") == "アクリルキーホルダー"
+
+    def test_acrylic_stand_maps_to_acrylic_figure(self):
+        """acrylic_stand は「アクリルフィギュア」にマッピングされる."""
+        assert (
+            format_product_detail("acrylic_stand", "100mm", None, "クリア")
+            == "アクリルフィギュア - 100mm - クリア"
+        )
+
+    def test_unknown_product_type_falls_back_to_code(self):
+        """未知の商品種類コードはそのまま先頭に使用する."""
+        assert format_product_detail("mystery", "S") == "mystery - S"
 
 
 class TestOrderListGeneratorXlsx:

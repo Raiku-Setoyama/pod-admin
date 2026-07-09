@@ -20,7 +20,11 @@ from app.schemas.manufacturer import (
     AllManufacturerOrderItemListResponse,
 )
 from app.utils.exceptions import NotFoundError, NoOrderedItemsError
-from app.utils.order_list_generator import OrderListGenerator, get_product_type_name
+from app.utils.order_list_generator import (
+    OrderListGenerator,
+    format_product_detail,
+    get_product_type_name,
+)
 from app.utils.stand_file_config import load_stand_file
 from app.utils.zip_builder import ZipBuilder
 
@@ -432,14 +436,12 @@ class ManufacturerOrderService:
                 ordered_date = item.get("ordered_date")
 
                 # Build product detail: {商品種類} - {サイズ} - {位置} - {色}
-                detail_parts = [product_type_name]
-                if item.get("size"):
-                    detail_parts.append(item["size"])
-                if item.get("position"):
-                    detail_parts.append(item["position"])
-                if item.get("color"):
-                    detail_parts.append(item["color"])
-                product_detail = " - ".join(detail_parts)
+                product_detail = format_product_detail(
+                    item_product_type,
+                    item.get("size"),
+                    item.get("position"),
+                    item.get("color"),
+                )
 
                 # MMDDを注文日から計算
                 mmdd = ordered_date.strftime("%m%d") if ordered_date else ""

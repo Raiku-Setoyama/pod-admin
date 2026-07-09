@@ -50,13 +50,25 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
+// CSV出力の「商品タイプ」列用。発注リスト（order_list_generator）の商品種類名に一致させる
+// （画面表示ラベルとは別。特に acrylic_stand は「アクリルフィギュア」）。
 const productTypeLabels: Record<string, string> = {
   acrylic_keychain: "アクリルキーホルダー",
-  acrylic_stand: "アクリルスタンド",
+  acrylic_stand: "アクリルフィギュア",
   sticker: "ステッカー",
   tote_bag: "トートバッグ",
+  mug: "マグカップ",
   tshirt: "Tシャツ",
 };
+
+// 発注リストと同じ「{商品種類} - {サイズ} - {位置} - {色}」形式に整形（CSV出力用）。
+// 半角 " - " 区切り。値が無い要素（サイズ/位置/色）はスキップする。
+function formatProductDetail(item: AllManufacturerOrderItem): string {
+  const typeName = productTypeLabels[item.product_type] || item.product_type;
+  return [typeName, item.size, item.position, item.color]
+    .filter((v): v is string => Boolean(v))
+    .join(" - ");
+}
 
 const statusLabels: Record<string, string> = {
   ordered: "発注済み",
@@ -194,7 +206,7 @@ export default function AllPurchaseOrdersPage() {
       item.order_number,
       item.uid || "",
       item.product_name,
-      productTypeLabels[item.product_type] || item.product_type,
+      formatProductDetail(item),
       statusLabels[item.status] || item.status,
       item.quantity.toString(),
       item.price.toString(),

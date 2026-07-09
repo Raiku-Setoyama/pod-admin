@@ -61,6 +61,7 @@ from app.utils.exceptions import (
     ProductNotFoundError,
     ValidationError,
 )
+from app.utils.order_list_generator import format_product_detail
 from app.utils.zip_builder import ZipBuilder
 
 logger = logging.getLogger(__name__)
@@ -656,7 +657,9 @@ class OrderService:
                     order.order_number,  # 1. 注文番号
                     order.customer_name,  # 2. お客様氏名
                     item.product_name,  # 3. 商品名
-                    self._format_product_type(item.product_type),  # 4. 商品種類
+                    format_product_detail(
+                        item.product_type, item.size, item.position, item.color
+                    ),  # 4. 商品種類（{商品種類} - {サイズ} - {位置} - {色}）
                     str(item.quantity),  # 5. 数量
                     item.uid or "",  # 6. 商品番号（アイテムUID）
                     order.customer_phone,  # 7. お届け先電話番号
@@ -820,18 +823,6 @@ class OrderService:
         filename = f"注文サムネイル_{timestamp}.zip"
 
         return zip_bytes, filename
-
-    def _format_product_type(self, product_type: str) -> str:
-        """Convert product_type to Japanese display name."""
-        type_map = {
-            "acrylic_keychain": "アクリルキーホルダー",
-            "acrylic_stand": "アクリルスタンド",
-            "sticker": "ステッカー",
-            "tote_bag": "トートバッグ",
-            "mug": "マグカップ",
-            "tshirt": "Tシャツ",
-        }
-        return type_map.get(product_type, product_type)
 
     @staticmethod
     def _get_extension_from_url(url: str) -> str | None:

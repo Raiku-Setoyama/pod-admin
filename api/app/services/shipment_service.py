@@ -40,6 +40,7 @@ from app.schemas.shipment import (
 )
 from app.utils.exceptions import InvalidStatusTransitionError, NotFoundError, ValidationError
 from app.utils.file_storage import FileStorage
+from app.utils.order_list_generator import format_product_detail
 from app.utils.zip_builder import ZipBuilder
 
 import chardet
@@ -906,18 +907,6 @@ class ShipmentService:
             updated_at=shipment.updated_at,
         )
 
-    def _format_product_type(self, product_type: str) -> str:
-        """Convert product_type to Japanese display name."""
-        type_map = {
-            "acrylic_keychain": "アクリルキーホルダー",
-            "acrylic_stand": "アクリルスタンド",
-            "sticker": "ステッカー",
-            "tote_bag": "トートバッグ",
-            "mug": "マグカップ",
-            "tshirt": "Tシャツ",
-        }
-        return type_map.get(product_type, product_type)
-
     async def export_csv(
         self,
         shipment_ids: list[str] | None = None,
@@ -1022,7 +1011,9 @@ class ShipmentService:
                 order.order_number,  # 1. 注文番号
                 order.customer_name,  # 2. お客様氏名
                 item.product_name,  # 3. 商品名
-                self._format_product_type(item.product_type),  # 4. 商品種類
+                format_product_detail(
+                    item.product_type, item.size, item.position, item.color
+                ),  # 4. 商品種類（{商品種類} - {サイズ} - {位置} - {色}）
                 str(item.quantity),  # 5. 数量
                 item.uid or "",  # 6. 商品番号（アイテムUID）
                 order.customer_phone,  # 7. お届け先電話番号
