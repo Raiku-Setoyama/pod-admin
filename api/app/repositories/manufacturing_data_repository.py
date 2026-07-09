@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.manufacturing_data import ManufacturingData
+from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
 
 
 class ManufacturingDataRepository:
@@ -20,6 +20,43 @@ class ManufacturingDataRepository:
             select(ManufacturingData).where(ManufacturingData.id == mfg_data_id)
         )
         return result.scalar_one_or_none()
+
+    async def claim_for_generation(self, mfg_data_id: str) -> bool:
+        """生成のためにこの行を原子的に確保（claim）する.
+
+        status が pending/failed のときのみ generating へ遷移させる条件付き UPDATE。
+        既に generating（他ワーカーが処理中）または ready の場合は 0 行更新となり False を
+        返す。これにより、同一行に対して複数の run_generation が走っても VM ジョブは一度しか
+        投入されない（PostgreSQL は競合 UPDATE をロックし、解放後に WHERE を再評価する）。
+        """
+        result = await self._db.execute(
+            update(ManufacturingData)
+            .where(
+                ManufacturingData.id == mfg_data_id,
+                ManufacturingData.status.notin_(
+                    [MfgDataStatus.GENERATING.value, MfgDataStatus.READY.value]
+                ),
+            )
+            .values(status=MfgDataStatus.GENERATING.value)
+            .returning(ManufacturingData.id)
+            .execution_options(synchronize_session=False)
+        )
+        return result.scalar_one_or_none() is not None
+
+    async def find_stranded(self) -> list[ManufacturingData]:
+        """宙吊り（pending/generating）の行を返す.
+
+        プロセス再起動時の復旧に使用する。新プロセスには in-flight な生成タスクが
+        存在しないため、pending/generating のまま残る行は全て再駆動が必要。
+        """
+        result = await self._db.execute(
+            select(ManufacturingData).where(
+                ManufacturingData.status.in_(
+                    [MfgDataStatus.PENDING.value, MfgDataStatus.GENERATING.value]
+                )
+            )
+        )
+        return list(result.scalars().all())
 
     async def find_by_cache_key(
         self,

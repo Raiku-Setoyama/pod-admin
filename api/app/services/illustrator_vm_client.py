@@ -218,7 +218,18 @@ class IllustratorVmClient:
                         f"VM {method} {path} -> {response.status_code}: "
                         f"{_extract_error(response)}"
                     )
-                return response.json()
+                try:
+                    return response.json()
+                except ValueError:
+                    # 2xx だが本文が JSON でない（前段 proxy の一時的な HTML/空応答など）。
+                    # 一過性のことが多いためリトライ対象として扱う（未捕捉で生成を
+                    # 落とさない）。
+                    last_exc = IllustratorVmError(
+                        f"VM {method} {path} returned a non-JSON body: "
+                        f"{response.text[:200]!r}"
+                    )
+                    await self._backoff(attempt)
+                    continue
             except (httpx.TransportError, httpx.TimeoutException) as exc:
                 last_exc = exc
                 await self._backoff(attempt)

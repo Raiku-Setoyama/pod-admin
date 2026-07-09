@@ -383,6 +383,46 @@ class TestV2Intake:
         ).scalar()
         assert md_count == 0
 
+    @pytest.mark.asyncio
+    async def test_reaffirming_manufacturing_is_not_gated(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        db_session: AsyncSession,
+        mfg_keychain_product: dict,
+        mfg_order_source: dict,
+    ):
+        # メーカーが明細単位で一部を製造中にした結果、注文が既に MANUFACTURING の場合、
+        # 未ready明細が残っていても「manufacturing のまま」への再確定は 409 にならない
+        # （注文レベルゲートと明細レベルゲートの不整合を避ける = 前進遷移でのみゲート）。
+        product_code = f"RKSYO-{uuid4().hex[:6]}"
+        resp = await client.post(
+            "/api/v2/orders",
+            json={
+                "order_number": "1000070",
+                "customer": _customer(),
+                "items": [_keychain_item("2000070", product_code)],
+            },
+            headers={"X-API-Key": mfg_order_source["api_key"]},
+        )
+        assert resp.status_code == 201, resp.text
+        order_id = resp.json()["id"]
+
+        # 明細単位フロー経由で到達しうる manufacturing 状態を直接再現する
+        await db_session.execute(
+            text("UPDATE orders SET status = 'manufacturing' WHERE id = :oid"),
+            {"oid": order_id},
+        )
+        await db_session.commit()
+
+        # 既に manufacturing の注文を manufacturing に再確定 → 未ready明細があっても 409 にしない
+        resp2 = await client.patch(
+            f"/api/v1/orders/{order_id}/status",
+            json={"status": "manufacturing"},
+            headers=auth_headers,
+        )
+        assert resp2.status_code == 200, resp2.text
+
 
 class TestV1BackwardCompatibility:
     @pytest.mark.asyncio

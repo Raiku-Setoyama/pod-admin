@@ -1,15 +1,18 @@
 """Unit tests for ManufacturingDataService and the manufacturing readiness gate."""
 
+import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
 from app.models.order import OrderItem
+from app.services import manufacturing_data_service as mds
 from app.services.illustrator_vm_client import IllustratorVmError
 from app.services.manufacturing_data_service import ManufacturingDataService
-from app.utils.exceptions import NotFoundError
+from app.utils.exceptions import ConflictError, NotFoundError
 
 
 def _v2_item(
@@ -143,6 +146,49 @@ class TestCacheResolution:
         assert await svc.prepare_for_order("order-1") == []
         md_repo.find_by_cache_key.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_insert_row_recovers_existing_on_conflict_marks_not_created(self):
+        # 同時受注でキャッシュキーが競合したら、既存行を回収し created=False を返す
+        # （作成した側だけが生成を起動し、二重生成しないようにする）。
+        from sqlalchemy.exc import IntegrityError
+
+        item = _v2_item()
+        existing = ManufacturingData(
+            product_code="RKSYO-1", product_type="acrylic_keychain"
+        )
+        existing.id = "md-existing"
+        existing.status = MfgDataStatus.PENDING.value
+
+        md_repo = AsyncMock()
+        md_repo.find_by_cache_key.return_value = existing
+
+        class _Nested:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+        session = MagicMock()
+        session.begin_nested = MagicMock(return_value=_Nested())
+        session.add = MagicMock()
+        session.flush = AsyncMock(
+            side_effect=IntegrityError("stmt", {}, Exception("dup key"))
+        )
+
+        svc = ManufacturingDataService(
+            md_repo=md_repo, order_repo=AsyncMock(), session=session
+        )
+        md, created = await svc._insert_row(
+            "src-1",
+            item,
+            variant="clear",
+            status=MfgDataStatus.PENDING,
+            source_images=item.source_images,
+        )
+        assert md is existing
+        assert created is False
+
 
 class TestGenerateDriver:
     def _pending_md(self):
@@ -229,6 +275,61 @@ class TestGenerateDriver:
 
         vm_client.submit.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_generate_skips_when_claim_not_acquired(self):
+        # 別ワーカーが既に生成中（claim 失敗）なら VM を叩かず抜ける（二重生成防止）。
+        md = self._pending_md()
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        md_repo.claim_for_generation.return_value = False
+        vm_client = MagicMock()
+        vm_client.submit = AsyncMock()
+
+        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
+        await svc.generate("md-1")
+
+        vm_client.submit.assert_not_called()
+        assert md.attempts == 0  # claim できていないので attempts も加算されない
+
+    @pytest.mark.asyncio
+    async def test_download_skips_failed_optional_layer(self):
+        # optional(white) の取得が失敗しても例外を投げず、成功したレイヤーのみ返す。
+        source_images = [
+            {"layer_type": "color", "url": "https://x/color.png"},
+            {"layer_type": "cutline", "url": "https://x/cutline.png"},
+            {"layer_type": "white", "url": "https://x/white.png"},
+        ]
+
+        class _Resp:
+            def __init__(self, content: bytes):
+                self.content = content
+
+            def raise_for_status(self) -> None:
+                return None
+
+        class _FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def get(self, url):
+                if "white" in url:
+                    raise httpx.ConnectError("refused")
+                return _Resp(b"OK")
+
+        svc = _service(AsyncMock())
+        with patch.object(mds.httpx, "AsyncClient", _FakeClient):
+            images = await svc._download_source_images(
+                source_images, {"color", "cutline", "white"}
+            )
+
+        assert set(images.keys()) == {"color", "cutline"}
+
 
 class TestRetry:
     @pytest.mark.asyncio
@@ -261,6 +362,62 @@ class TestRetry:
         md_repo.find_by_id.return_value = None
         with pytest.raises(NotFoundError):
             await _service(md_repo).retry("missing", MagicMock())
+
+    @pytest.mark.asyncio
+    async def test_retry_rejects_non_failed_row(self):
+        # ready 行を retry で巻き戻さない（共有キャッシュ行なので他注文を劣化させる）。
+        md = ManufacturingData(product_code="p", product_type="sticker")
+        md.id = "md-1"
+        md.status = MfgDataStatus.READY.value
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        bg = MagicMock()
+
+        with pytest.raises(ConflictError):
+            await _service(md_repo).retry("md-1", bg)
+
+        assert md.status == MfgDataStatus.READY.value  # 状態は変えない
+        bg.add_task.assert_not_called()  # 再生成も起動しない
+
+
+class TestRecovery:
+    @pytest.mark.asyncio
+    async def test_recover_resets_generating_and_reenqueues(self):
+        # 起動時復旧: generating(中断) を pending に戻し、pending/generating を再駆動する。
+        generating = ManufacturingData(product_code="p", product_type="sticker")
+        generating.id = "md-gen"
+        generating.status = MfgDataStatus.GENERATING.value
+        pending = ManufacturingData(product_code="q", product_type="sticker")
+        pending.id = "md-pend"
+        pending.status = MfgDataStatus.PENDING.value
+
+        session = AsyncMock()
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=session)
+        session_cm.__aexit__ = AsyncMock(return_value=False)
+        session_maker = MagicMock(return_value=session_cm)
+
+        repo = AsyncMock()
+        repo.find_stranded.return_value = [generating, pending]
+
+        started: list[str] = []
+
+        async def fake_run(md_id: str) -> None:
+            started.append(md_id)
+
+        with (
+            patch.object(mds, "get_session_maker", return_value=session_maker),
+            patch.object(mds, "ManufacturingDataRepository", return_value=repo),
+            patch.object(mds, "run_generation", fake_run),
+        ):
+            await mds.recover_stranded_generations()
+            await asyncio.sleep(0.05)  # spawn したタスクを走らせる
+
+        # 中断された generating は claim 可能な pending に戻る
+        assert generating.status == MfgDataStatus.PENDING.value
+        assert pending.status == MfgDataStatus.PENDING.value
+        session.commit.assert_awaited()
+        assert set(started) == {"md-gen", "md-pend"}
 
 
 class TestManufacturingReadinessGate:

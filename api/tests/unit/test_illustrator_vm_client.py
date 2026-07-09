@@ -157,6 +157,33 @@ class TestDownloadAndRetry:
             await _client(handler).download("job-1")
 
 
+class TestNonJsonResponse:
+    @pytest.mark.asyncio
+    async def test_non_json_2xx_is_retried_then_succeeds(self):
+        # 2xx だが本文が JSON でない一過性応答はリトライ対象（生成を落とさない）。
+        calls = {"n": 0}
+
+        def handler(request):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return httpx.Response(200, text="<html>502 Bad Gateway</html>")
+            return httpx.Response(
+                200, json={"status": "completed", "output_filename": "o.ai"}
+            )
+
+        status = await _client(handler).get_status("job-1")
+        assert status.status == "completed"
+        assert calls["n"] == 2
+
+    @pytest.mark.asyncio
+    async def test_persistent_non_json_raises_illustrator_error(self):
+        def handler(request):
+            return httpx.Response(200, text="not json")
+
+        with pytest.raises(IllustratorVmError):
+            await _client(handler).get_status("job-1")
+
+
 class TestFromSettings:
     def test_returns_none_when_unconfigured(self):
         from app.config import settings

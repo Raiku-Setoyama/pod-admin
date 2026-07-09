@@ -1,5 +1,9 @@
 """FastAPI application entry point."""
 
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -17,10 +21,30 @@ from app.routers import (
     orders,
     orders_v2,
     products,
-    settings as settings_router,
     shipments,
 )
+from app.routers import (
+    settings as settings_router,
+)
+from app.services.manufacturing_data_service import recover_stranded_generations
 from app.utils.exceptions import AppException
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """アプリのライフサイクル管理."""
+    # 起動時: 前プロセスで中断された製造データ生成（generating のまま宙吊り）を再駆動する。
+    # 復旧に失敗しても起動は継続させる（例外は記録するだけ）。
+    try:
+        await recover_stranded_generations()
+    except Exception:  # noqa: BLE001 - 復旧失敗で API 起動を妨げない
+        logger.exception(
+            "failed to recover stranded manufacturing generations on startup"
+        )
+    yield
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -29,6 +53,7 @@ app = FastAPI(
     docs_url=f"{settings.API_V1_PREFIX}/docs",
     redoc_url=f"{settings.API_V1_PREFIX}/redoc",
     redirect_slashes=False,
+    lifespan=lifespan,
 )
 
 # CORS middleware
