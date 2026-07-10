@@ -45,12 +45,51 @@ class TestSubmit:
             variant="clear",
             input_mode="multi",
             images={"color": b"\x89PNG-color", "cutline": b"\x89PNG-cut"},
+            order_id="md-1",
         )
         assert job_id == "job-1"
         assert captured["path"] == "/api/process"
-        # base64 でエンコードされて送られる
-        assert "color" in captured["body"]["images"]
-        assert captured["body"]["images"]["color"] != "\x89PNG-color"
+        body = captured["body"]
+        # 実VM ProcessRequest: images は ImageInput の「配列」（dict ではない）
+        assert isinstance(body["images"], list)
+        by_type = {img["type"]: img for img in body["images"]}
+        assert set(by_type) == {"color", "cutline"}
+        # 各要素は type / data(base64) / filename を持つ
+        import base64
+
+        assert by_type["color"]["data"] == base64.b64encode(b"\x89PNG-color").decode()
+        assert by_type["color"]["filename"]
+        # 単一画像フィールドは付けない / order_id と variant を送る
+        assert "image_data" not in body
+        assert body["order_id"] == "md-1"
+        assert body["variant"] == "clear"
+
+    @pytest.mark.asyncio
+    async def test_submit_single_image_uses_image_data(self):
+        captured = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            import json
+
+            captured["body"] = json.loads(request.content)
+            return httpx.Response(202, json={"job_id": "job-2"})
+
+        import base64
+
+        await _client(handler).submit(
+            product_type="tshirt",
+            size="M",
+            variant=None,
+            input_mode="single",
+            images={"design": b"\x89PNG-design"},
+            order_id="md-2",
+        )
+        body = captured["body"]
+        # 実VM: 単一画像モードは image_data + image_filename（images 配列は送らない）
+        assert body["image_data"] == base64.b64encode(b"\x89PNG-design").decode()
+        assert body["image_filename"]
+        assert "images" not in body
+        assert body["order_id"] == "md-2"
 
     @pytest.mark.asyncio
     async def test_submit_missing_job_id_raises(self):

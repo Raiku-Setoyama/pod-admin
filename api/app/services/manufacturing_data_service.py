@@ -274,6 +274,7 @@ class ManufacturingDataService:
                 variant=mapping.variant,
                 input_mode=mapping.input_mode,
                 images=images,
+                order_id=md.id,
             )
             md.vm_job_id = job_id
             await self._md_repo.update(md)
