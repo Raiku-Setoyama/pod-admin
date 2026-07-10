@@ -143,7 +143,8 @@ class OrderItemCreateV2(BaseModel):
     # rksyo の商品識別子（製造データキャッシュキー）
     product_code: str = Field(..., min_length=1, max_length=255)
     # 製造データ生成に必要な元データ（color / cutline / white / design）
-    source_images: list[SourceImage] = Field(..., min_length=1)
+    # レイヤー種別は4種のため上限8（DoS防御。重複を含めても十分な余裕）。
+    source_images: list[SourceImage] = Field(..., min_length=1, max_length=8)
     # サムネイル用途（従来通り受理）
     thumbnail_image_url: str | None = Field(None, max_length=2048)
 
@@ -160,7 +161,8 @@ class OrderCreateV2(BaseModel):
         examples=["0000001"],
     )
     customer: CustomerInfo
-    items: list[OrderItemCreateV2] = Field(..., min_length=1)
+    # 1注文あたりの明細数上限（DoS防御）。
+    items: list[OrderItemCreateV2] = Field(..., min_length=1, max_length=100)
 
 
 # Order shipment info schema

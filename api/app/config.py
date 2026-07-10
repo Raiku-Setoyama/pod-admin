@@ -69,5 +69,13 @@ class Settings(BaseSettings):
     # 送信/取得の簡易リトライ回数（ネットワークエラー・503 時）
     ILLUSTRATOR_VM_MAX_RETRIES: int = 3
 
+    # 外部注文 v2 の元データ画像取得（SSRF/DoS 防御）
+    # 信頼して素通しするホスト名の許可リスト（例: ["assets.rksyo.com"]）。空なら
+    # https 必須＋public IP のみ許可（内部・クラウドメタデータ宛を遮断）。内部アセット
+    # サーバや dev スタブ（host.docker.internal 等）を使う場合はここに追加する。
+    SOURCE_IMAGE_ALLOWED_HOSTS: list[str] = []
+    # 1レイヤーあたりのダウンロード上限（バイト）。超過分は取得を中断してスキップ。
+    SOURCE_IMAGE_MAX_BYTES: int = 25 * 1024 * 1024  # 25MB
+
 
 settings = Settings()

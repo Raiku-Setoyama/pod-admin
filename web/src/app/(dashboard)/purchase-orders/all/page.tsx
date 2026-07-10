@@ -65,7 +65,8 @@ const statusLabels: Record<string, string> = {
   shipped: "配送完了",
 };
 
-function formatDateForCSV(dateString: string): string {
+function formatDateForCSV(dateString: string | null): string {
+  if (!dateString) return "";
   const date = new Date(dateString);
   return date.toLocaleDateString("ja-JP", {
     year: "numeric",

@@ -300,12 +300,26 @@ class TestGenerateDriver:
             {"layer_type": "white", "url": "https://x/white.png"},
         ]
 
-        class _Resp:
-            def __init__(self, content: bytes):
-                self.content = content
+        class _StreamResp:
+            def __init__(self, chunks):
+                self._chunks = chunks
 
             def raise_for_status(self) -> None:
                 return None
+
+            async def aiter_bytes(self):
+                for c in self._chunks:
+                    yield c
+
+        class _StreamCtx:
+            def __init__(self, resp):
+                self._resp = resp
+
+            async def __aenter__(self):
+                return self._resp
+
+            async def __aexit__(self, *exc):
+                return False
 
         class _FakeClient:
             def __init__(self, *args, **kwargs):
@@ -317,12 +331,13 @@ class TestGenerateDriver:
             async def __aexit__(self, *exc):
                 return False
 
-            async def get(self, url):
+            def stream(self, method, url):
                 if "white" in url:
                     raise httpx.ConnectError("refused")
-                return _Resp(b"OK")
+                return _StreamCtx(_StreamResp([b"OK"]))
 
-        svc = _service(AsyncMock())
+        # host "x" は許可リストで素通し（このテストの主眼はレイヤー欠落の耐性）。
+        svc = _service(AsyncMock(), allowed_source_hosts=frozenset({"x"}))
         with patch.object(mds.httpx, "AsyncClient", _FakeClient):
             images = await svc._download_source_images(
                 source_images, {"color", "cutline", "white"}

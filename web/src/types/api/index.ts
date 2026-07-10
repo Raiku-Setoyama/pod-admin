@@ -130,7 +130,7 @@ export interface ManufacturerOrderItem {
   status: OrderItemStatus;  // 製品単位のステータス
   item_status?: OrderItemStatus | null;  // 新フィールド（製品単位のステータス）
   lead_time_days: number;  // メーカーのリードタイム（日数）
-  expected_delivery_date: string;  // 納品予定日
+  expected_delivery_date: string | null;  // 納品予定日（未設定の旧データは null）
   // 製造データ状態（v2）: null なら製造データ不要（v1）。ready 以外は発注不可。
   manufacturing_status?: ManufacturingDataStatus | null;
 }
@@ -172,7 +172,7 @@ export interface AllManufacturerOrderItem {
   manufacturer_id: string;
   manufacturer_name: string;
   lead_time_days: number;  // メーカーのリードタイム（日数）
-  expected_delivery_date: string;  // 納品予定日
+  expected_delivery_date: string | null;  // 納品予定日（未設定の旧データは null）
 }
 
 export interface AllManufacturerOrderItemListResponse {

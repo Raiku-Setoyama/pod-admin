@@ -30,14 +30,28 @@ from app.services.illustrator_vm_client import IllustratorVmClient, IllustratorV
 from app.utils.exceptions import ConflictError, NotFoundError
 from app.utils.file_storage import FileStorage, LocalFileStorage
 from app.utils.mfg_product_mapping import MfgMappingError, build_vm_mapping
+from app.utils.url_guard import validate_source_url
 
 logger = logging.getLogger(__name__)
+
+
+class SourceImageTooLargeError(Exception):
+    """元データ画像がサイズ上限を超えた場合のエラー."""
+
 
 # 生成済みファイルの保存先プレフィックス（FileStorage 上）
 _STORAGE_PREFIX = "manufacturing_data"
 
 # 元データ（PNGレイヤー）ダウンロードのタイムアウト
 _SOURCE_DOWNLOAD_TIMEOUT = 30.0
+
+# 元データ1レイヤーの既定サイズ上限（settings 未指定時のフォールバック）
+_DEFAULT_SOURCE_MAX_BYTES = 25 * 1024 * 1024  # 25MB
+
+
+def _redact_url(url: str) -> str:
+    """ログ用にクエリ文字列（署名付きトークン等）を落としたURLを返す."""
+    return url.split("?", 1)[0]
 
 # recover_stranded_generations が起動した復旧タスクの強参照を保持する集合。
 # create_task の戻り値を保持しないとタスクが GC で途中消滅しうるため。
@@ -72,12 +86,17 @@ class ManufacturingDataService:
         session: AsyncSession | None = None,
         file_storage: FileStorage | None = None,
         vm_client: IllustratorVmClient | None = None,
+        allowed_source_hosts: frozenset[str] | None = None,
+        max_source_bytes: int | None = None,
     ) -> None:
         self._md_repo = md_repo
         self._order_repo = order_repo
         self._session = session
         self._file_storage = file_storage
         self._vm_client = vm_client
+        # 元データ取得の SSRF/サイズ防御。None なら settings から解決。
+        self._allowed_source_hosts = allowed_source_hosts
+        self._max_source_bytes = max_source_bytes
 
     async def _commit(self) -> None:
         """バックグラウンド/リクエストのどちらでも確実に永続化する."""
@@ -292,20 +311,32 @@ class ManufacturingDataService:
         """
         targets = [img for img in source_images if img["layer_type"] in wanted]
         semaphore = asyncio.Semaphore(4)
+        allowed_hosts = (
+            self._allowed_source_hosts
+            if self._allowed_source_hosts is not None
+            else frozenset(settings.SOURCE_IMAGE_ALLOWED_HOSTS)
+        )
+        max_bytes = self._max_source_bytes or settings.SOURCE_IMAGE_MAX_BYTES
 
-        async with httpx.AsyncClient(timeout=_SOURCE_DOWNLOAD_TIMEOUT) as client:
+        # redirect 追従は無効（許可外ホストへの 30x リダイレクト経由の SSRF を防ぐ）。
+        async with httpx.AsyncClient(
+            timeout=_SOURCE_DOWNLOAD_TIMEOUT, follow_redirects=False
+        ) as client:
 
             async def fetch(img: dict) -> tuple[str, bytes] | None:
                 async with semaphore:
                     try:
-                        response = await client.get(img["url"])
-                        response.raise_for_status()
-                        return img["layer_type"], response.content
-                    except Exception as exc:  # noqa: BLE001 - 1レイヤーの失敗で全体を止めない
+                        # SSRF ガード: 取得前に宛先URLを検証（内部・メタデータ等を遮断）。
+                        validate_source_url(img["url"], allowed_hosts=allowed_hosts)
+                        content = await self._fetch_with_limit(
+                            client, img["url"], max_bytes
+                        )
+                        return img["layer_type"], content
+                    except Exception as exc:  # noqa: BLE001 - 1レイヤーの失敗で全体を止めない（Unsafe/TooLarge含む）
                         logger.warning(
                             "failed to download source layer %s (%s): %s",
                             img["layer_type"],
-                            img["url"],
+                            _redact_url(img["url"]),
                             exc,
                         )
                         return None
@@ -313,6 +344,23 @@ class ManufacturingDataService:
             results = await asyncio.gather(*[fetch(img) for img in targets])
 
         return dict(r for r in results if r is not None)
+
+    async def _fetch_with_limit(
+        self, client: httpx.AsyncClient, url: str, max_bytes: int
+    ) -> bytes:
+        """URL をストリーミング取得し、max_bytes を超えたら中断して例外を投げる."""
+        async with client.stream("GET", url) as response:
+            response.raise_for_status()
+            total = 0
+            chunks: list[bytes] = []
+            async for chunk in response.aiter_bytes():
+                total += len(chunk)
+                if total > max_bytes:
+                    raise SourceImageTooLargeError(
+                        f"source image exceeds {max_bytes} bytes: {_redact_url(url)}"
+                    )
+                chunks.append(chunk)
+        return b"".join(chunks)
 
     async def _save_file(self, content: bytes, filename: str) -> str:
         """生成物を FileStorage に保存し、保存先パスを返す."""
