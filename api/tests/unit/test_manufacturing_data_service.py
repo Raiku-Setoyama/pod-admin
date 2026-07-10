@@ -231,6 +231,8 @@ class TestGenerateDriver:
         assert md.file_size == len(b"AI-BYTES")
         assert md.attempts == 1
         assert md.vm_job_id == "job-9"
+        # VM 必須の order_id に製造データ行の id を渡す（トレーサビリティ）
+        assert vm_client.submit.call_args.kwargs["order_id"] == md.id
 
     @pytest.mark.asyncio
     async def test_vm_failure_marks_failed_with_message(self):

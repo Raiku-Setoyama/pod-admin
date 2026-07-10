@@ -114,28 +114,50 @@ class IllustratorVmClient:
     ) -> str:
         """製造データ生成ジョブを投入し、job_id を返す.
 
-        images は {layer_type: PNGバイト列}。base64 エンコードして送信する。
+        images は {layer_type: PNGバイト列}。VM の ProcessRequest 形式に整形して送る:
+        - 単一画像モード(single): image_data(base64) + image_filename
+        - 複数画像モード(multi):  images = [{type, data(base64), filename}, ...]
         """
         if not images:
             raise IllustratorVmError("at least one source image is required")
 
-        payload = {
+        # order_id は VM の必須フィールド（string）。呼び出し側が未指定なら空文字で満たす。
+        payload: dict[str, object] = {
             "product_type": product_type,
             "size": size,
             "variant": variant,
-            "input_mode": input_mode,
-            "order_id": order_id,
-            "images": {
-                layer: base64.b64encode(content).decode("ascii")
-                for layer, content in images.items()
-            },
+            "order_id": order_id or "",
         }
+
+        if input_mode == "single":
+            # 単一画像商品(tshirt/tote): 1枚を image_data として送る。
+            layer, content = self._pick_single_image(images)
+            payload["image_data"] = base64.b64encode(content).decode("ascii")
+            payload["image_filename"] = f"{layer}.png"
+        else:
+            # 複数画像商品(keychain/stand/sticker): ImageInput の配列。
+            payload["images"] = [
+                {
+                    "type": layer,
+                    "data": base64.b64encode(content).decode("ascii"),
+                    "filename": f"{layer}.png",
+                }
+                for layer, content in images.items()
+            ]
 
         data = await self._request_json("POST", "/api/process", json=payload)
         job_id = data.get("job_id") or data.get("id")
         if not job_id:
             raise IllustratorVmError(f"submit response missing job_id: {data}")
         return str(job_id)
+
+    @staticmethod
+    def _pick_single_image(images: dict[str, bytes]) -> tuple[str, bytes]:
+        """単一画像モードで送る1枚を決める（design 優先、次に color、無ければ任意）."""
+        for preferred in ("design", "color"):
+            if preferred in images:
+                return preferred, images[preferred]
+        return next(iter(images.items()))
 
     async def get_status(self, job_id: str) -> VmJobStatus:
         """ジョブの現在ステータスを取得する."""
