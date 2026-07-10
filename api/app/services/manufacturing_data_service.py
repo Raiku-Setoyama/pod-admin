@@ -28,7 +28,7 @@ from app.schemas.manufacturing_data import (
 )
 from app.services.illustrator_vm_client import IllustratorVmClient, IllustratorVmError
 from app.utils.exceptions import ConflictError, NotFoundError
-from app.utils.file_storage import FileStorage, LocalFileStorage
+from app.utils.file_storage import FileStorage, build_file_storage
 from app.utils.mfg_product_mapping import MfgMappingError, build_vm_mapping
 from app.utils.url_guard import validate_source_url
 
@@ -365,7 +365,7 @@ class ManufacturingDataService:
 
     async def _save_file(self, content: bytes, filename: str) -> str:
         """生成物を FileStorage に保存し、保存先パスを返す."""
-        storage = self._file_storage or LocalFileStorage(settings.UPLOAD_DIR)
+        storage = self._file_storage or build_file_storage(settings)
         return await storage.save(_BytesUpload(content, filename), prefix=_STORAGE_PREFIX)
 
     # === 管理API（リクエストスコープ） ===
@@ -433,7 +433,7 @@ async def run_generation(md_id: str) -> None:
             md_repo=ManufacturingDataRepository(session),
             order_repo=OrderRepository(session),
             session=session,
-            file_storage=LocalFileStorage(settings.UPLOAD_DIR),
+            file_storage=build_file_storage(settings),
             vm_client=IllustratorVmClient.from_settings(settings),
         )
         try:
