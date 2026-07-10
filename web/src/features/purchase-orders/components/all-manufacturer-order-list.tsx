@@ -53,7 +53,8 @@ function formatDate(dateString: string): string {
   });
 }
 
-function formatDateShort(dateString: string): string {
+function formatDateShort(dateString: string | null): string {
+  if (!dateString) return "-";
   const date = new Date(dateString);
   return date.toLocaleDateString("ja-JP", {
     year: "numeric",

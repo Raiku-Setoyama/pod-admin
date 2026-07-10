@@ -11,12 +11,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Download, Package, User, FileText, ShoppingBag, ExternalLink } from "lucide-react";
+import { Download, Package, User, FileText, ShoppingBag, ExternalLink, RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
+import { cn } from "@/lib/utils";
+import { ManufacturingDataBadge } from "@/components/common/manufacturing-data-badge";
 import type { Order, OrderItem } from "@/types/api";
 
 interface OrderDetailProps {
   order: Order;
+  /** 製造データのリトライ後などに親のデータを再取得するためのコールバック */
+  onRefresh?: () => void;
 }
 
 function formatDate(dateString: string): string {
@@ -41,7 +47,22 @@ function formatProductType(type: string): string {
   return typeMap[type] || type;
 }
 
-export function OrderDetail({ order }: OrderDetailProps) {
+export function OrderDetail({ order, onRefresh }: OrderDetailProps) {
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+
+  const handleRetryManufacturingData = async (mfgId: string) => {
+    setRetryingId(mfgId);
+    try {
+      await apiClient(`/manufacturing-data/${mfgId}/retry`, { method: "POST" });
+      toast.success("製造データの生成を再実行しました");
+      onRefresh?.();
+    } catch {
+      toast.error("製造データの再実行に失敗しました");
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
   const handleDownloadManufacturingData = async () => {
     try {
       const data = await apiClient<Blob>(`/orders/${order.id}/manufacturing-data`);
@@ -116,6 +137,7 @@ export function OrderDetail({ order }: OrderDetailProps) {
                   <TableHead>位置</TableHead>
                   <TableHead className="text-right">数量</TableHead>
                   <TableHead>デザイン</TableHead>
+                  <TableHead>製造データ</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -153,6 +175,34 @@ export function OrderDetail({ order }: OrderDetailProps) {
                         >
                           <ExternalLink className="h-4 w-4" />
                         </a>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {item.manufacturing_data ? (
+                        <div className="flex items-center gap-2">
+                          <ManufacturingDataBadge status={item.manufacturing_data.status} />
+                          {item.manufacturing_data.status === "failed" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2"
+                              onClick={() =>
+                                handleRetryManufacturingData(item.manufacturing_data!.id)
+                              }
+                              disabled={retryingId === item.manufacturing_data.id}
+                              title={item.manufacturing_data.error_message ?? undefined}
+                            >
+                              <RefreshCw
+                                className={cn(
+                                  "h-3.5 w-3.5",
+                                  retryingId === item.manufacturing_data.id && "animate-spin"
+                                )}
+                              />
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
                       )}
                     </TableCell>
                   </TableRow>

@@ -144,3 +144,16 @@ class NoOrderedItemsError(AppException):
             "NO_ORDERED_ITEMS",
             "ダウンロード対象の発注中明細がありません",
         )
+
+
+class ManufacturingDataNotReadyError(AppException):
+    """Manufacturing data not ready for manufacturer order error."""
+
+    def __init__(self, pending_count: int | None = None):
+        message = "製造データが未完成のため、メーカーへ発注できません"
+        if pending_count is not None:
+            message = (
+                f"製造データが未完成の明細が {pending_count} 件あるため、"
+                "メーカーへ発注できません"
+            )
+        super().__init__(409, "MANUFACTURING_DATA_NOT_READY", message)

@@ -2,6 +2,7 @@
 
 import datetime as dt
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
 
@@ -51,6 +52,18 @@ class OrderItemCreate(BaseModel):
     thumbnail_image_url: str | None = Field(None, max_length=2048)
 
 
+class MfgDataItemInfo(BaseModel):
+    """明細に紐づく製造データの状態（v2）."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    status: str  # pending | generating | ready | failed
+    output_filename: str | None = None
+    file_size: int | None = None
+    error_message: str | None = None
+
+
 class OrderItemResponse(BaseModel):
     """Order item response schema."""
 
@@ -68,6 +81,9 @@ class OrderItemResponse(BaseModel):
     design_image_url: str | None = None
     thumbnail_image_url: str | None = None
     expected_delivery_date: date | None = None  # メーカーからの納品予定日
+    # v2（製造データ生成）用フィールド
+    product_code: str | None = None
+    manufacturing_data: MfgDataItemInfo | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -96,6 +112,57 @@ class OrderCreate(BaseModel):
     )
     customer: CustomerInfo
     items: list[OrderItemCreate] = Field(..., min_length=1)
+
+
+# === v2: 製造データ生成用（元データ = PNGレイヤーURL を受け取る） ===
+class SourceImage(BaseModel):
+    """製造データ生成の元データ（レイヤーPNGのURL）."""
+
+    layer_type: Literal["color", "cutline", "white", "design"]
+    url: str = Field(..., min_length=1, max_length=2048)
+
+
+class OrderItemCreateV2(BaseModel):
+    """Order item creation schema (v2 / 製造データ生成)."""
+
+    uid: str = Field(
+        ...,
+        min_length=7,
+        max_length=7,
+        pattern=r"^\d{7}$",
+        description="製品番号（7桁数字）",
+        examples=["0000001"],
+    )
+    product_type: ProductType
+    product_name: str = Field(..., min_length=1, max_length=200)
+    price: int = Field(..., ge=0)
+    quantity: int = Field(1, ge=1)
+    size: str | None = Field(None, max_length=50)
+    position: str | None = Field(None, max_length=50)
+    color: str | None = Field(None, max_length=50)
+    # rksyo の商品識別子（製造データキャッシュキー）
+    product_code: str = Field(..., min_length=1, max_length=255)
+    # 製造データ生成に必要な元データ（color / cutline / white / design）
+    # レイヤー種別は4種のため上限8（DoS防御。重複を含めても十分な余裕）。
+    source_images: list[SourceImage] = Field(..., min_length=1, max_length=8)
+    # サムネイル用途（従来通り受理）
+    thumbnail_image_url: str | None = Field(None, max_length=2048)
+
+
+class OrderCreateV2(BaseModel):
+    """Order creation schema (v2 / 製造データ生成)."""
+
+    order_number: str = Field(
+        ...,
+        min_length=7,
+        max_length=7,
+        pattern=r"^\d{7}$",
+        description="受注番号（7桁数字）",
+        examples=["0000001"],
+    )
+    customer: CustomerInfo
+    # 1注文あたりの明細数上限（DoS防御）。
+    items: list[OrderItemCreateV2] = Field(..., min_length=1, max_length=100)
 
 
 # Order shipment info schema

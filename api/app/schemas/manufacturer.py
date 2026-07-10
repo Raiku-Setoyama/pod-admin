@@ -132,7 +132,9 @@ class ManufacturerOrderItemResponse(BaseModel):
     status: str  # OrderItem.status (ordered, manufacturing, delivered) - 後方互換性のため維持
     item_status: str | None = None  # OrderItem.status (新フィールド、製品単位のステータス)
     lead_time_days: int  # メーカーのリードタイム（日数）
-    expected_delivery_date: date  # 納品予定日
+    expected_delivery_date: date | None = None  # 納品予定日（未設定の旧データは None）
+    # 製造データ状態（v2）: None なら製造データ不要（v1）。ready 以外は発注不可。
+    manufacturing_status: str | None = None
 
 
 class ManufacturerOrderItemListResponse(BaseModel):
@@ -171,7 +173,7 @@ class AllManufacturerOrderItemResponse(BaseModel):
     manufacturer_id: str
     manufacturer_name: str
     lead_time_days: int  # メーカーのリードタイム（日数）
-    expected_delivery_date: date  # 納品予定日
+    expected_delivery_date: date | None = None  # 納品予定日（未設定の旧データは None）
 
 
 class AllManufacturerOrderItemListResponse(BaseModel):
