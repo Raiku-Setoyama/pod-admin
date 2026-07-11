@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import mimetypes
 import os
 import posixpath
 from abc import ABC, abstractmethod
@@ -49,6 +50,19 @@ def generate_stored_filename(original_filename: str | None) -> str:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     unique_id = str(uuid4())[:8]
     return f"{timestamp}_{unique_id}{ext}"
+
+
+# mimetypes が環境依存で取りこぼす拡張子を明示マップ（.ai は Illustrator=PostScript系）。
+_EXTRA_CONTENT_TYPES = {".ai": "application/postscript"}
+
+
+def guess_content_type(filename: str | None) -> str:
+    """ファイル名の拡張子から Content-Type を推定する（不明時は octet-stream）."""
+    ext = os.path.splitext(filename or "")[1].lower()
+    if ext in _EXTRA_CONTENT_TYPES:
+        return _EXTRA_CONTENT_TYPES[ext]
+    ctype, _ = mimetypes.guess_type(filename or "")
+    return ctype or "application/octet-stream"
 
 
 async def _read_upload(file: UploadFile) -> bytes:
@@ -169,9 +183,12 @@ class GCSFileStorage(FileStorage):
         # 相対キーは POSIX 区切りで統一（GCS キーは常に "/" 区切り）。
         relative_path = posixpath.join(prefix, filename)
         content = await _read_upload(file)
+        content_type = guess_content_type(filename)
 
         def _upload() -> None:
-            self._get_blob(relative_path).upload_from_string(content)
+            self._get_blob(relative_path).upload_from_string(
+                content, content_type=content_type
+            )
 
         await asyncio.to_thread(_upload)
         return relative_path

@@ -139,12 +139,16 @@ async def test_exists(file_storage, temp_upload_dir):
 class _FakeBlob:
     """In-memory stand-in for a google.cloud.storage Blob."""
 
-    def __init__(self, store: dict[str, bytes], name: str) -> None:
+    def __init__(
+        self, store: dict[str, bytes], ctypes: dict[str, str | None], name: str
+    ) -> None:
         self._store = store
+        self._ctypes = ctypes
         self._name = name
 
-    def upload_from_string(self, data: bytes) -> None:
+    def upload_from_string(self, data: bytes, content_type: str | None = None) -> None:
         self._store[self._name] = bytes(data)
+        self._ctypes[self._name] = content_type
 
     def download_as_bytes(self) -> bytes:
         if self._name not in self._store:
@@ -161,11 +165,14 @@ class _FakeBlob:
 
 
 class _FakeBucket:
-    def __init__(self, store: dict[str, bytes]) -> None:
+    def __init__(
+        self, store: dict[str, bytes], ctypes: dict[str, str | None]
+    ) -> None:
         self._store = store
+        self._ctypes = ctypes
 
     def blob(self, name: str) -> _FakeBlob:
-        return _FakeBlob(self._store, name)
+        return _FakeBlob(self._store, self._ctypes, name)
 
 
 class _FakeGCSClient:
@@ -174,9 +181,14 @@ class _FakeGCSClient:
     def __init__(self) -> None:
         # bucket name -> {blob name: bytes}
         self.buckets: dict[str, dict[str, bytes]] = {}
+        # bucket name -> {blob name: content_type}
+        self.content_types: dict[str, dict[str, str | None]] = {}
 
     def bucket(self, name: str) -> _FakeBucket:
-        return _FakeBucket(self.buckets.setdefault(name, {}))
+        return _FakeBucket(
+            self.buckets.setdefault(name, {}),
+            self.content_types.setdefault(name, {}),
+        )
 
 
 def _mock_upload(filename: str, content: bytes) -> MagicMock:
@@ -215,6 +227,28 @@ async def test_gcs_save_and_get_roundtrip(gcs_storage, fake_gcs_client):
 
     # Round trip via get().
     assert await gcs_storage.get(saved_path) == content
+
+
+@pytest.mark.asyncio
+async def test_gcs_save_sets_content_type_from_extension(gcs_storage, fake_gcs_client):
+    """save() sets an accurate Content-Type from the file extension (not text/plain)."""
+    cases = {
+        "art.pdf": "application/pdf",
+        "design.ai": "application/postscript",
+        "thumb.png": "image/png",
+    }
+    for filename, expected in cases.items():
+        saved = await gcs_storage.save(_mock_upload(filename, b"x"), "manufacturing_data/")
+        assert fake_gcs_client.content_types["test-bucket"][saved] == expected
+
+
+@pytest.mark.asyncio
+async def test_gcs_save_unknown_extension_defaults_to_octet_stream(
+    gcs_storage, fake_gcs_client
+):
+    """Unknown/blank extensions fall back to application/octet-stream."""
+    saved = await gcs_storage.save(_mock_upload("blob.xyzzy", b"x"), "misc/")
+    assert fake_gcs_client.content_types["test-bucket"][saved] == "application/octet-stream"
 
 
 @pytest.mark.asyncio
