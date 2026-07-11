@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from jinja2 import Environment, FileSystemLoader
 from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Content, From, Mail, To
+from sendgrid.helpers.mail import Cc, Content, From, Mail, Personalization, To
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +28,13 @@ class EmailService:
         from_email: str,
         contact_email: str,
         admin_base_url: str = "",
+        manufacturer_login_url: str = "",
     ):
         self._client = SendGridAPIClient(api_key)
         self._from_email = from_email
         self._contact_email = contact_email
         self._admin_base_url = admin_base_url
+        self._manufacturer_login_url = manufacturer_login_url
         self._jinja_env = Environment(
             loader=FileSystemLoader(str(TEMPLATES_DIR)),
             autoescape=True,
@@ -205,6 +207,102 @@ class EmailService:
                 f"Failed to send external order notification for order {order_number}"
             )
             return False
+
+    async def send_manufacturer_daily_digest(
+        self,
+        to_emails: list[str],
+        manufacturer_name: str,
+        item_count: int,
+        total_quantity: int,
+        cc_emails: list[str] | None = None,
+        sent_date: date | None = None,
+    ) -> bool:
+        """Send the daily "ordered items" digest to a manufacturer.
+
+        メーカー宛の日次発注ダイジェスト。新規に発注済みになった明細の
+        件数・合計数量とログインURLを通知する。
+
+        Args:
+            to_emails: 宛先（To、複数可）。呼び出し側で空にならないことを保証する。
+            manufacturer_name: メーカー名（件名に使用）。
+            item_count: 発注中明細数。
+            total_quantity: 合計数量。
+            cc_emails: CC（複数可）。
+            sent_date: 送信日（JST の date）。未指定なら現在の JST 日付。
+
+        Returns:
+            True if sent successfully, False otherwise. Never raises exceptions.
+        """
+        try:
+            send_day = sent_date or datetime.now(JST).date()
+            # 件名の日付は JST・2桁年・月日ゼロ埋めなし（例: 2026/6/16 → 26/6/16）
+            subject = (
+                f"【TOSYO__API発注依頼】{manufacturer_name}様"
+                f"{send_day.year % 100}/{send_day.month}/{send_day.day}"
+            )
+            login_url = self._manufacturer_login_url
+
+            template = self._jinja_env.get_template("manufacturer_daily_digest.html")
+            html_content = template.render(
+                manufacturer_name=manufacturer_name,
+                item_count=item_count,
+                total_quantity=total_quantity,
+                login_url=login_url,
+            )
+            text_content = self._build_manufacturer_daily_digest_text(
+                item_count=item_count,
+                total_quantity=total_quantity,
+                login_url=login_url,
+            )
+
+            message = Mail(from_email=From(self._from_email), subject=subject)
+            personalization = Personalization()
+            for email in to_emails:
+                personalization.add_to(To(email))
+            for email in cc_emails or []:
+                personalization.add_cc(Cc(email))
+            message.add_personalization(personalization)
+            message.content = [
+                Content("text/plain", text_content),
+                Content("text/html", html_content),
+            ]
+
+            response = await asyncio.to_thread(self._client.send, message)
+
+            if response.status_code in (200, 201, 202):
+                logger.info(
+                    "Manufacturer daily digest sent to %s (cc=%d): %d items",
+                    manufacturer_name,
+                    len(cc_emails or []),
+                    item_count,
+                )
+                return True
+            logger.warning(
+                "SendGrid returned status %s for manufacturer daily digest to %s",
+                response.status_code,
+                manufacturer_name,
+            )
+            return False
+        except Exception:
+            logger.exception(
+                "Failed to send manufacturer daily digest to %s", manufacturer_name
+            )
+            return False
+
+    def _build_manufacturer_daily_digest_text(
+        self,
+        item_count: int,
+        total_quantity: int,
+        login_url: str,
+    ) -> str:
+        """Build plain text content for the manufacturer daily digest (画像仕様準拠)."""
+        return (
+            "以下、発注済みの注文があります。\n\n"
+            f"発注中明細数　{item_count} 件\n"
+            f"合計数量　{total_quantity} 点\n\n"
+            f"{login_url}\n"
+            "からログインしてご確認ください。\n"
+        )
 
     def _build_external_order_text(
         self,

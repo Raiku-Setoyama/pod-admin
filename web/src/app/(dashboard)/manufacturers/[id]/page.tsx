@@ -7,6 +7,7 @@ import { ArrowLeft } from "lucide-react";
 import { PageContainer } from "@/components/layout/page-container";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { ManufacturerForm } from "@/features/manufacturers/components/manufacturer-form";
+import { ManufacturerNotificationSettingsCard } from "@/features/manufacturers/components/manufacturer-notification-settings";
 import { apiClient } from "@/lib/api/client";
 import type { Manufacturer } from "@/types/api";
 
@@ -64,11 +65,17 @@ export default function ManufacturerDetailPage() {
         </Button>
       }
     >
-      <ManufacturerForm
-        manufacturer={manufacturer}
-        onSuccess={handleSuccess}
-        onCancel={handleCancel}
-      />
+      <div className="space-y-6">
+        <ManufacturerForm
+          manufacturer={manufacturer}
+          onSuccess={handleSuccess}
+          onCancel={handleCancel}
+        />
+        <ManufacturerNotificationSettingsCard
+          manufacturerId={manufacturer.id}
+          manufacturerEmail={manufacturer.email}
+        />
+      </div>
     </PageContainer>
   );
 }

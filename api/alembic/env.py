@@ -15,6 +15,9 @@ from app.models.base import Base
 from app.models.chat_message import ChatAttachment, ChatMessage  # noqa: F401
 from app.models.manufacturer import Manufacturer  # noqa: F401
 from app.models.manufacturing_data import ManufacturingData  # noqa: F401
+from app.models.manufacturer_notification_settings import (  # noqa: F401
+    ManufacturerNotificationSettings,
+)
 from app.models.order import Order, OrderItem  # noqa: F401
 from app.models.product import Product  # noqa: F401
 from app.models.shipment import Shipment, ShipmentItem  # noqa: F401
