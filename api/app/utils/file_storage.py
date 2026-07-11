@@ -1,13 +1,14 @@
 """File storage utilities.
 
-`FileStorage` を抽象化し、ローカル（開発）と GCS（本番=Railway）を切り替える。
+`FileStorage` を抽象化する。ローカル/本番ともに GCS を使い（バケットは分ける）、
+`GCS_BUCKET` 未設定時のみローカル保存へフォールバックする（CI/オフライン用）。
 
-- ローカル: `LocalFileStorage`。`UPLOAD_DIR` 配下に保存。
 - GCS: `GCSFileStorage`。公式 `google-cloud-storage`（同期）を `asyncio.to_thread`
   でラップしてイベントループを塞がない。`GCS_PREFIX` を内部で前置するため、DB に持つ
   `file_path`（＝ save が返す相対キー）はバックエンド非依存で共通。
+- ローカル: `LocalFileStorage`。`UPLOAD_DIR` 配下に保存（フォールバック）。
 - 生成先は `build_file_storage(settings)` に集約。`GCS_BUCKET` があれば GCS、無ければ
-  ローカル（既定・挙動不変）。
+  ローカル。
 """
 
 from __future__ import annotations
@@ -229,7 +230,7 @@ def _build_gcs_client(credentials_json: str) -> Any:
 def build_file_storage(settings: Settings) -> FileStorage:
     """設定に応じて FileStorage 実装を返す単一ファクトリ.
 
-    `GCS_BUCKET` があれば GCS、無ければローカル（既定・挙動不変）。
+    `GCS_BUCKET` があれば GCS、無ければローカル（フォールバック）。
     """
     if settings.GCS_BUCKET:
         return GCSFileStorage(

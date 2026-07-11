@@ -47,9 +47,11 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "uploads"
     MAX_UPLOAD_SIZE: int = 100 * 1024 * 1024  # 100MB
 
-    # File Storage (GCS) — 本番=Railway でのファイル永続化
+    # File Storage (GCS) — ローカル/本番ともに GCS でファイル永続化
     # Railway のローカルディスクは再デプロイで消えるため、製造データ/チャット添付/出荷
-    # ファイルを GCS に永続化する。GCS_BUCKET が空ならローカル保存を継続（既定・挙動不変）。
+    # ファイルを GCS に永続化する。ローカル開発も本番と同様に GCS を使い、バケットは
+    # 本番と分ける（例: prod / dev）。GCS_BUCKET が空の場合のみローカル保存へ
+    # フォールバックする（CI/オフライン用）。
     GCS_BUCKET: str = ""
     # サービスアカウント鍵JSON文字列（Railway シークレット想定）。空なら ADC へフォールバック。
     GCS_CREDENTIALS_JSON: str = ""

@@ -67,11 +67,15 @@ open https://<your-app>.railway.app/api/v1/docs
 
 ## ファイル永続化（GCS）
 
-Railway のローカルディスクは**再デプロイ/再起動で消える**ため、本番では製造データ
-（.ai/.pdf）・チャット添付・出荷ファイルを Google Cloud Storage（GCS）に永続化する。
-`GCS_BUCKET` を設定すると全 `FileStorage` が GCS 経由になり、未設定ならローカル保存を
-継続する（既定・挙動不変）。アクセスはサーバ経由（`get()` で bytes 取得）のため、バケットは
+Railway のローカルディスクは**再デプロイ/再起動で消える**ため、製造データ（.ai/.pdf）・
+チャット添付・出荷ファイルを Google Cloud Storage（GCS）に永続化する。**ローカル開発も
+本番と同様に GCS を使い、バケットは本番と分ける**（例: 本番 `pod-admin-prod` /
+ローカル `pod-admin-dev`）。`GCS_BUCKET` を空にした場合のみローカル保存へフォールバック
+する（CI/オフライン用）。アクセスはサーバ経由（`get()` で bytes 取得）のため、バケットは
 非公開のままでよく、署名URLも不要。
+
+以下は本番（`pod-admin-prod`）の手順。**ローカル用（`pod-admin-dev`）も同じ手順で
+別バケット・別サービスアカウントを用意する**（→ 手順4）。
 
 ### 1. GCS バケット作成
 
@@ -118,11 +122,25 @@ Railway Dashboard → プロジェクト → Variables タブで以下を設定 
 > フォールバックする（GCE / ワークロードID 環境向け）。Railway は GCP ワークロードID
 > 非対応のため、鍵 JSON をシークレットとして保持する。
 
-### 4. ローカル開発
+### 4. ローカル開発（本番と別バケットで GCS を使う）
 
-`GCS_BUCKET` を空のままにすればローカル保存（`UPLOAD_DIR`）を継続する。GCS を検証したい
-場合のみ `GCS_BUCKET` を設定する（認証は `GCS_CREDENTIALS_JSON` か `gcloud auth
-application-default login` による ADC）。
+ローカルも本番と同様に GCS を使う。上の手順1〜2を**別バケット・別サービスアカウント**で
+繰り返す（例: バケット `pod-admin-dev`、SA `pod-admin-storage-dev`）。鍵 JSON を作成し、
+`api/.env`（`api/.env.example` をコピー）に設定する:
+
+```bash
+# api/.env
+GCS_BUCKET=pod-admin-dev
+GCS_CREDENTIALS_JSON={"type":"service_account", ... }   # dev SA 鍵 JSON を1行で
+GCS_PREFIX=dev
+```
+
+`docker compose up`（`api/docker-compose.yml`）は上記を api コンテナへそのまま渡す。
+Docker を使わずローカル実行する場合は `GCS_CREDENTIALS_JSON` の代わりに
+`gcloud auth application-default login` による ADC でも可（`GCS_CREDENTIALS_JSON` 空）。
+
+> オフライン作業や CI など GCS を使わない場合のみ `GCS_BUCKET` を空にする
+> （その場合は `UPLOAD_DIR` へローカル保存にフォールバック）。
 
 ## 再デプロイ
 

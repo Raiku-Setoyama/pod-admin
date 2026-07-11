@@ -14,6 +14,11 @@ services:
       - SECRET_KEY=dev-secret-key-change-in-production
       - DEBUG=true
       - CORS_ORIGINS=["http://localhost:3000"]
+      # ファイルストレージ（GCS）: ローカル開発も本番と同様に GCS を使う（バケットは分ける）。
+      # api/.env に dev 用のバケット/認証情報を設定する（未設定ならローカル保存にフォールバック）。
+      - GCS_BUCKET=${GCS_BUCKET:-}
+      - GCS_CREDENTIALS_JSON=${GCS_CREDENTIALS_JSON:-}
+      - GCS_PREFIX=${GCS_PREFIX:-}
     depends_on:
       db:
         condition: service_healthy
