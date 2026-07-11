@@ -65,6 +65,13 @@ logs/
 # Uploads (runtime generated)
 api/uploads/
 
+# Credentials / secrets (never commit)
+key.json
+*-key.json
+service-account*.json
+gcp-*-key.json
+*-credentials.json
+
 # OS
 .DS_Store
 Thumbs.db
