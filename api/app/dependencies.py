@@ -29,16 +29,16 @@ from app.services.external_service import ExternalService
 from app.services.illustrator_vm_client import IllustratorVmClient
 from app.services.invoice_service import InvoiceService
 from app.services.manufacturer_order_service import ManufacturerOrderService
-from app.services.manufacturing_data_service import ManufacturingDataService
 from app.services.manufacturer_portal_service import ManufacturerPortalService
 from app.services.manufacturer_service import ManufacturerService
+from app.services.manufacturing_data_service import ManufacturingDataService
 from app.services.order_image_service import OrderImageService
 from app.services.order_list_service import OrderListService
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
 from app.services.shipment_service import ShipmentService
 from app.utils.exceptions import ForbiddenError, UnauthorizedError
-from app.utils.file_storage import FileStorage, LocalFileStorage
+from app.utils.file_storage import FileStorage, build_file_storage
 from app.utils.security import decode_token
 
 
@@ -120,6 +120,12 @@ def get_manufacturing_data_repository(
     return ManufacturingDataRepository(db)
 
 
+# File storage dependency
+def get_file_storage() -> FileStorage:
+    """Get file storage (GCS if GCS_BUCKET is set, otherwise local)."""
+    return build_file_storage(settings)
+
+
 # Service dependencies
 def get_auth_service(
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
@@ -181,7 +187,7 @@ def get_external_order_notification_service(
 def get_shipment_service(
     shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
     order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
-    file_storage: Annotated[FileStorage, Depends(lambda: LocalFileStorage(settings.UPLOAD_DIR))],
+    file_storage: Annotated[FileStorage, Depends(get_file_storage)],
     order_source_repo: Annotated[OrderSourceRepository, Depends(get_order_source_repository)],
     email_service: Annotated[EmailService | None, Depends(get_email_service)],
 ) -> ShipmentService:
@@ -194,7 +200,7 @@ def get_shipment_service(
 def get_chat_service(
     chat_repo: Annotated[ChatRepository, Depends(get_chat_repository)],
     manufacturer_repo: Annotated[ManufacturerRepository, Depends(get_manufacturer_repository)],
-    file_storage: Annotated[FileStorage, Depends(lambda: LocalFileStorage(settings.UPLOAD_DIR))],
+    file_storage: Annotated[FileStorage, Depends(get_file_storage)],
 ) -> ChatService:
     """Get chat service."""
     return ChatService(chat_repo, manufacturer_repo, file_storage)
@@ -219,9 +225,7 @@ def get_manufacturer_order_service(
     order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
     manufacturer_repo: Annotated[ManufacturerRepository, Depends(get_manufacturer_repository)],
     shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
-    file_storage: Annotated[
-        FileStorage, Depends(lambda: LocalFileStorage(settings.UPLOAD_DIR))
-    ],
+    file_storage: Annotated[FileStorage, Depends(get_file_storage)],
 ) -> ManufacturerOrderService:
     """Get manufacturer order service."""
     return ManufacturerOrderService(
@@ -239,13 +243,14 @@ def get_manufacturing_data_service(
     md_repo: Annotated[ManufacturingDataRepository, Depends(get_manufacturing_data_repository)],
     order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
     vm_client: Annotated[IllustratorVmClient | None, Depends(get_illustrator_vm_client)],
+    file_storage: Annotated[FileStorage, Depends(get_file_storage)],
 ) -> ManufacturingDataService:
     """Get manufacturing data service."""
     return ManufacturingDataService(
         md_repo=md_repo,
         order_repo=order_repo,
         session=db,
-        file_storage=LocalFileStorage(settings.UPLOAD_DIR),
+        file_storage=file_storage,
         vm_client=vm_client,
     )
 
@@ -278,12 +283,6 @@ def get_invoice_service(
 ) -> InvoiceService:
     """Get invoice service."""
     return InvoiceService(manufacturer_repo, order_repo)
-
-
-# File storage dependency
-def get_file_storage() -> FileStorage:
-    """Get file storage."""
-    return LocalFileStorage(settings.UPLOAD_DIR)
 
 
 # Authentication dependencies
