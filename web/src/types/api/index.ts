@@ -1,12 +1,18 @@
 // Order types
 export type OrderStatus =
+  | "preparing_order"
   | "ordered"
   | "manufacturing"
   | "delivered"
   | "shipped";
 
 // OrderItemのステータス（製品単位）
-export type OrderItemStatus = "ordered" | "manufacturing" | "delivered";
+// preparing_order = 発注準備中（製造データ未準備）。ordered = 発注済み（準備完了）。
+export type OrderItemStatus =
+  | "preparing_order"
+  | "ordered"
+  | "manufacturing"
+  | "delivered";
 
 // 製造データ（v2）のステータス
 export type ManufacturingDataStatus = "pending" | "generating" | "ready" | "failed";
@@ -133,6 +139,8 @@ export interface ManufacturerOrderItem {
   expected_delivery_date: string | null;  // 納品予定日（未設定の旧データは null）
   // 製造データ状態（v2）: null なら製造データ不要（v1）。ready 以外は発注不可。
   manufacturing_status?: ManufacturingDataStatus | null;
+  // 紐づく製造データ ID（v2）。GUI からの再作成に使用。
+  manufacturing_data_id?: string | null;
 }
 
 export interface ManufacturerOrderItemListResponse {

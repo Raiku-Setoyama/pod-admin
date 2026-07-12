@@ -33,7 +33,10 @@ import { Download, Factory, Loader2, Package, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
 import { StatusBadge } from "@/components/common/status-badge";
-import { ManufacturingDataBadge } from "@/components/common/manufacturing-data-badge";
+import {
+  ManufacturingRegenerateControls,
+  useRegenerateManufacturingData,
+} from "@/features/manufacturing-data/regenerate-controls";
 import {
   getManufacturerOrderStatusUpdateOptions,
 } from "@/constants/status";
@@ -74,10 +77,12 @@ const productTypeLabels: Record<string, string> = {
 };
 
 /**
- * 発注不可（未ready）の明細か判定する。
- * 発注中（ordered）かつ製造データが必要（v2）で ready でない場合、メーカー発注できない。
+ * 発注不可（未 ready）の明細か判定する。
+ * 発注準備中（製造データ未準備）はメーカー発注できない。統合前データの防御として
+ * 発注済み（ordered）かつ製造データが ready でない場合も発注不可とする。
  */
 function isOrderBlocked(item: ManufacturerOrderItem): boolean {
+  if (item.status === "preparing_order") return true;
   return (
     item.status === "ordered" &&
     !!item.manufacturing_status &&
@@ -131,6 +136,7 @@ export function ManufacturerOrderDetail({
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const { regeneratingId, regenerate } = useRegenerateManufacturingData(onStatusUpdate);
 
   const handleStatusUpdate = async () => {
     setIsUpdating(true);
@@ -333,7 +339,6 @@ export function ManufacturerOrderDetail({
                   <TableHead>商品名</TableHead>
                   <TableHead>商品タイプ</TableHead>
                   <TableHead>ステータス</TableHead>
-                  <TableHead>製造データ</TableHead>
                   <TableHead className="text-center">数量</TableHead>
                   <TableHead className="text-right">単価</TableHead>
                   <TableHead className="text-right">金額</TableHead>
@@ -345,7 +350,7 @@ export function ManufacturerOrderDetail({
                 {isLoading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={12}
+                      colSpan={11}
                       className="h-24 text-center text-muted-foreground"
                     >
                       <div className="flex items-center justify-center gap-2">
@@ -357,7 +362,7 @@ export function ManufacturerOrderDetail({
                 ) : data.items.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={12}
+                      colSpan={11}
                       className="h-24 text-center text-muted-foreground"
                     >
                       発注中の明細がありません
@@ -387,14 +392,16 @@ export function ManufacturerOrderDetail({
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <StatusBadge status={item.status} />
-                      </TableCell>
-                      <TableCell>
-                        {item.manufacturing_status ? (
-                          <ManufacturingDataBadge status={item.manufacturing_status} />
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          <StatusBadge status={item.status} />
+                          <ManufacturingRegenerateControls
+                            itemStatus={item.status}
+                            mfgStatus={item.manufacturing_status}
+                            manufacturingDataId={item.manufacturing_data_id}
+                            regeneratingId={regeneratingId}
+                            onRegenerate={regenerate}
+                          />
+                        </div>
                       </TableCell>
                       <TableCell className="text-center">
                         {item.quantity}

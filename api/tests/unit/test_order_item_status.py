@@ -91,6 +91,34 @@ class TestDeriveOrderStatus:
 
         assert result == OrderStatus.ORDERED.value
 
+    def test_derive_status_any_preparing_order(self):
+        """1つでも発注準備中があり manufacturing が無ければ preparing_order になる"""
+        order = MagicMock(spec=Order)
+        items = [
+            MagicMock(status=OrderItemStatus.PREPARING_ORDER.value),
+            MagicMock(status=OrderItemStatus.ORDERED.value),
+        ]
+        order.items = items
+
+        repo = OrderRepository(AsyncMock())
+        result = repo.derive_order_status(order)
+
+        assert result == OrderStatus.PREPARING_ORDER.value
+
+    def test_derive_status_manufacturing_beats_preparing_order(self):
+        """manufacturing と preparing_order が混在する場合は manufacturing を優先する"""
+        order = MagicMock(spec=Order)
+        items = [
+            MagicMock(status=OrderItemStatus.PREPARING_ORDER.value),
+            MagicMock(status=OrderItemStatus.MANUFACTURING.value),
+        ]
+        order.items = items
+
+        repo = OrderRepository(AsyncMock())
+        result = repo.derive_order_status(order)
+
+        assert result == OrderStatus.MANUFACTURING.value
+
 
 class TestUpdateOrderStatus:
     """ステータス更新サービステスト"""

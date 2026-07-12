@@ -135,6 +135,8 @@ class ManufacturerOrderItemResponse(BaseModel):
     expected_delivery_date: date | None = None  # 納品予定日（未設定の旧データは None）
     # 製造データ状態（v2）: None なら製造データ不要（v1）。ready 以外は発注不可。
     manufacturing_status: str | None = None
+    # 紐づく製造データ ID（v2）。GUI からの再作成に使用。None なら v1。
+    manufacturing_data_id: str | None = None
 
 
 class ManufacturerOrderItemListResponse(BaseModel):
