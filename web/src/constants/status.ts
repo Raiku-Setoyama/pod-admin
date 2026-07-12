@@ -13,6 +13,7 @@ import type {
  * OrderStatus のラベル名（統一済み）
  */
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  preparing_order: "発注準備中",
   ordered: "発注済み",
   manufacturing: "製造中",
   delivered: "納品済み",
@@ -23,6 +24,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
  * OrderStatus の色（Tailwind CSS クラス）
  */
 export const ORDER_STATUS_COLORS: Record<OrderStatus, string> = {
+  preparing_order: "bg-amber-100 text-amber-700 border-amber-300",
   ordered: "bg-yellow-100 text-yellow-700 border-yellow-300",
   manufacturing: "bg-blue-100 text-blue-700 border-blue-300",
   delivered: "bg-purple-100 text-purple-700 border-purple-300",
@@ -230,6 +232,7 @@ export function getShipmentListFilterOptions(): StatusOption<ShipmentStatus | Pe
 export function getOrderFilterStatusOptions(): StatusOption<OrderStatus | ShipmentStatus>[] {
   return [
     { value: "all", label: "全てのステータス" },
+    { value: "preparing_order", label: ORDER_STATUS_LABELS.preparing_order },
     { value: "ordered", label: ORDER_STATUS_LABELS.ordered },
     { value: "manufacturing", label: ORDER_STATUS_LABELS.manufacturing },
     { value: "pending", label: SHIPMENT_STATUS_LABELS.pending },
@@ -244,6 +247,7 @@ export function getOrderFilterStatusOptions(): StatusOption<OrderStatus | Shipme
 export function getManufacturerOrderFilterStatusOptions(): StatusOption<OrderStatus>[] {
   return [
     { value: "all", label: "全てのステータス" },
+    { value: "preparing_order", label: ORDER_STATUS_LABELS.preparing_order },
     { value: "ordered", label: ORDER_STATUS_LABELS.ordered },
     { value: "manufacturing", label: ORDER_STATUS_LABELS.manufacturing },
     { value: "delivered", label: ORDER_STATUS_LABELS.delivered },

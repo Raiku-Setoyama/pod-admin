@@ -7,7 +7,12 @@ from urllib.parse import urlparse
 
 import httpx
 
-from app.models.order import Order, OrderItemStatus, OrderStatus
+from app.models.order import (
+    Order,
+    OrderItemStatus,
+    OrderStatus,
+    is_order_blocked_status,
+)
 from app.repositories.order_repository import OrderRepository
 from app.repositories.manufacturer_repository import ManufacturerRepository
 from app.repositories.shipment_repository import ShipmentRepository
@@ -149,6 +154,7 @@ class ManufacturerOrderService:
                         if order_item.manufacturing_data
                         else None
                     ),
+                    manufacturing_data_id=order_item.manufacturing_data_id,
                 )
             )
             total_quantity += order_item.quantity
@@ -308,9 +314,10 @@ class ManufacturerOrderService:
 
     @staticmethod
     def _hold_unready_items(rows: list[tuple]) -> list[tuple]:
-        """製造データが必要な ORDERED 明細のうち ready でないものを除外する.
+        """製造データが未準備の明細（発注準備中）を発注資料から除外する.
 
-        v1 明細（manufacturing_data_id が NULL）は対象外（従来通り常に含める）。
+        統合ステータスでは未 ready 明細は「発注準備中（preparing_order）」を取る。
+        v1 明細（manufacturing_data_id が NULL）は常に ready 扱いで対象外（従来通り含める）。
         既に MANUFACTURING/DELIVERED の明細は発注済みのため保留しない。
         """
         included: list[tuple] = []
@@ -318,8 +325,9 @@ class ManufacturerOrderService:
         for row in rows:
             order_item = row[0]
             item_status = row[5]
-            # 発注対象（ORDERED）かつ製造データ未readyの明細のみ保留する。
-            if item_status == OrderItemStatus.ORDERED.value and not order_item.is_manufacturing_ready:
+            # 発注準備中（製造データ未準備）の明細は発注資料から保留する
+            # （統合前データの防御として ORDERED かつ未 ready も含む）。
+            if is_order_blocked_status(item_status, order_item.is_manufacturing_ready):
                 held += 1
                 continue
             included.append(row)

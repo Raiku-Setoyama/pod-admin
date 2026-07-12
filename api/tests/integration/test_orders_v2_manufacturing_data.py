@@ -320,14 +320,15 @@ class TestV2Intake:
         assert body["failed_count"] == 1
         assert order_id in body["failed_ids"]
 
-        # 注文ステータスは ordered のまま（ゲートで遷移がブロックされている）
+        # 統合ステータスでは未 ready の v2 注文は「発注準備中(preparing_order)」に導出される。
+        # 前進遷移（→manufacturing）はゲートでブロックされたまま。
         status_value = (
             await db_session.execute(
                 text("SELECT status FROM orders WHERE id = :oid"),
                 {"oid": order_id},
             )
         ).scalar()
-        assert status_value == "ordered"
+        assert status_value == "preparing_order"
 
     @pytest.mark.asyncio
     async def test_intake_rejects_item_missing_required_layer(
@@ -469,3 +470,126 @@ class TestV1BackwardCompatibility:
         )
         assert gate.status_code == 200
         assert gate.json()["status"] == "manufacturing"
+
+
+class TestRegenerateEndpoint:
+    """製造データ GUI 再作成（POST /manufacturing-data/{id}/regenerate）のE2E."""
+
+    @pytest.mark.asyncio
+    async def test_regenerate_demotes_shared_items_and_blocks_when_manufacturing(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        db_session: AsyncSession,
+        mfg_keychain_product: dict,
+        mfg_order_source: dict,
+    ):
+        # 同一 product_code の v2 注文を2件作成 → 同一製造データ行を共有する。
+        product_code = f"RKSYO-{uuid4().hex[:6]}"
+        headers = {"X-API-Key": mfg_order_source["api_key"]}
+        r1 = await client.post(
+            "/api/v2/orders",
+            json={
+                "order_number": "1000080",
+                "customer": _customer(),
+                "items": [_keychain_item("2000080", product_code)],
+            },
+            headers=headers,
+        )
+        r2 = await client.post(
+            "/api/v2/orders",
+            json={
+                "order_number": "1000081",
+                "customer": _customer(),
+                "items": [_keychain_item("2000081", product_code)],
+            },
+            headers=headers,
+        )
+        assert r1.status_code == 201, r1.text
+        assert r2.status_code == 201, r2.text
+        order1_id = r1.json()["id"]
+        order2_id = r2.json()["id"]
+
+        md_id = (
+            await db_session.execute(
+                text(
+                    "SELECT id FROM manufacturing_data "
+                    "WHERE product_code = :pc AND order_source_id = :sid"
+                ),
+                {"pc": product_code, "sid": mfg_order_source["id"]},
+            )
+        ).scalar()
+        assert md_id is not None
+
+        # 生成完了を模擬: 製造データ ready + 両注文の明細/注文を発注済みへ。
+        await db_session.execute(
+            text(
+                "UPDATE manufacturing_data SET status = 'ready', "
+                "file_path = 'manufacturing_data/x.ai' WHERE id = :id"
+            ),
+            {"id": md_id},
+        )
+        await db_session.execute(
+            text("UPDATE order_items SET status = 'ordered' WHERE manufacturing_data_id = :id"),
+            {"id": md_id},
+        )
+        await db_session.execute(
+            text("UPDATE orders SET status = 'ordered' WHERE id IN (:o1, :o2)"),
+            {"o1": order1_id, "o2": order2_id},
+        )
+        await db_session.commit()
+
+        # ケースA: 全共有が発注前 → 再作成OK。md は pending に戻り、明細/注文は発注準備中へ demote。
+        ok = await client.post(
+            f"/api/v1/manufacturing-data/{md_id}/regenerate", headers=auth_headers
+        )
+        assert ok.status_code == 200, ok.text
+
+        # 再作成で ready から巻き戻る（enqueue された背景生成は VM 未設定のため最終的に
+        # failed になりうる。ここで重要なのは ready でなくなり再生成が起動したこと）。
+        md_status = (
+            await db_session.execute(
+                text("SELECT status FROM manufacturing_data WHERE id = :id"), {"id": md_id}
+            )
+        ).scalar()
+        assert md_status != "ready"
+        item_statuses = (
+            await db_session.execute(
+                text("SELECT status FROM order_items WHERE manufacturing_data_id = :id"),
+                {"id": md_id},
+            )
+        ).scalars().all()
+        assert set(item_statuses) == {"preparing_order"}
+        order_statuses = (
+            await db_session.execute(
+                text("SELECT status FROM orders WHERE id IN (:o1, :o2)"),
+                {"o1": order1_id, "o2": order2_id},
+            )
+        ).scalars().all()
+        assert set(order_statuses) == {"preparing_order"}
+
+        # ケースB: 片方の注文を製造中に進め、製造データを ready に戻す → 共有に製造中があるため 409。
+        await db_session.execute(
+            text("UPDATE manufacturing_data SET status = 'ready' WHERE id = :id"), {"id": md_id}
+        )
+        await db_session.execute(
+            text("UPDATE order_items SET status = 'manufacturing' WHERE order_id = :oid"),
+            {"oid": order1_id},
+        )
+        await db_session.execute(
+            text("UPDATE order_items SET status = 'ordered' WHERE order_id = :oid"),
+            {"oid": order2_id},
+        )
+        await db_session.commit()
+
+        blocked = await client.post(
+            f"/api/v1/manufacturing-data/{md_id}/regenerate", headers=auth_headers
+        )
+        assert blocked.status_code == 409, blocked.text
+        # 製造データは ready のまま（保護のため巻き戻さない）。
+        md_status2 = (
+            await db_session.execute(
+                text("SELECT status FROM manufacturing_data WHERE id = :id"), {"id": md_id}
+            )
+        ).scalar()
+        assert md_status2 == "ready"

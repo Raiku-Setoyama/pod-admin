@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_session_maker
 from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
-from app.models.order import OrderItem
+from app.models.order import OrderItem, OrderItemStatus
 from app.repositories.manufacturing_data_repository import ManufacturingDataRepository
 from app.repositories.order_repository import OrderRepository
 from app.schemas.manufacturing_data import (
@@ -122,8 +122,20 @@ class ManufacturingDataService:
                 continue
             md, needs_generation = await self._resolve_or_create(order.order_source_id, item)
             item.manufacturing_data_id = md.id
+            # 統合ステータス: 製造データが既に ready（キャッシュ再利用）なら「発注済み」、
+            # それ以外（生成待ち/生成中/失敗）は「発注準備中」で保持する。
+            item.status = (
+                OrderItemStatus.ORDERED.value
+                if md.status == MfgDataStatus.READY.value
+                else OrderItemStatus.PREPARING_ORDER.value
+            )
             if needs_generation and md.id not in to_generate:
                 to_generate.append(md.id)
+
+        # 明細の統合ステータスに合わせて Order.status を再導出する
+        # （v2 で未 ready の明細があれば注文全体も「発注準備中」になる）。
+        # update_order_derived_status は shipped/cancelled をスキップする。
+        await self._order_repo.update_order_derived_status(order_id)
 
         # 注文・明細・製造データ行を確定（バックグラウンド生成が別セッションから参照できるように）
         await self._commit()
@@ -292,6 +304,10 @@ class ManufacturingDataService:
             md.file_size = len(content)
             md.error_message = None
             await self._md_repo.update(md)
+            # 生成完了を参照明細へ波及: 「発注準備中」→「発注済み」（発注可能に）。
+            await self._order_repo.sync_item_status_for_manufacturing_data(
+                md_id, ready=True
+            )
             await self._commit()
             logger.info("manufacturing data %s generated (%s)", md_id, filename)
         except Exception as exc:  # noqa: BLE001 - 失敗は必ず行に記録して終える
@@ -392,6 +408,47 @@ class ManufacturingDataService:
         md.status = MfgDataStatus.PENDING.value
         md.error_message = None
         await self._md_repo.update(md)
+        await self._commit()
+
+        background_tasks.add_task(run_generation, md_id)
+        return ManufacturingDataResponse.model_validate(md)
+
+    async def regenerate(self, md_id: str, background_tasks) -> ManufacturingDataResponse:
+        """製造データを手動で再作成（同じ元データで再生成）する（管理者操作）.
+
+        メーカーが製造着手前（参照する明細が全て 発注準備中 / 発注済み）のときのみ許可する。
+        製造データ行は（受注元 × 商品コード × サイズ × バリアント）単位で複数注文に共有される
+        ため、1件でも「製造中」/「納入済み」の注文が参照している場合は、その注文の完成データを
+        壊さないよう再作成を拒否する（ConflictError → 409）。生成中の行も進行中ジョブと競合させ
+        ないため拒否する（ready / failed から実行）。
+
+        許可時は同じ source_images で再生成する: md を pending に戻し、参照する「発注済み」明細を
+        「発注準備中」へ戻したうえでバックグラウンド生成を起動する。生成完了時に generate() が
+        再び「発注済み」へ昇格させる。
+        """
+        md = await self._md_repo.find_by_id(md_id)
+        if md is None:
+            raise NotFoundError("ManufacturingData", md_id)
+
+        # 生成中は再作成不可（進行中の VM ジョブと競合させない）。
+        if md.status == MfgDataStatus.GENERATING.value:
+            raise ConflictError(
+                f"manufacturing data {md_id} is currently generating; "
+                "regeneration is not allowed while a job is in progress"
+            )
+
+        # 共有ゲート: 参照明細に「製造中」/「納入済み」が1件でもあれば再作成不可。
+        if await self._order_repo.has_manufacturing_or_delivered_items(md_id):
+            raise ConflictError(
+                f"manufacturing data {md_id} is shared with an order already in "
+                "manufacturing/delivered; regeneration is blocked to protect it"
+            )
+
+        # 同じ元データで再生成する。参照する「発注済み」明細は「発注準備中」へ戻す（demote）。
+        md.status = MfgDataStatus.PENDING.value
+        md.error_message = None
+        await self._md_repo.update(md)
+        await self._order_repo.sync_item_status_for_manufacturing_data(md_id, ready=False)
         await self._commit()
 
         background_tasks.add_task(run_generation, md_id)

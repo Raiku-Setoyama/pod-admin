@@ -81,6 +81,8 @@ class OrderItemResponse(BaseModel):
     design_image_url: str | None = None
     thumbnail_image_url: str | None = None
     expected_delivery_date: date | None = None  # メーカーからの納品予定日
+    # 製品単位の統合ステータス（preparing_order/ordered/manufacturing/delivered）
+    status: str | None = None
     # v2（製造データ生成）用フィールド
     product_code: str | None = None
     manufacturing_data: MfgDataItemInfo | None = None
