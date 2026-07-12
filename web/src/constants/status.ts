@@ -76,36 +76,6 @@ export const PENDING_ORDER_STATUS_COLORS: Record<PendingOrderStatus, string> = {
 // ========================================
 
 /**
- * ManufacturingDataStatus のラベル名
- *
- * 注: pending/ready は配送ステータスと値が重複するため、StatusBadge の共通ラベルとは
- * 別管理とする（意味が異なる: 生成待ち/生成完了）。
- */
-export const MANUFACTURING_DATA_STATUS_LABELS: Record<ManufacturingDataStatus, string> = {
-  pending: "生成待ち",
-  generating: "生成中",
-  ready: "生成完了",
-  failed: "生成失敗",
-};
-
-/**
- * ManufacturingDataStatus の色（Tailwind CSS クラス）
- */
-export const MANUFACTURING_DATA_STATUS_COLORS: Record<ManufacturingDataStatus, string> = {
-  pending: "bg-gray-100 text-gray-700 border-gray-300",
-  generating: "bg-blue-100 text-blue-700 border-blue-300",
-  ready: "bg-emerald-100 text-emerald-700 border-emerald-300",
-  failed: "bg-red-100 text-red-700 border-red-300",
-};
-
-/**
- * ManufacturingDataStatus のラベルを取得
- */
-export function getManufacturingDataStatusLabel(status: ManufacturingDataStatus): string {
-  return MANUFACTURING_DATA_STATUS_LABELS[status] ?? status;
-}
-
-/**
  * 製造データ生成が進行中（pending/generating）か。
  * 生成完了まで一覧/詳細をポーリングする判定に使う（受注詳細・メーカー発注詳細で共有）。
  */
