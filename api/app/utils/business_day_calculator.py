@@ -67,3 +67,23 @@ def add_business_days(
             counted += 1
 
     return current
+
+
+def next_business_day(
+    target_date: datetime.date,
+    company_holidays: set[datetime.date] | None = None,
+) -> datetime.date:
+    """target_dateの翌営業日を返す（target_date自体は含めない）.
+
+    Args:
+        target_date: 起算日（この日自体はカウントしない）
+        company_holidays: TOSYO独自休日の日付セット
+
+    Returns:
+        target_dateより後の直近の営業日
+
+    Examples:
+        >>> next_business_day(date(2026, 7, 10))  # 金曜日
+        date(2026, 7, 13)  # 月曜日（土日を飛ばす）
+    """
+    return add_business_days(target_date, 1, company_holidays)

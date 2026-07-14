@@ -29,7 +29,10 @@ import type {
 
 const NOTIFICATION_ENABLED_KEY = "external_order_notification_enabled";
 const NOTIFICATION_RECIPIENTS_KEY = "external_order_notification_recipients";
+const ORDER_DEADLINE_TIME_KEY = "order_deadline_time";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// "HH:MM"（00:00〜23:59）。空文字は無効化として許可する。
+const DEADLINE_TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 function parseRecipients(value: string | undefined): string[] {
   if (!value) return [];
@@ -43,6 +46,12 @@ export default function SettingsPage() {
   const [shippingDays, setShippingDays] = useState<string>("");
   const [shippingDaysInitialized, setShippingDaysInitialized] = useState(false);
   const [isSavingDays, setIsSavingDays] = useState(false);
+
+  // 注文〆切時間（HH:MM・JST、空欄で無効）
+  const [deadlineTime, setDeadlineTime] = useState<string>("");
+  const [deadlineInitialized, setDeadlineInitialized] = useState(false);
+  const [isSavingDeadline, setIsSavingDeadline] = useState(false);
+  const [deadlineError, setDeadlineError] = useState<string | null>(null);
 
   // 外部注文の通知
   const [notificationEnabled, setNotificationEnabled] = useState(false);
@@ -73,6 +82,17 @@ export default function SettingsPage() {
       setShippingDaysInitialized(true);
     }
   }, [settingsData, shippingDaysInitialized]);
+
+  // 注文〆切時間の初回反映
+  useEffect(() => {
+    if (settingsData && !deadlineInitialized) {
+      const deadlineSetting = settingsData.items.find(
+        (s) => s.key === ORDER_DEADLINE_TIME_KEY,
+      );
+      setDeadlineTime(deadlineSetting?.value ?? "");
+      setDeadlineInitialized(true);
+    }
+  }, [settingsData, deadlineInitialized]);
 
   // 通知設定の初回反映
   useEffect(() => {
@@ -113,6 +133,34 @@ export default function SettingsPage() {
       toast.error("更新に失敗しました");
     } finally {
       setIsSavingDays(false);
+    }
+  };
+
+  const handleSaveDeadline = async () => {
+    const value = deadlineTime.trim();
+    // 空欄は無効化として許可。それ以外は HH:MM 形式を要求する。
+    if (value !== "" && !DEADLINE_TIME_REGEX.test(value)) {
+      setDeadlineError("注文〆切時間は HH:MM 形式（00:00〜23:59）で指定してください");
+      return;
+    }
+
+    setIsSavingDeadline(true);
+    setDeadlineError(null);
+    try {
+      await apiClient(`/settings/${ORDER_DEADLINE_TIME_KEY}`, {
+        method: "PUT",
+        body: { value },
+      });
+      toast.success(
+        value === "" ? "注文〆切時間を無効にしました" : "注文〆切時間を更新しました",
+      );
+      mutateSettings();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "更新に失敗しました";
+      setDeadlineError(message);
+      toast.error(message);
+    } finally {
+      setIsSavingDeadline(false);
     }
   };
 
@@ -237,6 +285,34 @@ export default function SettingsPage() {
                   {isSavingDays ? "保存中..." : "保存"}
                 </Button>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="deadline-time">注文〆切時間</Label>
+              <p className="text-sm text-muted-foreground">
+                この時刻（JST）以降に着信した注文は、翌営業日を起算日として納品予定日・配送予定日を計算します。空欄にすると無効になり、すべて当日起算になります。
+              </p>
+              <div className="flex items-center gap-3">
+                <Input
+                  id="deadline-time"
+                  type="time"
+                  value={deadlineTime}
+                  onChange={(e) => setDeadlineTime(e.target.value)}
+                  className="w-32"
+                />
+                <Button
+                  onClick={handleSaveDeadline}
+                  disabled={isSavingDeadline}
+                  size="sm"
+                >
+                  {isSavingDeadline ? "保存中..." : "保存"}
+                </Button>
+              </div>
+              {deadlineError && (
+                <p className="text-sm text-destructive" role="alert">
+                  {deadlineError}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
