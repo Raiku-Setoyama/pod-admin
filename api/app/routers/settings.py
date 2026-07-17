@@ -19,6 +19,7 @@ from app.schemas.app_setting import (
     AppSettingResponse,
     AppSettingUpdate,
 )
+from app.services import order_deadline
 from app.services.estimated_shipping_service import recalculate_all_estimated_shipping_dates
 from app.services.external_order_notification import (
     NOTIFICATION_ENABLED_KEY,
@@ -70,6 +71,15 @@ async def update_setting(
     if key in (NOTIFICATION_ENABLED_KEY, NOTIFICATION_RECIPIENTS_KEY):
         try:
             validate_setting_value(key, data.value)
+        except ValueError as e:
+            raise AppException(422, "VALIDATION_ERROR", str(e)) from None
+
+    # Validate order deadline time (order_deadline_time).
+    # 空文字は無効化として許可。それ以外は HH:MM 形式のみ。既存注文の再計算はしない
+    # （〆切変更は新規注文にのみ適用する方針）。
+    if key == order_deadline.ORDER_DEADLINE_TIME_KEY:
+        try:
+            order_deadline.validate_setting_value(data.value)
         except ValueError as e:
             raise AppException(422, "VALIDATION_ERROR", str(e)) from None
 

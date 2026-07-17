@@ -57,6 +57,7 @@ from app.services.estimated_shipping_service import (
     calculate_estimated_shipping_date,
     get_shipping_preparation_days,
 )
+from app.services.order_deadline import effective_order_date, get_deadline_time
 from app.utils.business_day_calculator import add_business_days
 from app.utils.exceptions import (
     DuplicateError,
@@ -200,7 +201,13 @@ class OrderService:
         )
 
         # Create order items with expected_delivery_date
-        ordered_date = now_jst.date()
+        # 〆切時刻を考慮した実効受注日（起算日）を算出する。〆切以降(JST)に着信した
+        # 注文は当日分の発注に間に合わないため翌営業日起算とする。ordered_at（実受注
+        # 時刻）は変えず、スケジュール計算の起算日だけを繰り下げる（〆切未設定なら当日）。
+        deadline_time = None
+        if self._app_setting_repo:
+            deadline_time = await get_deadline_time(self._app_setting_repo)
+        ordered_date = effective_order_date(now_jst, deadline_time, company_holidays)
         for idx, item_data in enumerate(items):
             product = products[idx]
 
