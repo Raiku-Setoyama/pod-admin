@@ -8,13 +8,14 @@
 2. [認証](#認証)
 3. [エンドポイント一覧](#エンドポイント一覧)
 4. [受注作成API](#受注作成api)
-5. [注文ステータス取得API](#注文ステータス取得api)
-6. [商品属性取得API](#商品属性取得api)
-7. [価格取得API](#価格取得api)
-8. [注文取り消しAPI](#注文取り消しapi)
-9. [エラーハンドリング](#エラーハンドリング)
-10. [データ定義](#データ定義)
-11. [サンプルコード](#サンプルコード)
+5. [受注作成API（v2・製造データ生成方式）](#受注作成apiv2製造データ生成方式)
+6. [注文ステータス取得API](#注文ステータス取得api)
+7. [商品属性取得API](#商品属性取得api)
+8. [価格取得API](#価格取得api)
+9. [注文取り消しAPI](#注文取り消しapi)
+10. [エラーハンドリング](#エラーハンドリング)
+11. [データ定義](#データ定義)
+12. [サンプルコード](#サンプルコード)
 
 ---
 
@@ -73,7 +74,8 @@ APIキーは事前に発行されたものをご使用ください。
 
 | エンドポイント | メソッド | 説明 |
 |---------------|---------|------|
-| `/api/v1/orders` | POST | 受注作成 |
+| `/api/v1/orders` | POST | 受注作成（v1・完成デザインURL方式） |
+| `/api/v2/orders` | POST | 受注作成（v2・製造データ生成方式） |
 | `/api/v1/external/orders/{order_number}/status` | GET | 注文ステータス取得 |
 | `/api/v1/external/product-options/{product_type}` | GET | 商品属性取得 |
 | `/api/v1/external/price-calculation` | POST | 価格取得 |
@@ -102,7 +104,6 @@ POST /api/v1/orders
 ```json
 {
   "order_number": "0000001",
-  "ordered_at": "2024-01-15T10:30:00+09:00",
   "customer": {
     "name": "山田太郎",
     "postal_code": "123-4567",
@@ -136,7 +137,6 @@ POST /api/v1/orders
 | フィールド | 型 | 必須 | 説明 | 制約 |
 |-----------|-----|:---:|------|------|
 | order_number | string | ○ | 受注番号（7桁数字） | 7桁数字、ユニーク |
-| ordered_at | datetime | ○ | 受注日時（ISO 8601形式） | タイムゾーン付き |
 | customer | object | ○ | 顧客情報 | 下記参照 |
 | items | array | ○ | 受注明細（商品リスト） | 1件以上必須 |
 
@@ -161,9 +161,9 @@ POST /api/v1/orders
 | product_name | string | ○ | 外部販売サイトの商品名 | 1-200文字 |
 | price | integer | ○ | 単価（税込） | 0以上 |
 | quantity | integer | ○ | 数量 | 1以上（デフォルト: 1） |
-| size | string | 条件付 | サイズ | 最大50文字、Tシャツの場合は必須（有効値: S, M, L, XL） |
-| position | string | 条件付 | 印刷位置 | 最大50文字、Tシャツの場合は必須（有効値: 正面） |
-| color | string | 条件付 | カラー | 最大50文字、Tシャツの場合は必須（有効値: 白） |
+| size | string | 条件付 | サイズ | 最大50文字。全商品タイプで必須。有効値は商品タイプ別（下記参照） |
+| position | string | 条件付 | 印刷位置 | 最大50文字。Tシャツ・トートバッグで必須（有効値: 正面） |
+| color | string | 条件付 | カラー | 最大50文字。Tシャツ・ステッカー・トートバッグで必須。有効値は商品タイプ別（下記参照） |
 | design_image_url | string | - | デザイン画像URL | 最大2048文字 |
 | thumbnail_image_url | string | - | サムネイル画像URL | 最大2048文字 |
 
@@ -193,7 +193,7 @@ POST /api/v1/orders
   - `color`: `アクリル`（任意）
 
 - **ステッカー** (`product_type: sticker`)
-  - `size`: `100x100mm`
+  - `size`: `50x50mm`, `70x70mm`, `100x100mm`
   - `color`: `ホワイト`
 
 - **トートバッグ** (`product_type: tote_bag`)
@@ -222,6 +222,7 @@ POST /api/v1/orders
   "customer_email": "yamada@example.com",
   "ordered_at": "2024-01-15T10:30:00+09:00",
   "total_price": 5000,
+  "estimated_shipping_date": "2024-01-25",
   "items": [
     {
       "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
@@ -235,11 +236,20 @@ POST /api/v1/orders
       "color": "白",
       "design_image_url": "https://example.com/designs/design1.png",
       "thumbnail_image_url": "https://example.com/thumbnails/thumb1.png",
+      "expected_delivery_date": "2024-01-18",
+      "status": "ordered",
+      "product_code": null,
+      "manufacturing_data": null,
       "created_at": "2024-01-15T10:30:00+09:00",
       "updated_at": "2024-01-15T10:30:00+09:00"
     }
   ],
   "shipment": null,
+  "product_id": null,
+  "product_name": null,
+  "price": null,
+  "quantity": null,
+  "manufacturing_data": null,
   "created_at": "2024-01-15T10:30:00+09:00",
   "updated_at": "2024-01-15T10:30:00+09:00"
 }
@@ -262,10 +272,16 @@ POST /api/v1/orders
 | customer_full_address | string | 住所（結合済み、自動生成） |
 | customer_phone | string | 電話番号 |
 | customer_email | string \| null | メールアドレス |
-| ordered_at | datetime | 受注日時 |
-| total_price | integer | 合計金額（price × quantity の合計） |
+| ordered_at | datetime | 受注日時（サーバ側でJST現在時刻を採番。リクエストでは指定不可） |
+| total_price | integer | 合計金額（各明細の price × quantity の合計。サーバ側で自動計算） |
+| estimated_shipping_date | string(date) \| null | 配送予定日（`YYYY-MM-DD`。各明細の納品予定日の最大＋発送準備日数を営業日計算） |
 | items | array | 受注明細 |
 | shipment | object \| null | 出荷情報（納入済み以降で設定） |
+| product_id | string \| null | レガシー項目（後方互換のため保持。通常 `null`） |
+| product_name | string \| null | レガシー項目（後方互換のため保持。通常 `null`） |
+| price | integer \| null | レガシー項目（後方互換のため保持。通常 `null`） |
+| quantity | integer \| null | レガシー項目（後方互換のため保持。通常 `null`） |
+| manufacturing_data | object \| null | レガシー項目（後方互換のため保持。通常 `null`） |
 | created_at | datetime | 作成日時 |
 | updated_at | datetime | 更新日時 |
 
@@ -284,8 +300,24 @@ POST /api/v1/orders
 | color | string \| null | カラー |
 | design_image_url | string \| null | デザイン画像URL |
 | thumbnail_image_url | string \| null | サムネイル画像URL |
+| expected_delivery_date | string(date) \| null | メーカーからの納品予定日（`YYYY-MM-DD`。受注日＋商品リードタイムを営業日計算） |
+| status | string | 明細単位のステータス（`preparing_order` / `ordered` / `manufacturing` / `delivered`。v1は `ordered` から開始） |
+| product_code | string \| null | v2用の商品識別子（v1は `null`） |
+| manufacturing_data | object \| null | v2用の製造データ状態（v1は `null`。下記参照） |
 | created_at | datetime | 作成日時 |
 | updated_at | datetime | 更新日時 |
+
+#### manufacturing_data（明細・v2のみ）
+
+v2（製造データ生成方式）で作成された明細にのみ設定されます。v1明細では常に `null` です。
+
+| フィールド | 型 | 説明 |
+|-----------|-----|------|
+| id | string | 製造データID |
+| status | string | 生成状態（`pending` / `generating` / `ready` / `failed`） |
+| output_filename | string \| null | 生成済みファイル名 |
+| file_size | integer \| null | ファイルサイズ（バイト） |
+| error_message | string \| null | 失敗時のエラーメッセージ |
 
 #### shipment（出荷情報）
 
@@ -295,6 +327,74 @@ POST /api/v1/orders
 | status | string | 出荷ステータス（`pending`, `ready`, `shipped`） |
 | tracking_number | string \| null | 追跡番号 |
 | carrier | string \| null | 配送業者 |
+
+---
+
+## 受注作成API（v2・製造データ生成方式）
+
+完成デザインURLの代わりに、製造データ生成用の元データ（PNGレイヤーのURL）を受け取ります。受注後にシステム側で製造データを生成します（同一商品はキャッシュを再利用）。既存の v1（`POST /api/v1/orders`）とは**別プレフィックス**のため、v1連携には影響しません。
+
+```
+POST /api/v2/orders
+```
+
+| 項目 | 内容 |
+|------|------|
+| メソッド | POST |
+| URL | `/api/v2/orders` |
+| 認証 | API Key（`X-API-Key`ヘッダー） |
+| Content-Type | `application/json` |
+| レスポンス | 201 Created（成功時。**v1と同一の受注レスポンス**。`estimated_shipping_date` や明細の `expected_delivery_date` を含む） |
+
+### v1との差分
+
+- 明細（items）は `design_image_url` を**受け付けません**。代わりに下記の `product_code` と `source_images` を指定します。
+- `items` は1注文あたり最大100件、`source_images` は明細あたり最大8件（DoS防御）。
+- 顧客情報・`order_number`・その他の明細フィールド（`uid`, `product_type`, `product_name`, `price`, `quantity`, `size`, `position`, `color`, `thumbnail_image_url`）は v1 と同じです。
+- 製造データを生成できる入力か（商品タイプ・サイズ・必須レイヤー）を受注時に同期検証し、不備は `400 VALIDATION_ERROR` を返します。
+
+#### items（v2固有フィールド）
+
+| フィールド | 型 | 必須 | 説明 | 制約 |
+|-----------|-----|:---:|------|------|
+| product_code | string | ○ | 製造データのキャッシュキー（商品識別子） | 1-255文字 |
+| source_images | array | ○ | 製造データ生成の元データ（レイヤーPNG） | 1-8件 |
+| source_images[].layer_type | string | ○ | レイヤー種別 | `color`, `cutline`, `white`, `design` |
+| source_images[].url | string | ○ | レイヤーPNGのURL | 1-2048文字 |
+
+### リクエストボディ例
+
+```json
+{
+  "order_number": "0000001",
+  "customer": {
+    "name": "山田太郎",
+    "postal_code": "123-4567",
+    "address_prefecture": "東京都",
+    "address_city": "渋谷区〇〇町1-2-3",
+    "address_building": "○○ビル101",
+    "phone": "03-1234-5678",
+    "email": "yamada@example.com"
+  },
+  "items": [
+    {
+      "uid": "0000011",
+      "product_type": "acrylic_keychain",
+      "product_name": "アクリルキーホルダー デザインA",
+      "price": 1200,
+      "quantity": 1,
+      "size": "50x50mm",
+      "color": "アクリル",
+      "product_code": "RKSYO-AKC-001",
+      "source_images": [
+        {"layer_type": "color", "url": "https://example.com/layers/color.png"},
+        {"layer_type": "cutline", "url": "https://example.com/layers/cutline.png"}
+      ],
+      "thumbnail_image_url": "https://example.com/thumbnails/thumb1.png"
+    }
+  ]
+}
+```
 
 ---
 
@@ -335,7 +435,7 @@ GET /api/v1/external/orders/{order_number}/status
 | フィールド | 型 | 説明 |
 |-----------|-----|------|
 | order_number | string | 注文番号 |
-| status | string | 現在のステータス（`ordered`, `manufacturing`, `delivered`, `shipped`） |
+| status | string | 現在のステータス（`preparing_order`, `ordered`, `manufacturing`, `delivered`, `shipped`, `cancelled`） |
 | ordered_at | datetime | 受注日時 |
 | updated_at | datetime | 最終更新日時 |
 
@@ -363,7 +463,7 @@ curl -X GET "https://api.example.com/api/v1/external/orders/0000001/status" \
 
 ## 注文取り消しAPI
 
-指定した注文番号の注文を取り消します。発注中（ordered）のステータスの注文のみ取り消し可能です。
+指定した注文番号の注文を取り消します。`ordered`（発注済み）ステータスの注文のみ取り消し可能です。
 
 ```
 POST /api/v1/external/orders/{order_number}/cancel
@@ -408,7 +508,7 @@ POST /api/v1/external/orders/{order_number}/cancel
 {
   "error": {
     "code": "NOT_FOUND",
-    "message": "Order with order_number 'ORD-INVALID' not found"
+    "message": "order with id ORD-INVALID not found"
   }
 }
 ```
@@ -419,7 +519,7 @@ POST /api/v1/external/orders/{order_number}/cancel
 {
   "error": {
     "code": "CONFLICT",
-    "message": "Order 0000001 cannot be cancelled. Current status: manufacturing"
+    "message": "発注中の注文のみ取り消せます"
   }
 }
 ```
@@ -451,11 +551,12 @@ curl -X POST "https://api.example.com/api/v1/external/orders/0000001/cancel" \
 
 | HTTPステータス | code | 説明 | 対処法 |
 |---------------|------|------|--------|
-| 400 | VALIDATION_ERROR | リクエストパラメータ不正 | リクエスト内容を確認 |
+| 400 | VALIDATION_ERROR | リクエストパラメータ不正（属性値不正など） | リクエスト内容を確認 |
 | 401 | UNAUTHORIZED | 認証失敗 | APIキーを確認 |
-| 404 | NOT_FOUND | 商品マスタが見つからない | product_id を確認 |
+| 404 | NOT_FOUND | 商品マスタ・注文が見つからない | product_type / order_number を確認 |
 | 409 | DUPLICATE | 受注番号の重複 | order_number を変更 |
-| 422 | VALIDATION_ERROR | バリデーションエラー | リクエスト形式を確認 |
+| 409 | CONFLICT | 状態競合（取り消し不可な注文など） | 注文の現在ステータスを確認 |
+| 422 | （detail形式） | 入力形式エラー（`error` エンベロープではなく `detail` 配列で返却） | リクエスト形式を確認 |
 | 500 | INTERNAL_ERROR | サーバーエラー | 管理者に連絡 |
 
 ### エラー例
@@ -477,7 +578,7 @@ curl -X POST "https://api.example.com/api/v1/external/orders/0000001/cancel" \
 {
   "error": {
     "code": "NOT_FOUND",
-    "message": "Product with id 550e8400-e29b-41d4-a716-446655440000 not found"
+    "message": "Product with id tshirt not found"
   }
 }
 ```
@@ -529,7 +630,7 @@ Tシャツに対して、許可されていない値を指定した場合：
 
 ### 製造種類（product_type）
 
-レスポンスの `product_type` は、指定した `product_id` の商品マスタから自動的に取得されます。
+`product_type` はリクエストの各明細で直接指定します。POD管理システムは `product_type` に対応する商品マスタを検索して明細に紐づけます。
 
 | 値 | 説明 |
 |----|------|
@@ -545,10 +646,11 @@ Tシャツに対して、許可されていない値を指定した場合：
 
 | 値 | 説明 |
 |----|------|
-| ordered | 発注中（初期ステータス） |
+| preparing_order | 発注準備中（製造データ未準備。主にv2で使用） |
+| ordered | 発注済み（v1の初期ステータス） |
 | manufacturing | 製造中 |
 | delivered | 納入済み |
-| shipped | 発送完了 |
+| shipped | 発送完了（最終ステータス） |
 | cancelled | 取り消し済み |
 
 ### Tシャツ属性値
@@ -618,15 +720,17 @@ Tシャツ（`product_type: tshirt`）の場合、以下の値のみ許可され
 
 #### サイズ（size）
 
-| 値 | 説明 |
-|----|------|
-| 100x100mm | 100x100mm |
+| 値 | 説明 | 原価 |
+|----|------|------|
+| 50x50mm | 50x50mm | 50円 |
+| 70x70mm | 70x70mm | 59円 |
+| 100x100mm | 100x100mm | 79円 |
 
 #### カラー（color）
 
-| 値 | 説明 | 原価 |
-|----|------|------|
-| ホワイト | 白 | 79円 |
+| 値 | 説明 |
+|----|------|
+| ホワイト | 白 |
 
 ### トートバッグ属性値
 
@@ -713,7 +817,7 @@ GET /api/v1/external/product-options/{product_type}
 ```json
 {
   "product_type": "sticker",
-  "size": ["100x100mm"],
+  "size": ["50x50mm", "70x70mm", "100x100mm"],
   "color": ["ホワイト"],
   "position": []
 }
@@ -741,14 +845,20 @@ GET /api/v1/external/product-options/{product_type}
 
 ### エラー例
 
-#### 未サポートの商品タイプ（400 Bad Request）
+#### 無効・未対応の商品タイプ（422 Unprocessable Entity）
+
+`product_type` に enum 定義外の値（例: `mug`）を指定した場合、パスパラメータ検証で 422 が返ります。
 
 ```json
 {
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Product type 'mug' is not yet supported"
-  }
+  "detail": [
+    {
+      "type": "enum",
+      "loc": ["path", "product_type"],
+      "msg": "Input should be 'acrylic_keychain', 'acrylic_stand', 'sticker', 'tote_bag' or 'tshirt'",
+      "input": "mug"
+    }
+  ]
 }
 ```
 
@@ -820,7 +930,7 @@ POST /api/v1/external/price-calculation
 - `tshirt`: size=S/M/L/XL, color=白, position=正面
 - `acrylic_keychain`: size=50x50mm/70x70mm/100x100mm
 - `acrylic_stand`: size=50x50mm/70x70mm/100x100mm
-- `sticker`: size=100x100mm, color=ホワイト
+- `sticker`: size=50x50mm/70x70mm/100x100mm, color=ホワイト
 - `tote_bag`: size=M, color=ナチュラル, position=正面
 
 ### レスポンス例
@@ -832,8 +942,8 @@ POST /api/v1/external/price-calculation
   "color": "白",
   "position": "正面",
   "quantity": 2,
-  "unit_price": 2500,
-  "total_price": 5000
+  "unit_price": 870,
+  "total_price": 1740
 }
 ```
 
@@ -843,8 +953,8 @@ POST /api/v1/external/price-calculation
 |-----------|-----|------|
 | product_type | string | 製造種類 |
 | size | string | サイズ |
-| color | string \ null | カラー（商品タイプにより任意） |
-| position | string \ null | プリント位置（商品タイプにより任意） |
+| color | string \| null | カラー（商品タイプにより任意） |
+| position | string \| null | プリント位置（商品タイプにより任意） |
 | quantity | integer | 数量 |
 | unit_price | integer | 単価（税込） |
 | total_price | integer | 合計金額（unit_price × quantity） |
@@ -858,17 +968,6 @@ POST /api/v1/external/price-calculation
   "error": {
     "code": "VALIDATION_ERROR",
     "message": "Invalid size 'XXL'. Valid sizes: ['S', 'M', 'L', 'XL']"
-  }
-}
-```
-
-#### 商品マスタが見つからない（404 Not Found）
-
-```json
-{
-  "error": {
-    "code": "NOT_FOUND",
-    "message": "Product not found: T-shirt with size 'M' and color '白'"
   }
 }
 ```
@@ -922,7 +1021,6 @@ curl -X POST "https://api.example.com/api/v1/orders" \
   -H "X-API-Key: your-api-key-here" \
   -d '{
     "order_number": "0000001",
-    "ordered_at": "2024-01-15T10:30:00+09:00",
     "customer": {
       "name": "山田太郎",
       "postal_code": "123-4567",
@@ -960,7 +1058,6 @@ headers = {
 
 payload = {
     "order_number": "0000001",
-    "ordered_at": "2024-01-15T10:30:00+09:00",
     "customer": {
         "name": "山田太郎",
         "postal_code": "123-4567",
@@ -1002,7 +1099,6 @@ const createOrder = async () => {
 
   const payload = {
     order_number: "0000001",
-    ordered_at: "2024-01-15T10:30:00+09:00",
     customer: {
       name: "山田太郎",
       postal_code: "123-4567",
@@ -1057,7 +1153,6 @@ $apiKey = "your-api-key-here";
 
 $payload = [
     "order_number" => "0000001",
-    "ordered_at" => "2024-01-15T10:30:00+09:00",
     "customer" => [
         "name" => "山田太郎",
         "postal_code" => "123-4567",
@@ -1117,7 +1212,7 @@ if ($statusCode === 201) {
 
 5. **画像URL**: `design_image_url` および `thumbnail_image_url` は、外部からアクセス可能なURLを指定してください。
 
-6. **タイムゾーン**: `ordered_at` はISO 8601形式でタイムゾーン付きで指定してください（例: `2024-01-15T10:30:00+09:00`）。
+6. **受注日時**: `ordered_at` はリクエストでは指定できません（送信しても無視されます）。POD管理システムが受信時刻（JST）を自動採番し、レスポンスに ISO 8601 形式（例: `2024-01-15T10:30:00+09:00`）で返します。
 
 7. **金額計算**: `total_price` はシステム側で自動計算されます（各商品の price × quantity の合計）。
 
@@ -1127,6 +1222,7 @@ if ($statusCode === 201) {
 
 | バージョン | 日付 | 内容 |
 |-----------|------|------|
+| 3.5.0 | 2026-07-17 | ドキュメントを実装準拠に更新。受注レスポンスに配送予定日 `estimated_shipping_date`、明細に `expected_delivery_date` / `status` / `product_code` / `manufacturing_data` を明記。`ordered_at` はサーバ採番のためリクエスト項目から削除。ステッカーサイズを3種に修正。v2受注API（`POST /api/v2/orders`）を追記。 |
 | 3.4.0 | 2026-03-01 | 注文取り消しAPI追加 (FEAT-0023) |
 | 3.3.0 | 2026-02-25 | order_numberおよびuidを7桁数字形式に変更。バリデーション追加。 |
 | 3.2.0 | 2026-02-23 | ステッカーのカラーから「クリア」を削除。「ホワイト」のみの単一カラー体制に変更。(FEAT-0007) |
