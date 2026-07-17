@@ -24,6 +24,32 @@ def get_product_type_name(product_type: str) -> str:
     return PRODUCT_TYPE_NAMES.get(product_type, product_type)
 
 
+def format_product_detail(
+    product_type: str,
+    size: str | None = None,
+    position: str | None = None,
+    color: str | None = None,
+) -> str:
+    """Build the product detail string: {商品種類} - {サイズ} - {位置} - {色}.
+
+    Elements without a value (size / position / color が null/空) are skipped so
+    no extra separators appear. The product type name is resolved via
+    get_product_type_name (e.g. acrylic_stand -> アクリルフィギュア).
+
+    Examples:
+        Tシャツ - L - 正面 - 白
+        ステッカー - 100x100mm - ホワイト  (position 無し)
+    """
+    detail_parts = [get_product_type_name(product_type)]
+    if size:
+        detail_parts.append(size)
+    if position:
+        detail_parts.append(position)
+    if color:
+        detail_parts.append(color)
+    return " - ".join(detail_parts)
+
+
 class OrderListGenerator:
     """CSV generator for manufacturer order lists (発注リスト)."""
 
@@ -89,23 +115,17 @@ class OrderListGenerator:
             color = item.get("color", "")
             cost = item.get("cost", 0)
 
-            # Get product type name (use argument if provided, else from item)
+            # Get product type (use argument if provided, else from item)
             item_product_type = product_type or item.get("product_type", "")
-            product_type_name = get_product_type_name(item_product_type)
 
             # Format date as "MM月DD日"
             formatted_date = ordered_date.strftime("%m月%d日") if ordered_date else ""
             mmdd = ordered_date.strftime("%m%d") if ordered_date else ""
 
             # Build product detail: {商品種類} - {サイズ} - {位置} - {色}
-            detail_parts = [product_type_name]
-            if size:
-                detail_parts.append(size)
-            if position:
-                detail_parts.append(position)
-            if color:
-                detail_parts.append(color)
-            product_detail = " - ".join(detail_parts)
+            product_detail = format_product_detail(
+                item_product_type, size, position, color
+            )
 
             # Build seal text: {商品種類}【個数】{個数}個_{注文番号}_{製品番号}_{MMDD}
             seal_text = f"{product_detail}【個数】{quantity}個_{order_number}_{uid}_{mmdd}"
@@ -184,15 +204,13 @@ class OrderListGenerator:
             ordered_date: datetime | None = item.get("ordered_date")
             order_number = item.get("order_number", "")
             uid = item.get("uid", "")
-            product_name = item.get("product_name", "")
             quantity = item.get("quantity", 1)
             size = item.get("size", "")
             position = item.get("position", "")
             color = item.get("color", "")
 
-            # Get product type name
+            # Get product type (use argument if provided, else from item)
             item_product_type = product_type or item.get("product_type", "")
-            product_type_name = get_product_type_name(item_product_type)
 
             # Format date as "M月D日" (no zero-padding)
             if ordered_date:
@@ -203,14 +221,9 @@ class OrderListGenerator:
                 mmdd = ""
 
             # Build product detail: {商品種類} - {サイズ} - {位置} - {色}
-            detail_parts = [product_type_name]
-            if size:
-                detail_parts.append(size)
-            if position:
-                detail_parts.append(position)
-            if color:
-                detail_parts.append(color)
-            product_detail = " - ".join(detail_parts)
+            product_detail = format_product_detail(
+                item_product_type, size, position, color
+            )
 
             # Build seal text: {商品種類}【個数】{個数}個_{注文番号}_{製品番号}_{MMDD}
             seal_text = f"{product_detail}【個数】{quantity}個_{order_number}_{uid}_{mmdd}"
