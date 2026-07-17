@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -539,10 +539,11 @@ class OrderRepository:
     def derive_order_status(self, order: Order) -> str:
         """OrderItemのステータスからOrder.statusを導出
 
-        導出ルール:
+        導出ルール（優先順位）:
         - "shipped": Shipmentが存在し、shipped状態（この関数では判定しない、サービス層で処理）
         - "delivered": 全OrderItemが "delivered"
         - "manufacturing": 1つ以上のOrderItemが "manufacturing"
+        - "preparing_order": 1つ以上のOrderItemが "preparing_order"（製造データ未準備）
         - "ordered": それ以外
 
         Args:
@@ -563,6 +564,10 @@ class OrderRepository:
         # 1つでもmanufacturingがあれば"manufacturing"
         if any(s == OrderItemStatus.MANUFACTURING.value for s in statuses):
             return OrderStatus.MANUFACTURING.value
+
+        # 1つでも発注準備中（製造データ未準備）があれば"preparing_order"
+        if any(s == OrderItemStatus.PREPARING_ORDER.value for s in statuses):
+            return OrderStatus.PREPARING_ORDER.value
 
         # それ以外は"ordered"
         return OrderStatus.ORDERED.value
@@ -590,6 +595,68 @@ class OrderRepository:
             await self._db.flush()
 
         return order
+
+    async def sync_item_status_for_manufacturing_data(
+        self, manufacturing_data_id: str, *, ready: bool
+    ) -> set[str]:
+        """製造データの ready 状態を、それを参照する明細の統合ステータスへ波及させる.
+
+        ready=True: 参照する「発注準備中」明細を「発注済み」へ昇格する（生成完了時）。
+        ready=False: 参照する「発注済み」明細を「発注準備中」へ戻す（再作成の開始時）。
+        いずれも「製造中」/「納入済み」の明細（発注済みの後工程）は対象外。
+        影響を受けた注文の Order.status も再導出する。
+
+        Returns:
+            影響を受けた order_id の集合。
+        """
+        from_status = (
+            OrderItemStatus.PREPARING_ORDER.value
+            if ready
+            else OrderItemStatus.ORDERED.value
+        )
+        to_status = (
+            OrderItemStatus.ORDERED.value
+            if ready
+            else OrderItemStatus.PREPARING_ORDER.value
+        )
+        result = await self._db.execute(
+            update(OrderItem)
+            .where(
+                OrderItem.manufacturing_data_id == manufacturing_data_id,
+                OrderItem.status == from_status,
+            )
+            .values(status=to_status)
+            .returning(OrderItem.order_id)
+            .execution_options(synchronize_session=False)
+        )
+        affected_order_ids = {row[0] for row in result.all()}
+        await self._db.flush()
+
+        # 波及した各注文の Order.status を再導出する。
+        for order_id in affected_order_ids:
+            await self.update_order_derived_status(order_id)
+
+        return affected_order_ids
+
+    async def has_manufacturing_or_delivered_items(
+        self, manufacturing_data_id: str
+    ) -> bool:
+        """指定した製造データを参照する明細に「製造中」/「納入済み」が1件でもあるか.
+
+        製造データの再作成ゲート判定に使う（既に着手済みの in-production 注文を保護する）。
+        """
+        result = await self._db.execute(
+            select(func.count(OrderItem.id)).where(
+                OrderItem.manufacturing_data_id == manufacturing_data_id,
+                OrderItem.status.in_(
+                    [
+                        OrderItemStatus.MANUFACTURING.value,
+                        OrderItemStatus.DELIVERED.value,
+                    ]
+                ),
+            )
+        )
+        return (result.scalar() or 0) > 0
 
     async def find_pending_orders(
         self,

@@ -101,13 +101,23 @@ def create_mock_order_item(
     product_type: str = "acrylic_keychain",
     quantity: int = 1,
     uid: str | None = "ITEM-001",
+    size: str | None = None,
+    position: str | None = None,
+    color: str | None = None,
 ) -> MagicMock:
-    """Create a mock OrderItem."""
+    """Create a mock OrderItem.
+
+    size / position / color はデフォルト None（MagicMock の自動属性生成で
+    truthy にならないよう明示的に設定する）。
+    """
     item = MagicMock(spec=OrderItem)
     item.product_name = product_name
     item.product_type = product_type
     item.quantity = quantity
     item.uid = uid
+    item.size = size
+    item.position = position
+    item.color = color
     return item
 
 
@@ -409,3 +419,53 @@ class TestShipmentExportCsvColumn18:
         assert row[14] == "千代田区1-1-1"  # 配送元住所2
         assert row[15] == "テストビル101"  # 配送元住所3
         assert row[16] == "テスト配送元"  # 配送元氏名
+
+
+class TestShipmentExportCsvProductDetail:
+    """Issue #79: 4列目「商品種類」を発注リストと同形式に統一.
+
+    形式: {商品種類} - {サイズ} - {位置} - {色}（半角 " - " 区切り、
+    空要素はスキップ）。商品タイプ名は発注リスト（get_product_type_name）に
+    一致させる（特に acrylic_stand -> アクリルフィギュア、not アクリルスタンド）。
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "product_type,size,position,color,expected",
+        [
+            # 全要素あり
+            ("tshirt", "L", "正面", "白", "Tシャツ - L - 正面 - 白"),
+            # 空要素（position 無し）はスキップし余分な区切りを出さない
+            ("sticker", "100x100mm", None, "ホワイト", "ステッカー - 100x100mm - ホワイト"),
+            # acrylic_stand は発注リストと一致する「アクリルフィギュア」
+            ("acrylic_stand", "100mm", None, "クリア", "アクリルフィギュア - 100mm - クリア"),
+            # サイズ/位置/色が全て無い場合は商品タイプ名のみ
+            ("tote_bag", None, None, None, "トートバッグ"),
+        ],
+        ids=["full_tshirt", "skip_empty_position", "acrylic_stand_figure_name", "type_name_only"],
+    )
+    async def test_product_detail_column_format(
+        self,
+        shipment_service,
+        mock_shipment_repo,
+        product_type,
+        size,
+        position,
+        color,
+        expected,
+    ):
+        """4列目「商品種類」が {商品種類} - {サイズ} - {位置} - {色} 形式で出力される."""
+        order_item = create_mock_order_item(
+            product_type=product_type, size=size, position=position, color=color
+        )
+        order = create_mock_order(
+            order_items=[order_item],
+            order_source=create_mock_order_source(),
+        )
+        shipment = create_mock_shipment(shipment_items=[("si-001", order)])
+        mock_shipment_repo.find_by_id.return_value = shipment
+
+        csv_bytes, _ = await shipment_service.export_csv(["shipment-001"])
+
+        _, data_rows = parse_csv_bytes(csv_bytes)
+        assert data_rows[0][3] == expected

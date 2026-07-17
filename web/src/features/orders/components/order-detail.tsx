@@ -11,12 +11,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Download, Package, User, FileText, ShoppingBag, ExternalLink, RefreshCw } from "lucide-react";
-import { useState } from "react";
-import { toast } from "sonner";
+import { Download, Package, User, FileText, ShoppingBag, ExternalLink } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
-import { cn } from "@/lib/utils";
-import { ManufacturingDataBadge } from "@/components/common/manufacturing-data-badge";
+import {
+  ManufacturingRegenerateControls,
+  useRegenerateManufacturingData,
+} from "@/features/manufacturing-data/regenerate-controls";
 import type { Order, OrderItem } from "@/types/api";
 
 interface OrderDetailProps {
@@ -48,20 +48,7 @@ function formatProductType(type: string): string {
 }
 
 export function OrderDetail({ order, onRefresh }: OrderDetailProps) {
-  const [retryingId, setRetryingId] = useState<string | null>(null);
-
-  const handleRetryManufacturingData = async (mfgId: string) => {
-    setRetryingId(mfgId);
-    try {
-      await apiClient(`/manufacturing-data/${mfgId}/retry`, { method: "POST" });
-      toast.success("製造データの生成を再実行しました");
-      onRefresh?.();
-    } catch {
-      toast.error("製造データの再実行に失敗しました");
-    } finally {
-      setRetryingId(null);
-    }
-  };
+  const { regeneratingId, regenerate } = useRegenerateManufacturingData(onRefresh);
 
   const handleDownloadManufacturingData = async () => {
     try {
@@ -137,7 +124,7 @@ export function OrderDetail({ order, onRefresh }: OrderDetailProps) {
                   <TableHead>位置</TableHead>
                   <TableHead className="text-right">数量</TableHead>
                   <TableHead>デザイン</TableHead>
-                  <TableHead>製造データ</TableHead>
+                  <TableHead>ステータス</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -178,32 +165,21 @@ export function OrderDetail({ order, onRefresh }: OrderDetailProps) {
                       )}
                     </TableCell>
                     <TableCell>
-                      {item.manufacturing_data ? (
-                        <div className="flex items-center gap-2">
-                          <ManufacturingDataBadge status={item.manufacturing_data.status} />
-                          {item.manufacturing_data.status === "failed" && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 px-2"
-                              onClick={() =>
-                                handleRetryManufacturingData(item.manufacturing_data!.id)
-                              }
-                              disabled={retryingId === item.manufacturing_data.id}
-                              title={item.manufacturing_data.error_message ?? undefined}
-                            >
-                              <RefreshCw
-                                className={cn(
-                                  "h-3.5 w-3.5",
-                                  retryingId === item.manufacturing_data.id && "animate-spin"
-                                )}
-                              />
-                            </Button>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {item.status ? (
+                          <StatusBadge status={item.status} />
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                        <ManufacturingRegenerateControls
+                          itemStatus={item.status}
+                          mfgStatus={item.manufacturing_data?.status}
+                          manufacturingDataId={item.manufacturing_data?.id}
+                          errorMessage={item.manufacturing_data?.error_message}
+                          regeneratingId={regeneratingId}
+                          onRegenerate={regenerate}
+                        />
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

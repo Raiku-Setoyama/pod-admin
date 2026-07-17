@@ -31,6 +31,7 @@ import { useAllManufacturerOrderItems } from "@/features/purchase-orders/hooks/u
 import { useManufacturers } from "@/features/manufacturers/hooks/use-manufacturers";
 import { apiClient } from "@/lib/api/client";
 import { getManufacturerOrderStatusUpdateOptions } from "@/constants/status";
+import { formatProductDetailForCsv } from "@/features/purchase-orders/utils/format-product-detail";
 import type { AllManufacturerOrderItem } from "@/types/api";
 
 // デバウンスフック
@@ -49,14 +50,6 @@ function useDebounce<T>(value: T, delay: number): T {
 
   return debouncedValue;
 }
-
-const productTypeLabels: Record<string, string> = {
-  acrylic_keychain: "アクリルキーホルダー",
-  acrylic_stand: "アクリルスタンド",
-  sticker: "ステッカー",
-  tote_bag: "トートバッグ",
-  tshirt: "Tシャツ",
-};
 
 const statusLabels: Record<string, string> = {
   ordered: "発注済み",
@@ -195,7 +188,7 @@ export default function AllPurchaseOrdersPage() {
       item.order_number,
       item.uid || "",
       item.product_name,
-      productTypeLabels[item.product_type] || item.product_type,
+      formatProductDetailForCsv(item),
       statusLabels[item.status] || item.status,
       item.quantity.toString(),
       item.price.toString(),

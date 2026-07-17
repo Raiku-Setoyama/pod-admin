@@ -21,7 +21,8 @@ if TYPE_CHECKING:
 class OrderStatus(str, Enum):
     """Order status."""
 
-    ORDERED = "ordered"  # 発注済み（初期ステータス）
+    PREPARING_ORDER = "preparing_order"  # 発注準備中（製造データ未準備。v2のみ経由）
+    ORDERED = "ordered"  # 発注済み（製造データ準備完了 / v1は初期ステータス）
     MANUFACTURING = "manufacturing"  # 製造中
     DELIVERED = "delivered"  # 納入済み
     SHIPPED = "shipped"  # 発送完了（最終ステータス）
@@ -29,11 +30,28 @@ class OrderStatus(str, Enum):
 
 
 class OrderItemStatus(str, Enum):
-    """OrderItem status - 製品単位のステータス."""
+    """OrderItem status - 製品単位のステータス.
 
-    ORDERED = "ordered"  # 発注済み（初期ステータス）
+    発注準備中 → 発注済み → 製造中 → 納入済み の統合ライフサイクル。
+    発注準備中は製造データ（v2）が ready でない明細のみが取る（v1 は発注済みから開始）。
+    """
+
+    PREPARING_ORDER = "preparing_order"  # 発注準備中（製造データ未準備）
+    ORDERED = "ordered"  # 発注済み（製造データ準備完了 / v1は初期ステータス）
     MANUFACTURING = "manufacturing"  # 製造中
     DELIVERED = "delivered"  # 納入済み
+
+
+def is_order_blocked_status(status: str, is_manufacturing_ready: bool) -> bool:
+    """メーカー発注（→MANUFACTURING）できない明細か（ステータスと ready 可否から判定）.
+
+    統合ステータスでは未 ready の明細は「発注準備中(preparing_order)」を取る。統合前
+    データの防御として「発注済み(ordered) だが製造データ未 ready」も発注不可とする。
+    OrderItem の property と、明細を行タプルで扱う発注資料生成の双方から共有する。
+    """
+    if status == OrderItemStatus.PREPARING_ORDER.value:
+        return True
+    return status == OrderItemStatus.ORDERED.value and not is_manufacturing_ready
 
 
 class TshirtSize(str, Enum):
@@ -233,6 +251,11 @@ class OrderItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
             return True
         md = self.manufacturing_data
         return md is not None and md.status == MfgDataStatus.READY.value
+
+    @property
+    def is_order_blocked(self) -> bool:
+        """メーカー発注（→MANUFACTURING）できない明細か（is_order_blocked_status に委譲）."""
+        return is_order_blocked_status(self.status, self.is_manufacturing_ready)
 
     def __repr__(self) -> str:
         return f"<OrderItem(id={self.id}, product_name={self.product_name}, quantity={self.quantity}, status={self.status})>"

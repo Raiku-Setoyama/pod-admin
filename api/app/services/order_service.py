@@ -57,6 +57,7 @@ from app.services.estimated_shipping_service import (
     calculate_estimated_shipping_date,
     get_shipping_preparation_days,
 )
+from app.services.order_deadline import effective_order_date, get_deadline_time
 from app.utils.business_day_calculator import add_business_days
 from app.utils.exceptions import (
     DuplicateError,
@@ -200,7 +201,13 @@ class OrderService:
         )
 
         # Create order items with expected_delivery_date
-        ordered_date = now_jst.date()
+        # 〆切時刻を考慮した実効受注日（起算日）を算出する。〆切以降(JST)に着信した
+        # 注文は当日分の発注に間に合わないため翌営業日起算とする。ordered_at（実受注
+        # 時刻）は変えず、スケジュール計算の起算日だけを繰り下げる（〆切未設定なら当日）。
+        deadline_time = None
+        if self._app_setting_repo:
+            deadline_time = await get_deadline_time(self._app_setting_repo)
+        ordered_date = effective_order_date(now_jst, deadline_time, company_holidays)
         for idx, item_data in enumerate(items):
             product = products[idx]
 
@@ -264,6 +271,9 @@ class OrderService:
             expected_delivery_date=expected_delivery,
             product_code=item_data.product_code,
             source_images=[img.model_dump() for img in item_data.source_images],
+            # v2 明細は製造データ生成が前提。ready になるまで「発注準備中」で開始する
+            # （prepare_for_order でキャッシュ即 ready なら「発注済み」へ昇格させる）。
+            status=OrderItemStatus.PREPARING_ORDER.value,
         )
 
     def _validate_item_attributes(self, item_data: OrderItemCreate) -> None:
@@ -333,24 +343,20 @@ class OrderService:
     def _manufacturing_gate_unready_count(
         order: Order, current_status: OrderStatus, target_status: OrderStatus
     ) -> int:
-        """ORDERED→MANUFACTURING の前進遷移で発注できない明細数を返す（それ以外は 0）.
+        """→MANUFACTURING の前進遷移で発注できない明細数を返す（それ以外は 0）.
 
         既に MANUFACTURING の注文の再確定（no-op）や MANUFACTURING 以外への遷移では
-        ゲートは発動しない（明細単位ゲートとの不整合を避ける）。判定対象は
-        Order.unready_ordered_item_count（ORDERED かつ未ready）。update_status と
-        bulk_update_status で共有し、両ゲートの前進条件と述語を一致させる。
+        ゲートは発動しない（明細単位ゲートとの不整合を避ける）。判定対象は「発注準備中
+        （製造データ未準備）」の明細。統合ステータスでは未 ready 明細は preparing_order を
+        取るため、これをカウントする（防御的に ORDERED かつ未 ready も含める）。
+        update_status と bulk_update_status で共有し、両ゲートの述語を一致させる。
         """
         if (
             target_status != OrderStatus.MANUFACTURING
             or current_status == OrderStatus.MANUFACTURING
         ):
             return 0
-        return sum(
-            1
-            for item in order.items
-            if item.status == OrderItemStatus.ORDERED.value
-            and not item.is_manufacturing_ready
-        )
+        return sum(1 for item in order.items if item.is_order_blocked)
 
     async def update_status(self, order_id: str, status: OrderStatus) -> OrderResponse:
         """Update order status.
@@ -465,6 +471,7 @@ class OrderService:
                 design_image_url=item.design_image_url,
                 thumbnail_image_url=item.thumbnail_image_url,
                 expected_delivery_date=item.expected_delivery_date,
+                status=item.status,
                 product_code=item.product_code,
                 manufacturing_data=(
                     MfgDataItemInfo.model_validate(item.manufacturing_data)

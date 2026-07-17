@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
-from app.models.order import OrderItem
+from app.models.order import OrderItem, OrderItemStatus
 from app.services import manufacturing_data_service as mds
 from app.services.illustrator_vm_client import IllustratorVmError
 from app.services.manufacturing_data_service import ManufacturingDataService
@@ -65,6 +65,8 @@ class TestCacheResolution:
 
         assert to_generate == ["md-new"]
         assert item.manufacturing_data_id == "md-new"
+        # 未 ready のため統合ステータスは発注準備中
+        assert item.status == OrderItemStatus.PREPARING_ORDER.value
         # keychain(color+cutline, white なし) は variant clear で照会される
         # find_by_cache_key(order_source_id, product_code, size, variant)
         called = md_repo.find_by_cache_key.call_args
@@ -90,6 +92,8 @@ class TestCacheResolution:
         # キャッシュ再利用 → VM生成は起動しない
         assert to_generate == []
         assert item.manufacturing_data_id == "md-existing"
+        # キャッシュが ready のため統合ステータスは発注済みへ昇格
+        assert item.status == OrderItemStatus.ORDERED.value
         md_repo.create.assert_not_called()
 
     @pytest.mark.asyncio
@@ -233,6 +237,10 @@ class TestGenerateDriver:
         assert md.vm_job_id == "job-9"
         # VM 必須の order_id に製造データ行の id を渡す（トレーサビリティ）
         assert vm_client.submit.call_args.kwargs["order_id"] == md.id
+        # 生成完了を参照明細へ波及（発注準備中→発注済み）
+        svc._order_repo.sync_item_status_for_manufacturing_data.assert_awaited_once_with(
+            "md-1", ready=True
+        )
 
     @pytest.mark.asyncio
     async def test_vm_failure_marks_failed_with_message(self):
@@ -395,6 +403,112 @@ class TestRetry:
 
         assert md.status == MfgDataStatus.READY.value  # 状態は変えない
         bg.add_task.assert_not_called()  # 再生成も起動しない
+
+
+class TestRegenerate:
+    """製造データ GUI 再作成（regenerate）の前提条件・波及のテスト."""
+
+    def _md(self, status=MfgDataStatus.READY.value):
+        from datetime import UTC, datetime
+
+        md = ManufacturingData(product_code="p", product_type="sticker")
+        md.id = "md-1"
+        md.status = status
+        md.attempts = 1
+        md.created_at = datetime.now(UTC)
+        md.updated_at = datetime.now(UTC)
+        return md
+
+    @pytest.mark.asyncio
+    async def test_regenerate_demotes_and_enqueues_when_pre_manufacturing(self):
+        # 参照明細が全て発注準備中/発注済みなら再作成可。ready 行を pending に戻し、
+        # 発注済み明細を発注準備中へ戻して（demote）バックグラウンド生成を起動する。
+        md = self._md(MfgDataStatus.READY.value)
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        order_repo = AsyncMock()
+        order_repo.has_manufacturing_or_delivered_items.return_value = False
+        bg = MagicMock()
+
+        svc = _service(md_repo, order_repo)
+        resp = await svc.regenerate("md-1", bg)
+
+        assert md.status == MfgDataStatus.PENDING.value
+        assert md.error_message is None
+        order_repo.sync_item_status_for_manufacturing_data.assert_awaited_once_with(
+            "md-1", ready=False
+        )
+        bg.add_task.assert_called_once()
+        assert resp.status == MfgDataStatus.PENDING.value
+
+    @pytest.mark.asyncio
+    async def test_regenerate_allows_failed_row(self):
+        md = self._md(MfgDataStatus.FAILED.value)
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        order_repo = AsyncMock()
+        order_repo.has_manufacturing_or_delivered_items.return_value = False
+        bg = MagicMock()
+
+        resp = await _service(md_repo, order_repo).regenerate("md-1", bg)
+
+        assert md.status == MfgDataStatus.PENDING.value
+        assert resp.status == MfgDataStatus.PENDING.value
+        bg.add_task.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_regenerate_blocked_when_shared_with_manufacturing(self):
+        # 共有明細に製造中があれば、その注文の完成データ保護のため再作成不可。
+        md = self._md(MfgDataStatus.READY.value)
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        order_repo = AsyncMock()
+        order_repo.has_manufacturing_or_delivered_items.return_value = True
+        bg = MagicMock()
+
+        svc = _service(md_repo, order_repo)
+        with pytest.raises(ConflictError):
+            await svc.regenerate("md-1", bg)
+
+        assert md.status == MfgDataStatus.READY.value  # 状態は変えない
+        order_repo.sync_item_status_for_manufacturing_data.assert_not_called()
+        bg.add_task.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_regenerate_blocked_when_shared_with_delivered(self):
+        md = self._md(MfgDataStatus.READY.value)
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        order_repo = AsyncMock()
+        order_repo.has_manufacturing_or_delivered_items.return_value = True
+        bg = MagicMock()
+
+        with pytest.raises(ConflictError):
+            await _service(md_repo, order_repo).regenerate("md-1", bg)
+        bg.add_task.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_regenerate_rejects_generating(self):
+        # 生成中は進行中ジョブと競合させないため、ゲート判定前に即拒否する。
+        md = self._md(MfgDataStatus.GENERATING.value)
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        order_repo = AsyncMock()
+        bg = MagicMock()
+
+        svc = _service(md_repo, order_repo)
+        with pytest.raises(ConflictError):
+            await svc.regenerate("md-1", bg)
+
+        order_repo.has_manufacturing_or_delivered_items.assert_not_called()
+        bg.add_task.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_regenerate_missing_raises(self):
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = None
+        with pytest.raises(NotFoundError):
+            await _service(md_repo).regenerate("missing", MagicMock())
 
 
 class TestRecovery:

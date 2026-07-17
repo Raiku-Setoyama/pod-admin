@@ -13,6 +13,7 @@ import type {
  * OrderStatus のラベル名（統一済み）
  */
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  preparing_order: "発注準備中",
   ordered: "発注済み",
   manufacturing: "製造中",
   delivered: "納品済み",
@@ -23,6 +24,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
  * OrderStatus の色（Tailwind CSS クラス）
  */
 export const ORDER_STATUS_COLORS: Record<OrderStatus, string> = {
+  preparing_order: "bg-amber-100 text-amber-700 border-amber-300",
   ordered: "bg-yellow-100 text-yellow-700 border-yellow-300",
   manufacturing: "bg-blue-100 text-blue-700 border-blue-300",
   delivered: "bg-purple-100 text-purple-700 border-purple-300",
@@ -72,36 +74,6 @@ export const PENDING_ORDER_STATUS_COLORS: Record<PendingOrderStatus, string> = {
 // ========================================
 // Manufacturing Data Status (製造データ生成ステータス / v2)
 // ========================================
-
-/**
- * ManufacturingDataStatus のラベル名
- *
- * 注: pending/ready は配送ステータスと値が重複するため、StatusBadge の共通ラベルとは
- * 別管理とする（意味が異なる: 生成待ち/生成完了）。
- */
-export const MANUFACTURING_DATA_STATUS_LABELS: Record<ManufacturingDataStatus, string> = {
-  pending: "生成待ち",
-  generating: "生成中",
-  ready: "生成完了",
-  failed: "生成失敗",
-};
-
-/**
- * ManufacturingDataStatus の色（Tailwind CSS クラス）
- */
-export const MANUFACTURING_DATA_STATUS_COLORS: Record<ManufacturingDataStatus, string> = {
-  pending: "bg-gray-100 text-gray-700 border-gray-300",
-  generating: "bg-blue-100 text-blue-700 border-blue-300",
-  ready: "bg-emerald-100 text-emerald-700 border-emerald-300",
-  failed: "bg-red-100 text-red-700 border-red-300",
-};
-
-/**
- * ManufacturingDataStatus のラベルを取得
- */
-export function getManufacturingDataStatusLabel(status: ManufacturingDataStatus): string {
-  return MANUFACTURING_DATA_STATUS_LABELS[status] ?? status;
-}
 
 /**
  * 製造データ生成が進行中（pending/generating）か。
@@ -230,6 +202,7 @@ export function getShipmentListFilterOptions(): StatusOption<ShipmentStatus | Pe
 export function getOrderFilterStatusOptions(): StatusOption<OrderStatus | ShipmentStatus>[] {
   return [
     { value: "all", label: "全てのステータス" },
+    { value: "preparing_order", label: ORDER_STATUS_LABELS.preparing_order },
     { value: "ordered", label: ORDER_STATUS_LABELS.ordered },
     { value: "manufacturing", label: ORDER_STATUS_LABELS.manufacturing },
     { value: "pending", label: SHIPMENT_STATUS_LABELS.pending },
@@ -244,6 +217,7 @@ export function getOrderFilterStatusOptions(): StatusOption<OrderStatus | Shipme
 export function getManufacturerOrderFilterStatusOptions(): StatusOption<OrderStatus>[] {
   return [
     { value: "all", label: "全てのステータス" },
+    { value: "preparing_order", label: ORDER_STATUS_LABELS.preparing_order },
     { value: "ordered", label: ORDER_STATUS_LABELS.ordered },
     { value: "manufacturing", label: ORDER_STATUS_LABELS.manufacturing },
     { value: "delivered", label: ORDER_STATUS_LABELS.delivered },
