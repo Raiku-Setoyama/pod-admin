@@ -1,6 +1,6 @@
 """Order repository for database operations."""
 
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -239,6 +239,46 @@ class OrderRepository:
 
         result = await self._db.execute(query)
         return [dict(row._mapping) for row in result.all()]
+
+    async def get_new_ordered_summary_by_manufacturer(
+        self,
+        manufacturer_id: str,
+        since: datetime | None = None,
+    ) -> dict[str, int]:
+        """メーカー別の「新規の発注済み」明細サマリーを取得（時間窓フィルタ版）.
+
+        get_ordered_items_summary_by_manufacturer() の時間窓版。
+        対象明細 = OrderItem WHERE Product.manufacturer_id = manufacturer_id
+                   AND OrderItem.status = ORDERED
+                   AND (since が None でなければ OrderItem.created_at > since)
+
+        注: ORDERED は発注時の初期ステータスのため、OrderItem.created_at を
+        「発注済みになった時刻」とみなす。
+
+        Returns:
+            {"ordered_item_count": 明細数, "total_quantity": 合計数量}
+        """
+        from app.models.product import Product
+
+        query = (
+            select(
+                func.count(OrderItem.id).label("ordered_item_count"),
+                func.coalesce(func.sum(OrderItem.quantity), 0).label("total_quantity"),
+            )
+            .select_from(OrderItem)
+            .join(Product, Product.id == OrderItem.product_id)
+            .where(Product.manufacturer_id == manufacturer_id)
+            .where(OrderItem.status == OrderItemStatus.ORDERED.value)
+        )
+        if since is not None:
+            query = query.where(OrderItem.created_at > since)
+
+        result = await self._db.execute(query)
+        row = result.one()
+        return {
+            "ordered_item_count": int(row.ordered_item_count or 0),
+            "total_quantity": int(row.total_quantity or 0),
+        }
 
     async def find_ordered_items_by_manufacturer_detail(
         self,

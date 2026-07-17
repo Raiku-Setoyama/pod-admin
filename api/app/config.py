@@ -88,5 +88,12 @@ class Settings(BaseSettings):
     # 1レイヤーあたりのダウンロード上限（バイト）。超過分は取得を中断してスキップ。
     SOURCE_IMAGE_MAX_BYTES: int = 25 * 1024 * 1024  # 25MB
 
+    # メーカーポータルのログインURL（メーカー日次発注通知メールに記載）
+    MANUFACTURER_LOGIN_URL: str = "https://pod-admin-beige.vercel.app/manufacturer-login"
+
+    # 内部エンドポイント（メーカー日次発注ダイジェスト）の共有シークレット。
+    # 未設定なら内部エンドポイントは無効（403）。外部トリガ(cron等)から X-Internal-Secret で認証する。
+    INTERNAL_API_SECRET: str = ""
+
 
 settings = Settings()
