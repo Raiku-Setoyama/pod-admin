@@ -53,6 +53,12 @@ if (typeof Element.prototype.scrollIntoView === 'undefined') {
   Element.prototype.scrollIntoView = vi.fn()
 }
 
+// jsdom does not implement object URLs (used for image previews)
+if (typeof URL.createObjectURL === 'undefined') {
+  URL.createObjectURL = vi.fn(() => 'blob:mock')
+  URL.revokeObjectURL = vi.fn()
+}
+
 // Mock Next.js router
 vi.mock('next/navigation', () => ({
   useRouter: () => ({

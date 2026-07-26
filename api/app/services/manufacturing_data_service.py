@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime
 
 import httpx
+from fastapi import BackgroundTasks, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,11 +25,12 @@ from app.models.order import OrderItem, OrderItemStatus
 from app.repositories.manufacturing_data_repository import ManufacturingDataRepository
 from app.repositories.order_repository import OrderRepository
 from app.schemas.manufacturing_data import (
+    ManufacturingDataDetailResponse,
     ManufacturingDataListResponse,
     ManufacturingDataResponse,
 )
 from app.services.illustrator_vm_client import IllustratorVmClient, IllustratorVmError
-from app.utils.exceptions import ConflictError, NotFoundError
+from app.utils.exceptions import ConflictError, NotFoundError, ValidationError
 from app.utils.file_storage import FileStorage, build_file_storage
 from app.utils.mfg_product_mapping import MfgMappingError, build_vm_mapping
 from app.utils.url_guard import validate_source_url
@@ -42,16 +45,38 @@ class SourceImageTooLargeError(Exception):
 # 生成済みファイルの保存先プレフィックス（FileStorage 上）
 _STORAGE_PREFIX = "manufacturing_data"
 
+# 差し替えた元データ（PNGレイヤー）の保存先プレフィックス（FileStorage 上）
+_SOURCE_IMAGE_PREFIX = "source_images"
+
 # 元データ（PNGレイヤー）ダウンロードのタイムアウト
 _SOURCE_DOWNLOAD_TIMEOUT = 30.0
 
 # 元データ1レイヤーの既定サイズ上限（settings 未指定時のフォールバック）
 _DEFAULT_SOURCE_MAX_BYTES = 25 * 1024 * 1024  # 25MB
 
+# PNG のシグネチャ。差し替えアップロードが本当に PNG かを中身で確認する
+# （VM は PNG レイヤーしか受け付けないため、拡張子や Content-Type は信用しない）。
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
 
 def _redact_url(url: str) -> str:
     """ログ用にクエリ文字列（署名付きトークン等）を落としたURLを返す."""
     return url.split("?", 1)[0]
+
+
+def _merge_uploaded_layers(
+    current: list[dict[str, str]] | None, intake: list[dict[str, str]] | None
+) -> list[dict[str, str]]:
+    """元データを受注値へ更新する。ただし差し替え済みレイヤーは維持する.
+
+    差し替え済み（file_path つき）レイヤーは管理者が是正した内容なので、外部受注が
+    渡す元の URL では上書きしない。それ以外のレイヤーは最新の受注値を採用する。
+    """
+    uploaded = {img["layer_type"]: img for img in current or [] if img.get("file_path")}
+    refreshed = [uploaded.pop(img["layer_type"], img) for img in intake or []]
+    # 受注値に無くなった差し替え済みレイヤーも失わない
+    return refreshed + list(uploaded.values())
+
 
 # recover_stranded_generations が起動した復旧タスクの強参照を保持する集合。
 # create_task の戻り値を保持しないとタスクが GC で途中消滅しうるため。
@@ -67,7 +92,7 @@ class _BytesUpload:
 
     def __init__(self, content: bytes, filename: str) -> None:
         self._content = content
-        self.filename = filename
+        self.filename: str | None = filename
 
     def read(self) -> bytes:
         return self._content
@@ -141,7 +166,9 @@ class ManufacturingDataService:
         await self._commit()
         return to_generate
 
-    def enqueue_generation(self, background_tasks, md_ids: list[str]) -> None:
+    def enqueue_generation(
+        self, background_tasks: BackgroundTasks, md_ids: list[str]
+    ) -> None:
         """製造データ生成をバックグラウンドで起動する（新規セッションで実行）."""
         for md_id in md_ids:
             background_tasks.add_task(run_generation, md_id)
@@ -172,7 +199,9 @@ class ManufacturingDataService:
             if existing.status == MfgDataStatus.FAILED.value:
                 existing.status = MfgDataStatus.PENDING.value
                 existing.error_message = None
-                existing.source_images = item.source_images
+                existing.source_images = _merge_uploaded_layers(
+                    existing.source_images, item.source_images
+                )
                 await self._md_repo.update(existing)
                 return existing, True
             return existing, False
@@ -320,9 +349,12 @@ class ManufacturingDataService:
     async def _download_source_images(
         self, source_images: list, wanted: set[str]
     ) -> dict[str, bytes]:
-        """必要なレイヤーの PNG を並列ダウンロードする.
+        """必要なレイヤーの PNG を並列取得する.
 
-        個々のレイヤー DL 失敗は fetch 内で握って None を返し、成功したレイヤーだけ集める。
+        差し替え済みレイヤー（file_path つき）は FileStorage から読み、外部受注由来（url）は
+        SSRF ガード付きで HTTP 取得する。
+
+        個々のレイヤー取得失敗は fetch 内で握って None を返し、成功したレイヤーだけ集める。
         必須レイヤー不足の判定は呼び出し側の missing チェックに委ねる。これにより optional
         レイヤー（white 等）の取得失敗で生成全体を落とさない。
         """
@@ -333,7 +365,7 @@ class ManufacturingDataService:
             if self._allowed_source_hosts is not None
             else frozenset(settings.SOURCE_IMAGE_ALLOWED_HOSTS)
         )
-        max_bytes = self._max_source_bytes or settings.SOURCE_IMAGE_MAX_BYTES
+        max_bytes = self._max_bytes()
 
         # redirect 追従は無効（許可外ホストへの 30x リダイレクト経由の SSRF を防ぐ）。
         async with httpx.AsyncClient(
@@ -343,17 +375,21 @@ class ManufacturingDataService:
             async def fetch(img: dict) -> tuple[str, bytes] | None:
                 async with semaphore:
                     try:
-                        # SSRF ガード: 取得前に宛先URLを検証（内部・メタデータ等を遮断）。
-                        validate_source_url(img["url"], allowed_hosts=allowed_hosts)
-                        content = await self._fetch_with_limit(
-                            client, img["url"], max_bytes
-                        )
+                        if img.get("file_path"):
+                            # 差し替え済み: 自前ストレージから読む（外部取得しない）。
+                            content = await self._read_stored_source(img["file_path"])
+                        else:
+                            # SSRF ガード: 取得前に宛先URLを検証（内部・メタデータ等を遮断）。
+                            validate_source_url(img["url"], allowed_hosts=allowed_hosts)
+                            content = await self._fetch_with_limit(
+                                client, img["url"], max_bytes
+                            )
                         return img["layer_type"], content
                     except Exception as exc:  # noqa: BLE001 - 1レイヤーの失敗で全体を止めない（Unsafe/TooLarge含む）
                         logger.warning(
-                            "failed to download source layer %s (%s): %s",
+                            "failed to load source layer %s (%s): %s",
                             img["layer_type"],
-                            _redact_url(img["url"]),
+                            _redact_url(img.get("file_path") or img.get("url", "")),
                             exc,
                         )
                         return None
@@ -379,14 +415,32 @@ class ManufacturingDataService:
                 chunks.append(chunk)
         return b"".join(chunks)
 
+    def _storage(self) -> FileStorage:
+        """FileStorage を解決する（未注入なら settings から構築）."""
+        return self._file_storage or build_file_storage(settings)
+
+    def _max_bytes(self) -> int:
+        """元データ1レイヤーのサイズ上限を解決する（未注入なら settings から）."""
+        return self._max_source_bytes or settings.SOURCE_IMAGE_MAX_BYTES
+
     async def _save_file(self, content: bytes, filename: str) -> str:
         """生成物を FileStorage に保存し、保存先パスを返す."""
-        storage = self._file_storage or build_file_storage(settings)
-        return await storage.save(_BytesUpload(content, filename), prefix=_STORAGE_PREFIX)
+        return await self._storage().save(
+            _BytesUpload(content, filename), prefix=_STORAGE_PREFIX
+        )
+
+    async def _read_stored_source(self, file_path: str) -> bytes:
+        """差し替え済み元データを FileStorage から読む."""
+        content = await self._storage().get(file_path)
+        if content is None:
+            raise FileNotFoundError(f"stored source image not found: {file_path}")
+        return content
 
     # === 管理API（リクエストスコープ） ===
 
-    async def retry(self, md_id: str, background_tasks) -> ManufacturingDataResponse:
+    async def retry(
+        self, md_id: str, background_tasks: BackgroundTasks
+    ) -> ManufacturingDataResponse:
         """失敗した製造データ生成を手動で再駆動する.
 
         retry は failed 行の再実行のみ許可する。製造データ行は
@@ -396,9 +450,7 @@ class ManufacturingDataService:
         だった明細の再ブロックにつながる）。宙吊りになった generating/pending 行は起動時の
         復旧処理（recover_stranded_generations）が再駆動する。
         """
-        md = await self._md_repo.find_by_id(md_id)
-        if md is None:
-            raise NotFoundError("ManufacturingData", md_id)
+        md = await self._require_row(md_id)
         if md.status != MfgDataStatus.FAILED.value:
             raise ConflictError(
                 f"manufacturing data {md_id} is not in a failed state "
@@ -413,46 +465,191 @@ class ManufacturingDataService:
         background_tasks.add_task(run_generation, md_id)
         return ManufacturingDataResponse.model_validate(md)
 
-    async def regenerate(self, md_id: str, background_tasks) -> ManufacturingDataResponse:
+    async def regenerate(
+        self, md_id: str, background_tasks: BackgroundTasks
+    ) -> ManufacturingDataResponse:
         """製造データを手動で再作成（同じ元データで再生成）する（管理者操作）.
 
-        メーカーが製造着手前（参照する明細が全て 発注準備中 / 発注済み）のときのみ許可する。
-        製造データ行は（受注元 × 商品コード × サイズ × バリアント）単位で複数注文に共有される
-        ため、1件でも「製造中」/「納入済み」の注文が参照している場合は、その注文の完成データを
-        壊さないよう再作成を拒否する（ConflictError → 409）。生成中の行も進行中ジョブと競合させ
-        ないため拒否する（ready / failed から実行）。
-
-        許可時は同じ source_images で再生成する: md を pending に戻し、参照する「発注済み」明細を
-        「発注準備中」へ戻したうえでバックグラウンド生成を起動する。生成完了時に generate() が
-        再び「発注済み」へ昇格させる。
+        メーカーが製造着手前（参照する明細が全て 発注準備中 / 発注済み）のときのみ許可する
+        （_assert_rebuildable 参照）。元データは差し替えず、同じ source_images で作り直す。
         """
+        md = await self._require_row(md_id)
+        await self._assert_rebuildable(md)
+        await self._restart_generation(md, background_tasks)
+        return ManufacturingDataResponse.model_validate(md)
+
+    async def get_detail(self, md_id: str) -> ManufacturingDataDetailResponse:
+        """製造データ詳細（元画像レイヤー一覧つき）を取得する."""
+        md = await self._require_row(md_id)
+        return ManufacturingDataDetailResponse.model_validate(md)
+
+    async def replace_source_images(
+        self,
+        md_id: str,
+        uploads: dict[str, UploadFile],
+        *,
+        replaced_by: str | None,
+        background_tasks: BackgroundTasks,
+    ) -> ManufacturingDataDetailResponse:
+        """元画像（PNGレイヤー）を差し替えて製造データを再生成する（管理者操作）.
+
+        Args:
+            uploads: レイヤー種別 -> アップロードされた PNG。
+
+        差し替え可否は regenerate と同じゲート（生成中でない・製造着手済みの注文と共有して
+        いない）で判定する。差し替えは行が既に持つレイヤー種別の置き換えのみ許可する:
+        レイヤー構成が変わるとバリアント（= キャッシュキー）の導出結果まで変わるため。
+
+        アップロードは FileStorage に保存し、source_images の該当レイヤーを file_path 形式へ
+        置き換える。以降の生成は外部 URL ではなく保存したファイルを読む。
+        """
+        md = await self._require_row(md_id)
+        await self._assert_rebuildable(md)
+
+        stored = md.source_images or []
+        if not stored:
+            raise ConflictError(
+                f"manufacturing data {md_id} has no source images to replace"
+            )
+        self._validate_replacement_layers(uploads, stored)
+
+        # 全ファイルを検証してから保存する（一部だけ差し替わった中途半端な状態を作らない）。
+        validated = [
+            (layer_type, file.filename or f"{layer_type}.png",
+             await self._read_png_upload(layer_type, file))
+            for layer_type, file in uploads.items()
+        ]
+        # 保存は並列（GCS の往復を直列に積み上げない）。
+        paths = await asyncio.gather(
+            *(
+                self._storage().save(
+                    _BytesUpload(content, filename), prefix=_SOURCE_IMAGE_PREFIX
+                )
+                for _, filename, content in validated
+            )
+        )
+        replacements = {
+            layer_type: {
+                "layer_type": layer_type,
+                "file_path": path,
+                "filename": filename,
+            }
+            for (layer_type, filename, _), path in zip(validated, paths, strict=True)
+        }
+
+        # JSONB は再代入しないと変更が検知されないため、新しいリストを作って差し替える。
+        md.source_images = [replacements.get(img["layer_type"], img) for img in stored]
+        md.source_images_replaced_at = datetime.now(UTC)
+        md.source_images_replaced_by = replaced_by
+
+        await self._restart_generation(md, background_tasks)
+        logger.info(
+            "source images replaced for manufacturing data %s (layers=%s, by=%s)",
+            md_id,
+            sorted(replacements),
+            replaced_by,
+        )
+        return ManufacturingDataDetailResponse.model_validate(md)
+
+    async def get_source_image(self, md_id: str, layer_type: str) -> bytes:
+        """差し替え済み元画像の内容を返す（プレビュー用）.
+
+        外部受注由来（URL のみ）のレイヤーは pod-admin 側に実体を持たないため 404 とする
+        （フロントは URL へのリンクを表示する）。
+        """
+        md = await self._require_row(md_id)
+        stored = next(
+            (
+                img
+                for img in md.source_images or []
+                if img["layer_type"] == layer_type and img.get("file_path")
+            ),
+            None,
+        )
+        content = await self._storage().get(stored["file_path"]) if stored else None
+        if content is None:
+            raise NotFoundError("SourceImage", f"{md_id}/{layer_type}")
+        return content
+
+    async def _require_row(self, md_id: str) -> ManufacturingData:
+        """製造データ行を取得する（無ければ 404）."""
         md = await self._md_repo.find_by_id(md_id)
         if md is None:
             raise NotFoundError("ManufacturingData", md_id)
+        return md
 
-        # 生成中は再作成不可（進行中の VM ジョブと競合させない）。
+    async def _assert_rebuildable(self, md: ManufacturingData) -> None:
+        """製造データを作り直せる状態か検証する（regenerate / 元画像差し替えで共通）.
+
+        生成中は進行中の VM ジョブと競合させないため拒否する。製造データ行は複数注文で
+        共有されるため、1件でも「製造中」/「納入済み」の注文が参照している場合は、その注文の
+        完成データを壊さないよう拒否する。
+        """
         if md.status == MfgDataStatus.GENERATING.value:
             raise ConflictError(
-                f"manufacturing data {md_id} is currently generating; "
+                f"manufacturing data {md.id} is currently generating; "
                 "regeneration is not allowed while a job is in progress"
             )
-
-        # 共有ゲート: 参照明細に「製造中」/「納入済み」が1件でもあれば再作成不可。
-        if await self._order_repo.has_manufacturing_or_delivered_items(md_id):
+        if await self._order_repo.has_manufacturing_or_delivered_items(md.id):
             raise ConflictError(
-                f"manufacturing data {md_id} is shared with an order already in "
+                f"manufacturing data {md.id} is shared with an order already in "
                 "manufacturing/delivered; regeneration is blocked to protect it"
             )
 
-        # 同じ元データで再生成する。参照する「発注済み」明細は「発注準備中」へ戻す（demote）。
+    async def _restart_generation(
+        self, md: ManufacturingData, background_tasks: BackgroundTasks
+    ) -> None:
+        """行を pending に戻し、参照明細を降格させてバックグラウンド生成を起動する.
+
+        呼び出し側が md に加えた変更（元画像の差し替え等）もここでまとめて永続化する。
+
+        参照する「発注済み」明細は「発注準備中」へ戻す（demote）ことで、未完成の製造データで
+        メーカー発注されるのを防ぐ。生成完了時に generate() が再び「発注済み」へ昇格させる。
+        """
         md.status = MfgDataStatus.PENDING.value
         md.error_message = None
         await self._md_repo.update(md)
-        await self._order_repo.sync_item_status_for_manufacturing_data(md_id, ready=False)
+        await self._order_repo.sync_item_status_for_manufacturing_data(md.id, ready=False)
         await self._commit()
+        background_tasks.add_task(run_generation, md.id)
 
-        background_tasks.add_task(run_generation, md_id)
-        return ManufacturingDataResponse.model_validate(md)
+    @staticmethod
+    def _validate_replacement_layers(
+        uploads: dict[str, UploadFile], stored: list[dict[str, str]]
+    ) -> None:
+        """差し替え対象のレイヤーがこの行に存在するかを検証する.
+
+        レイヤー種別の語彙・重複はエンドポイントのシグネチャ（レイヤーごとの名前付き
+        ファイル項目）が保証するため、ここでは行との突き合わせだけを行う。
+        """
+        if not uploads:
+            raise ValidationError("差し替える元画像を1件以上指定してください")
+
+        stored_layers = {img["layer_type"] for img in stored}
+        # レイヤーの追加・削除はキャッシュキー（導出バリアント）を変えるため許可しない。
+        unknown = sorted(set(uploads) - stored_layers)
+        if unknown:
+            raise ValidationError(
+                f"この製造データに存在しないレイヤー種別です: {unknown} "
+                f"(現在のレイヤー: {sorted(stored_layers)})"
+            )
+
+    async def _read_png_upload(self, layer_type: str, file: UploadFile) -> bytes:
+        """アップロードを読み、サイズ上限と PNG 形式（マジックバイト）を検証する."""
+        max_bytes = self._max_bytes()
+        too_large = (
+            f"元画像のサイズが上限（{max_bytes} bytes）を超えています: {layer_type}"
+        )
+        # multipart を読み終えた時点で size は確定しているため、本文を読む前に弾ける。
+        if file.size is not None and file.size > max_bytes:
+            raise ValidationError(too_large)
+
+        content = await file.read()
+        if len(content) > max_bytes:
+            raise ValidationError(too_large)
+        if not content.startswith(_PNG_SIGNATURE):
+            raise ValidationError(f"元画像は PNG 形式のみ対応しています: {layer_type}")
+        return content
 
     async def list(
         self,

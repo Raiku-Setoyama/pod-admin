@@ -8,9 +8,10 @@ illustrator-vm（Product Manufacturing API）で生成した製造データ（.a
 純関数であり order_id には依存しないため、この単位でのキャッシュ再利用は妥当。
 """
 
+from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -65,8 +66,16 @@ class ManufacturingData(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         String(20), default=MfgDataStatus.PENDING.value, index=True
     )
 
-    # 使用したレイヤーURL群（[{"layer_type": "color", "url": "..."}, ...]）
+    # 使用したレイヤー群。外部受注由来は {"layer_type": "color", "url": "..."}、
+    # 管理画面から差し替えたものは {"layer_type": "color", "file_path": "...", "filename": "..."}。
     source_images: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+
+    # 元画像を管理画面から差し替えた最終時刻（未差し替えは NULL = 外部受注のまま）
+    source_images_replaced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # 差し替えた管理ユーザー（ユーザー削除後も履歴が残るようメールを保持）
+    source_images_replaced_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # illustrator-vm のジョブID
     vm_job_id: Mapped[str | None] = mapped_column(String(100), nullable=True)

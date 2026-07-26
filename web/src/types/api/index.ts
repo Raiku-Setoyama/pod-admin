@@ -24,6 +24,29 @@ export interface MfgDataItemInfo {
   output_filename: string | null;
   file_size: number | null;
   error_message: string | null;
+  // 元画像を管理画面から差し替えた時刻（null = 外部受注のまま）
+  source_images_replaced_at?: string | null;
+}
+
+// 製造データの元画像レイヤー種別
+export type SourceImageLayerType = "color" | "cutline" | "white" | "design";
+
+// 製造データ1レイヤーの元画像（origin = 由来）
+export interface SourceImageLayer {
+  layer_type: SourceImageLayerType;
+  origin: "external" | "uploaded";
+  url: string | null;
+  filename: string | null;
+}
+
+// 製造データ詳細（元画像レイヤー一覧つき）
+export interface ManufacturingDataDetail extends MfgDataItemInfo {
+  product_code: string;
+  product_type: ProductType;
+  size: string | null;
+  variant: string | null;
+  source_images: SourceImageLayer[];
+  source_images_replaced_by: string | null;
 }
 
 export interface OrderItem {
@@ -139,8 +162,10 @@ export interface ManufacturerOrderItem {
   expected_delivery_date: string | null;  // 納品予定日（未設定の旧データは null）
   // 製造データ状態（v2）: null なら製造データ不要（v1）。ready 以外は発注不可。
   manufacturing_status?: ManufacturingDataStatus | null;
-  // 紐づく製造データ ID（v2）。GUI からの再作成に使用。
+  // 紐づく製造データ ID（v2）。GUI からの再作成・元画像差し替えに使用。
   manufacturing_data_id?: string | null;
+  // 元画像を管理画面から差し替えた時刻（null = 外部受注のまま）
+  source_images_replaced_at?: string | null;
 }
 
 export interface ManufacturerOrderItemListResponse {

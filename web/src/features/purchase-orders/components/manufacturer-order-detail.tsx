@@ -398,8 +398,10 @@ export function ManufacturerOrderDetail({
                             itemStatus={item.status}
                             mfgStatus={item.manufacturing_status}
                             manufacturingDataId={item.manufacturing_data_id}
+                            sourceImagesReplacedAt={item.source_images_replaced_at}
                             regeneratingId={regeneratingId}
                             onRegenerate={regenerate}
+                            onReplaced={onStatusUpdate}
                           />
                         </div>
                       </TableCell>

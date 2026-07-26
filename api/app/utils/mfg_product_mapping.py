@@ -19,12 +19,16 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import Literal
 
 # レイヤー種別
 LAYER_COLOR = "color"
 LAYER_CUTLINE = "cutline"
 LAYER_WHITE = "white"
 LAYER_DESIGN = "design"
+
+# source_images で扱うレイヤー種別（受注スキーマ・製造データスキーマ共通の語彙）
+LayerType = Literal["color", "cutline", "white", "design"]
 
 # 入力モード
 INPUT_MODE_SINGLE = "single"
