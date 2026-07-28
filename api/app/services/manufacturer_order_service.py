@@ -159,6 +159,11 @@ class ManufacturerOrderService:
                         else None
                     ),
                     manufacturing_data_id=order_item.manufacturing_data_id,
+                    source_images_replaced_at=(
+                        order_item.manufacturing_data.source_images_replaced_at
+                        if order_item.manufacturing_data
+                        else None
+                    ),
                 )
             )
             total_quantity += order_item.quantity

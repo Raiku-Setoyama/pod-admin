@@ -2,12 +2,12 @@
 
 import datetime as dt
 from datetime import date, datetime
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
 
 from app.models.order import OrderStatus
 from app.models.product import ProductType
+from app.utils.mfg_product_mapping import LayerType
 
 
 # Customer info schema
@@ -62,6 +62,8 @@ class MfgDataItemInfo(BaseModel):
     output_filename: str | None = None
     file_size: int | None = None
     error_message: str | None = None
+    # 元画像を管理画面から差し替えた時刻（None = 外部受注のまま）
+    source_images_replaced_at: datetime | None = None
 
 
 class OrderItemResponse(BaseModel):
@@ -120,7 +122,7 @@ class OrderCreate(BaseModel):
 class SourceImage(BaseModel):
     """製造データ生成の元データ（レイヤーPNGのURL）."""
 
-    layer_type: Literal["color", "cutline", "white", "design"]
+    layer_type: LayerType
     url: str = Field(..., min_length=1, max_length=2048)
 
 

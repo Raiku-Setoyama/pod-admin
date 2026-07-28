@@ -198,7 +198,14 @@ async function executeDownloadRequest(endpoint: string): Promise<Response> {
   return fetch(`${API_BASE_URL}${endpoint}`, { headers });
 }
 
-export async function downloadFile(endpoint: string, filename: string): Promise<void> {
+/**
+ * 認証付きでバイナリを取得する。
+ * `<img src>` では Authorization ヘッダを送れないため、画像プレビューにも使う。
+ */
+export async function fetchBlob(
+  endpoint: string,
+  errorMessage = "Failed to fetch file"
+): Promise<Blob> {
   let response = await executeDownloadRequest(endpoint);
 
   // 401エラーの場合、トークンリフレッシュを試みる
@@ -217,10 +224,14 @@ export async function downloadFile(endpoint: string, filename: string): Promise<
   }
 
   if (!response.ok) {
-    throw new Error("Download failed");
+    throw new Error(errorMessage);
   }
 
-  const blob = await response.blob();
+  return response.blob();
+}
+
+export async function downloadFile(endpoint: string, filename: string): Promise<void> {
+  const blob = await fetchBlob(endpoint, "Download failed");
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

@@ -176,8 +176,12 @@ export function OrderDetail({ order, onRefresh }: OrderDetailProps) {
                           mfgStatus={item.manufacturing_data?.status}
                           manufacturingDataId={item.manufacturing_data?.id}
                           errorMessage={item.manufacturing_data?.error_message}
+                          sourceImagesReplacedAt={
+                            item.manufacturing_data?.source_images_replaced_at
+                          }
                           regeneratingId={regeneratingId}
                           onRegenerate={regenerate}
+                          onReplaced={onRefresh}
                         />
                       </div>
                     </TableCell>
