@@ -4,15 +4,18 @@ export type OrderStatus =
   | "ordered"
   | "manufacturing"
   | "delivered"
-  | "shipped";
+  | "shipped"
+  | "cancelled";
 
 // OrderItemのステータス（製品単位）
 // preparing_order = 発注準備中（製造データ未準備）。ordered = 発注済み（準備完了）。
+// cancelled = キャンセル済み（注文のキャンセルが波及したもの）。
 export type OrderItemStatus =
   | "preparing_order"
   | "ordered"
   | "manufacturing"
-  | "delivered";
+  | "delivered"
+  | "cancelled";
 
 // 製造データ（v2）のステータス
 export type ManufacturingDataStatus = "pending" | "generating" | "ready" | "failed";

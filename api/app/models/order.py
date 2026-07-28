@@ -34,12 +34,25 @@ class OrderItemStatus(str, Enum):
 
     発注準備中 → 発注済み → 製造中 → 納入済み の統合ライフサイクル。
     発注準備中は製造データ（v2）が ready でない明細のみが取る（v1 は発注済みから開始）。
+    キャンセル済みはライフサイクル外で、注文がキャンセルされた時に全明細が取る。
     """
 
     PREPARING_ORDER = "preparing_order"  # 発注準備中（製造データ未準備）
     ORDERED = "ordered"  # 発注済み（製造データ準備完了 / v1は初期ステータス）
     MANUFACTURING = "manufacturing"  # 製造中
     DELIVERED = "delivered"  # 納入済み
+    CANCELLED = "cancelled"  # キャンセル済み（Order.cancelled から波及）
+
+
+def item_status_for_manufacturing_ready(is_manufacturing_ready: bool) -> str:
+    """製造データの ready 可否から、発注前ライフサイクル上の明細ステータスを返す.
+
+    ready（= 製造データ不要な v1 明細を含む）なら「発注済み」、未 ready なら「発注準備中」。
+    製造データの紐付け時（intake）と注文のキャンセル解除時で共有する。
+    """
+    if is_manufacturing_ready:
+        return OrderItemStatus.ORDERED.value
+    return OrderItemStatus.PREPARING_ORDER.value
 
 
 def is_order_blocked_status(status: str, is_manufacturing_ready: bool) -> bool:

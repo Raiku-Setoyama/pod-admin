@@ -6,7 +6,13 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.order import Order, OrderItem, OrderItemStatus, OrderStatus
+from app.models.order import (
+    Order,
+    OrderItem,
+    OrderItemStatus,
+    OrderStatus,
+    item_status_for_manufacturing_ready,
+)
 from app.models.product import ProductType
 
 
@@ -541,6 +547,7 @@ class OrderRepository:
 
         導出ルール（優先順位）:
         - "shipped": Shipmentが存在し、shipped状態（この関数では判定しない、サービス層で処理）
+        - "cancelled": 全OrderItemが "cancelled"
         - "delivered": 全OrderItemが "delivered"
         - "manufacturing": 1つ以上のOrderItemが "manufacturing"
         - "preparing_order": 1つ以上のOrderItemが "preparing_order"（製造データ未準備）
@@ -556,6 +563,10 @@ class OrderRepository:
             return OrderStatus.ORDERED.value
 
         statuses = [item.status for item in order.items]
+
+        # 全てcancelledなら"cancelled"（キャンセルは注文単位なので全明細が揃う）
+        if all(s == OrderItemStatus.CANCELLED.value for s in statuses):
+            return OrderStatus.CANCELLED.value
 
         # 全てdeliveredなら"delivered"
         if all(s == OrderItemStatus.DELIVERED.value for s in statuses):
@@ -637,6 +648,28 @@ class OrderRepository:
             await self.update_order_derived_status(order_id)
 
         return affected_order_ids
+
+    def apply_cancellation_to_items(self, order: Order, *, cancelled: bool) -> None:
+        """注文のキャンセル状態を、配下の明細の統合ステータスへ波及させる.
+
+        derive_order_status（明細→注文）の逆向きにあたる。メーカー画面・メーカーポータルは
+        明細ステータス（OrderItem.status）を表示・集計するため、注文だけをキャンセルすると
+        明細が「発注済み」のまま残ってしまう。
+
+        cancelled=True: 全明細を「キャンセル済み」にする。
+        cancelled=False: キャンセルを解除した注文の明細をライフサイクルに戻す。
+            製造データが未 ready の明細は「発注準備中」、それ以外は「発注済み」。
+
+        ロード済みの Order を書き換えるだけなので、呼び出し元が続けて行う
+        update() / update_status() の flush で明細の UPDATE も一緒に発行される。
+        """
+        for item in order.items:
+            if cancelled:
+                item.status = OrderItemStatus.CANCELLED.value
+            elif item.status == OrderItemStatus.CANCELLED.value:
+                item.status = item_status_for_manufacturing_ready(
+                    item.is_manufacturing_ready
+                )
 
     async def has_manufacturing_or_delivered_items(
         self, manufacturing_data_id: str

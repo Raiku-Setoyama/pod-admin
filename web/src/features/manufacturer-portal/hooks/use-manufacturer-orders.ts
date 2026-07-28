@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import useSWR from "swr";
 import { apiClient } from "@/lib/api/client";
+import type { OrderItemStatus } from "@/types/api";
 
 // 発注アイテム（受注明細）
 export interface ManufacturerOrderItem {
@@ -20,7 +21,7 @@ export interface ManufacturerOrderItem {
   thumbnail_image_url: string | null;
   ordered_at: string;
   customer_name: string;
-  status: string;
+  status: OrderItemStatus;
   lead_time_days: number;
   expected_delivery_date: string;
 }

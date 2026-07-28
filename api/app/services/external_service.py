@@ -352,6 +352,9 @@ class ExternalService:
         if order.status != OrderStatus.ORDERED.value:
             raise ConflictError("発注中の注文のみ取り消せます")
 
+        # 明細も「キャンセル済み」にする（メーカー画面/ポータルは明細ステータスを表示）。
+        # 注文と同じ flush で永続化されるよう update_status の前に反映する。
+        self._order_repo.apply_cancellation_to_items(order, cancelled=True)
         updated_order = await self._order_repo.update_status(
             order.id, OrderStatus.CANCELLED
         )

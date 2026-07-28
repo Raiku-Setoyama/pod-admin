@@ -77,12 +77,12 @@ const productTypeLabels: Record<string, string> = {
 };
 
 /**
- * 発注不可（未 ready）の明細か判定する。
- * 発注準備中（製造データ未準備）はメーカー発注できない。統合前データの防御として
- * 発注済み（ordered）かつ製造データが ready でない場合も発注不可とする。
+ * 発注不可の明細か判定する。
+ * キャンセル済みは製造対象外、発注準備中（製造データ未準備）はメーカー発注できない。
+ * 統合前データの防御として発注済み（ordered）かつ製造データが ready でない場合も発注不可とする。
  */
 function isOrderBlocked(item: ManufacturerOrderItem): boolean {
-  if (item.status === "preparing_order") return true;
+  if (item.status === "cancelled" || item.status === "preparing_order") return true;
   return (
     item.status === "ordered" &&
     !!item.manufacturing_status &&

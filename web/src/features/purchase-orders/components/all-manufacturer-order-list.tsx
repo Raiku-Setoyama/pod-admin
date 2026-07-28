@@ -11,6 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2 } from "lucide-react";
+import { StatusBadge } from "@/components/common/status-badge";
 import type { AllManufacturerOrderItemListResponse } from "@/types/api";
 
 interface AllManufacturerOrderListProps {
@@ -26,20 +27,6 @@ const productTypeLabels: Record<string, string> = {
   sticker: "ステッカー",
   tote_bag: "トートバッグ",
   tshirt: "Tシャツ",
-};
-
-const statusLabels: Record<string, string> = {
-  ordered: "発注済み",
-  manufacturing: "製造中",
-  delivered: "納入済",
-  shipped: "配送完了",
-};
-
-const statusVariants: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
-  ordered: "default",
-  manufacturing: "secondary",
-  delivered: "outline",
-  shipped: "outline",
 };
 
 function formatDate(dateString: string): string {
@@ -167,9 +154,7 @@ export function AllManufacturerOrderList({
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <Badge variant={statusVariants[item.status] || "default"}>
-                    {statusLabels[item.status] || item.status}
-                  </Badge>
+                  <StatusBadge status={item.status} />
                 </TableCell>
                 <TableCell className="text-center">
                   {item.quantity}

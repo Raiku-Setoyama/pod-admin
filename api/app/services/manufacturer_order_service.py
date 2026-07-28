@@ -405,6 +405,9 @@ class ManufacturerOrderService:
         if order_item_ids:
             rows = [row for row in rows if row[0].id in order_item_ids]
 
+        # キャンセル済みの明細は製造対象外のため発注資料に含めない。
+        rows = [row for row in rows if row[5] != OrderItemStatus.CANCELLED.value]
+
         # 発注ゲート（未ready保留）: 製造データが必要な ORDERED 明細のうち ready でない
         # ものは発注資料に含めず ORDERED のまま保留する（メーカー発注不可）。
         # これは「ZIPの中身」を絞る責務。ORDERED→MANUFACTURING の状態遷移自体は

@@ -12,14 +12,9 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { DateRangePicker } from "@/components/common/date-range-picker";
-import type { OrderStatus } from "@/types/api";
+import { getManufacturerOrderFilterStatusOptions } from "@/constants/status";
 
-const statusOptions: { value: OrderStatus | "all"; label: string }[] = [
-  { value: "all", label: "全てのステータス" },
-  { value: "ordered", label: "発注済み" },
-  { value: "manufacturing", label: "製造中" },
-  { value: "delivered", label: "納入済" },
-];
+const statusOptions = getManufacturerOrderFilterStatusOptions();
 
 interface ManufacturerOption {
   id: string;

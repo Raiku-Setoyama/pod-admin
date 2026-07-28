@@ -22,7 +22,6 @@ import { InvoiceDialog } from "@/features/invoice";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Loader2, Package, Download } from "lucide-react";
 import type { OrderStatus } from "@/types/api";
-import type { StatusType } from "@/constants/status";
 
 const productTypeLabels: Record<string, string> = {
   acrylic_keychain: "アクリルキーホルダー",
@@ -251,7 +250,7 @@ export default function ManufacturerDashboardPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <StatusBadge status={item.status as StatusType} />
+                        <StatusBadge status={item.status} />
                       </TableCell>
                       <TableCell className="text-center">{item.quantity}</TableCell>
                       <TableCell>{formatDateShort(item.expected_delivery_date)}</TableCell>

@@ -301,7 +301,7 @@ POST /api/v1/orders
 | design_image_url | string \| null | デザイン画像URL |
 | thumbnail_image_url | string \| null | サムネイル画像URL |
 | expected_delivery_date | string(date) \| null | メーカーからの納品予定日（`YYYY-MM-DD`。受注日＋商品リードタイムを営業日計算） |
-| status | string | 明細単位のステータス（`preparing_order` / `ordered` / `manufacturing` / `delivered`。v1は `ordered` から開始） |
+| status | string | 明細単位のステータス（`preparing_order` / `ordered` / `manufacturing` / `delivered` / `cancelled`。v1は `ordered` から開始。注文が取り消されると全明細が `cancelled` になる） |
 | product_code | string \| null | v2用の商品識別子（v1は `null`） |
 | manufacturing_data | object \| null | v2用の製造データ状態（v1は `null`。下記参照） |
 | created_at | datetime | 作成日時 |
@@ -464,6 +464,7 @@ curl -X GET "https://api.example.com/api/v1/external/orders/0000001/status" \
 ## 注文取り消しAPI
 
 指定した注文番号の注文を取り消します。`ordered`（発注済み）ステータスの注文のみ取り消し可能です。
+取り消すと配下の受注明細のステータスも全て `cancelled` になり、メーカー画面・メーカーポータルでも「キャンセル済み」として表示されます（発注資料の対象からも外れます）。
 
 ```
 POST /api/v1/external/orders/{order_number}/cancel
