@@ -1,5 +1,6 @@
 import type {
   ManufacturingDataStatus,
+  OrderItemStatus,
   OrderStatus,
   PendingOrderStatus,
   ShipmentStatus,
@@ -18,6 +19,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   manufacturing: "製造中",
   delivered: "納品済み",
   shipped: "発送完了",
+  cancelled: "キャンセル済み",
 };
 
 /**
@@ -29,6 +31,7 @@ export const ORDER_STATUS_COLORS: Record<OrderStatus, string> = {
   manufacturing: "bg-blue-100 text-blue-700 border-blue-300",
   delivered: "bg-purple-100 text-purple-700 border-purple-300",
   shipped: "bg-emerald-100 text-emerald-700 border-emerald-300",
+  cancelled: "bg-rose-100 text-rose-700 border-rose-300",
 };
 
 // ========================================
@@ -89,7 +92,13 @@ export function isManufacturingDataActive(
 // Combined Status (StatusBadge 用)
 // ========================================
 
-export type StatusType = OrderStatus | ShipmentStatus | PendingOrderStatus;
+// OrderItemStatus は OrderStatus の部分集合だが、明細を StatusBadge に渡す画面
+// （メーカー発注詳細・メーカーポータル）のために依存関係を明示しておく。
+export type StatusType =
+  | OrderStatus
+  | OrderItemStatus
+  | ShipmentStatus
+  | PendingOrderStatus;
 
 /**
  * 全ステータスのラベル名
@@ -212,7 +221,9 @@ export function getOrderFilterStatusOptions(): StatusOption<OrderStatus | Shipme
 }
 
 /**
- * 発注詳細フィルター用（delivered を除いた OrderStatus）
+ * 発注詳細フィルター用（shipped を除いた OrderStatus）。
+ * メーカー別発注詳細（明細ステータスで絞り込み）と全メーカー横断一覧
+ * （注文ステータスで絞り込み）の両方で使う。値は両者で共通。
  */
 export function getManufacturerOrderFilterStatusOptions(): StatusOption<OrderStatus>[] {
   return [
@@ -221,6 +232,7 @@ export function getManufacturerOrderFilterStatusOptions(): StatusOption<OrderSta
     { value: "ordered", label: ORDER_STATUS_LABELS.ordered },
     { value: "manufacturing", label: ORDER_STATUS_LABELS.manufacturing },
     { value: "delivered", label: ORDER_STATUS_LABELS.delivered },
+    { value: "cancelled", label: ORDER_STATUS_LABELS.cancelled },
   ];
 }
 

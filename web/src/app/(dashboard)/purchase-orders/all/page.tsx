@@ -30,7 +30,10 @@ import { AllManufacturerOrderFilters } from "@/features/purchase-orders/componen
 import { useAllManufacturerOrderItems } from "@/features/purchase-orders/hooks/use-manufacturer-orders";
 import { useManufacturers } from "@/features/manufacturers/hooks/use-manufacturers";
 import { apiClient } from "@/lib/api/client";
-import { getManufacturerOrderStatusUpdateOptions } from "@/constants/status";
+import {
+  getManufacturerOrderStatusUpdateOptions,
+  getOrderStatusLabel,
+} from "@/constants/status";
 import { formatProductDetailForCsv } from "@/features/purchase-orders/utils/format-product-detail";
 import type { AllManufacturerOrderItem } from "@/types/api";
 
@@ -50,13 +53,6 @@ function useDebounce<T>(value: T, delay: number): T {
 
   return debouncedValue;
 }
-
-const statusLabels: Record<string, string> = {
-  ordered: "発注済み",
-  manufacturing: "製造中",
-  delivered: "納入済",
-  shipped: "配送完了",
-};
 
 function formatDateForCSV(dateString: string | null): string {
   if (!dateString) return "";
@@ -189,7 +185,7 @@ export default function AllPurchaseOrdersPage() {
       item.uid || "",
       item.product_name,
       formatProductDetailForCsv(item),
-      statusLabels[item.status] || item.status,
+      getOrderStatusLabel(item.status),
       item.quantity.toString(),
       item.price.toString(),
       (item.price * item.quantity).toString(),

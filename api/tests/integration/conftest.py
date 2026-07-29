@@ -145,6 +145,7 @@ async def test_order_source(db_session: AsyncSession):
     """テスト用の注文ソース"""
     source_id = str(uuid4())
     source_code = f"TEST{source_id[:8].upper()}"
+    api_key = f"test-api-key-{source_id}"
 
     await db_session.execute(
         text("""
@@ -155,7 +156,7 @@ async def test_order_source(db_session: AsyncSession):
             "id": source_id,
             "code": source_code,
             "name": "Test Source",
-            "api_key": f"test-api-key-{source_id}",
+            "api_key": api_key,
             "phone": "090-1234-5678",
             "postal_code": "100-0001",
             "address_prefecture": "東京都",
@@ -165,7 +166,7 @@ async def test_order_source(db_session: AsyncSession):
     )
     await db_session.commit()
 
-    yield {"id": source_id}
+    yield {"id": source_id, "api_key": api_key}
 
     # クリーンアップはしない（次のテストで新しいIDが使われるため問題ない）
 

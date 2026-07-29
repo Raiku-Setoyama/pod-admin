@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_session_maker
 from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
-from app.models.order import OrderItem, OrderItemStatus
+from app.models.order import OrderItem, item_status_for_manufacturing_ready
 from app.repositories.manufacturing_data_repository import ManufacturingDataRepository
 from app.repositories.order_repository import OrderRepository
 from app.schemas.manufacturing_data import (
@@ -149,10 +149,8 @@ class ManufacturingDataService:
             item.manufacturing_data_id = md.id
             # 統合ステータス: 製造データが既に ready（キャッシュ再利用）なら「発注済み」、
             # それ以外（生成待ち/生成中/失敗）は「発注準備中」で保持する。
-            item.status = (
-                OrderItemStatus.ORDERED.value
-                if md.status == MfgDataStatus.READY.value
-                else OrderItemStatus.PREPARING_ORDER.value
+            item.status = item_status_for_manufacturing_ready(
+                md.status == MfgDataStatus.READY.value
             )
             if needs_generation and md.id not in to_generate:
                 to_generate.append(md.id)

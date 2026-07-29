@@ -358,6 +358,20 @@ class OrderService:
             return 0
         return sum(1 for item in order.items if item.is_order_blocked)
 
+    def _sync_cancellation_to_items(
+        self, order: Order, current_status: OrderStatus, new_status: OrderStatus
+    ) -> None:
+        """キャンセルの開始/解除を配下の明細へ波及させる（それ以外の遷移では何もしない）.
+
+        update_status と bulk_update_status で共有する。永続化は直後の
+        OrderRepository.update() の flush に任せる。
+        """
+        if OrderStatus.CANCELLED not in (current_status, new_status):
+            return
+        self._order_repo.apply_cancellation_to_items(
+            order, cancelled=new_status == OrderStatus.CANCELLED
+        )
+
     async def update_status(self, order_id: str, status: OrderStatus) -> OrderResponse:
         """Update order status.
 
@@ -406,6 +420,7 @@ class OrderService:
                 await self._shipment_repo.delete_by_order_id(order_id)
 
         order.status = status.value
+        self._sync_cancellation_to_items(order, current_status, status)
         order = await self._order_repo.update(order)
 
         # delivered になったら Shipment を自動作成
@@ -740,7 +755,8 @@ class OrderService:
 
             # Update order status
             order.status = status.value
-            await self._order_repo.update(order)
+            self._sync_cancellation_to_items(order, current_status, status)
+            order = await self._order_repo.update(order)
 
             # Create shipment if transitioning to delivered
             if status == OrderStatus.DELIVERED:
