@@ -48,10 +48,11 @@ Slack で流れた話も、合意した要件も、見送ったものも、す�
 | [REQ-0033](REQ-0033.md) | notification | 外部受注が入ったら社内担当者へ受注通知メールを自動送信する | must | done | v1.0 |
 | [REQ-0034](REQ-0034.md) | notification | 通知ONの製造委託先へ新規発注分を日次ダイジェストメールで通知する | must | done | v1.0 |
 | [REQ-0035](REQ-0035.md) | common | 発送準備日数・注文〆切・通知設定と自社休日、メーカー別通知宛先を管理できる | must | done | v1.0 |
-| [REQ-0036](REQ-0036.md) | external-api | 受注元を管理画面から登録・APIキー発行・有効無効切替できる | undecided | not-started | |
-| [REQ-0037](REQ-0037.md) | auth | メーカーポータルでトークンが自動更新され再ログインが不要になる | undecided | not-started | |
+| [REQ-0036](REQ-0036.md) | external-api | 受注元を管理画面から登録・APIキー発行・有効無効切替できる | future | not-started | |
+| [REQ-0037](REQ-0037.md) | auth | メーカーポータルでトークンが自動更新され再ログインが不要になる | future | not-started | |
 | [REQ-0038](REQ-0038.md) | order | 受注・発注のステータス変更履歴を記録し追跡できる | undecided | not-started | |
 | [REQ-0039](REQ-0039.md) | chat | チャットの未読/既読管理と新着通知ができる | undecided | not-started | |
+| [REQ-0040](REQ-0040.md) | auth | 本番のデバッグ資産（debug-token・トークンログ）を除去する | undecided | not-started | |
 
 ## priority — 採否・約束の度合い
 
