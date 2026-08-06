@@ -6,6 +6,7 @@ status: not-started      # not-started | in-progress | done | on-hold  ← 実�
 area: unassigned         # docs/00-charter/areas.md のキーから 1 つ。空欄は CI エラー
 category: functional     # functional | non-functional | constraint
 source: []               # この要件を生んだ／変えた議事録 ID をすべて列挙 例: [MTG-2026-07-28]
+                         # 打ち合わせ由来でない要件は空でよい。出典は下の「経緯」に書く
 requester: ""            # 誰の要求か（例: 営業部 田中様）
 related: []              # 関連する REQ / ADR
 depends_on: []           # 先に done である必要がある REQ-ID
@@ -84,6 +85,9 @@ updated: 2026-01-01
 
 ## 経緯
 
-| 日付 | 議事録 | できごと |
+<!-- 出典は議事録 ID に限らない。打ち合わせ由来でないものは、どこから来た話かを一行で書く -->
+<!-- 例: Slack #dev のスレッド / 2026-01-01 の口頭依頼 / 運用中に発見 -->
+
+| 日付 | 出典 | できごと |
 |---|---|---|
 | 2026-01-01 | MTG-2026-01-01 | 起票 |
