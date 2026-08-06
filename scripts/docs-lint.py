@@ -219,7 +219,8 @@ def check_areas(index: dict, areas: dict) -> None:
     if not project_areas:
         warnings.append(
             f"{AREAS_FILE}: 予約キー（{', '.join(sorted(RESERVED_AREAS))}）しか定義されていません。"
-            "初回の /meeting-intake が打ち合わせの内容から領域を提案します"
+            "初回の /meeting-intake または /requirements-intake が、"
+            "起票の材料から領域を提案します"
         )
 
     for entry in index.values():

@@ -76,7 +76,16 @@ grep -rlE "^area:[[:space:]]*[\"']?(<要件の area>|common)\b" docs/01-requirem
 **(b) 顧客・PM の判断が要る場合** — `_templates/adr.md` から `docs/02-decisions/ADR-XXXX.md` を
 `status: proposed` で起票し、**選択肢と弊社推奨を用意する**。`area` は起点の要件から引き継ぐ。
 `REQ-XXXX.md` の本文に `[NEEDS-DECISION: ADR-XXXX]` を置く。
-これを `docs/` の PR として出して止まる。`/meeting-agenda` が自動で次回議題に載せる。
+これを `docs/` の PR として出して止まる。
+
+起票した論点は、**次のどちらかの経路で必ず回収される。**
+
+- 定例の打ち合わせがある → `/meeting-agenda` が自動で次回議題に載せる
+- **定例を持たない** → **`/requirements-refine` が `proposed` の ADR を
+  PR の「判断していただきたいこと（論点）」に出す。** 打ち合わせは要らない
+
+**止まったことをユーザーに報告するときは、どちらの経路で回収されるかを併せて伝える。**
+「止まりました」だけで終えると、判断待ちが誰にも拾われないまま放置される。
 
 推測で埋めて進めない。判断は人間の仕事である。
 
