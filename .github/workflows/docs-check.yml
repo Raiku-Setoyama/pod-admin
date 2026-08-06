@@ -1,0 +1,35 @@
+name: docs-check
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "scripts/docs-lint.py"
+      - "scripts/_docmodel.py"   # docs-lint.py が import する
+      - "_templates/**"
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: ドキュメント整合性チェック
+        run: python3 scripts/docs-lint.py
+
+      - name: 未決事項をジョブサマリーに出す
+        if: always()
+        run: |
+          echo "## 未決事項 [NEEDS-DECISION]" >> $GITHUB_STEP_SUMMARY
+          if grep -rn "NEEDS-DECISION" docs/ >> $GITHUB_STEP_SUMMARY 2>/dev/null; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "次回アジェンダに載せてください。" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "なし" >> $GITHUB_STEP_SUMMARY
+          fi

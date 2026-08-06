@@ -78,3 +78,6 @@ Thumbs.db
 
 # Docker
 *.pid
+
+# Quality gate（scripts/quality-gate.sh がローカルに生成する。コミットしない）
+.quality-gate/

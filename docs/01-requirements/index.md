@@ -53,6 +53,7 @@ Slack で流れた話も、合意した要件も、見送ったものも、す�
 | [REQ-0038](REQ-0038.md) | order | 受注・発注のステータス変更履歴を記録し追跡できる | undecided | not-started | |
 | [REQ-0039](REQ-0039.md) | chat | チャットの未読/既読管理と新着通知ができる | undecided | not-started | |
 | [REQ-0040](REQ-0040.md) | auth | 本番のデバッグ資産（debug-token・トークンログ）を除去する | undecided | not-started | |
+| [REQ-0041](REQ-0041.md) | common | 静的解析（ruff/eslint/mypy/tsc）を是正し品質ゲート・CIの必須チェックに組み込む | undecided | not-started | |
 
 ## priority — 採否・約束の度合い
 

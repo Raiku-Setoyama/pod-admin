@@ -1,0 +1,120 @@
+name: pr-quality-check
+
+# 実装 PR に品質検証の記録があることを確認する。
+# フックはローカルの防御なので、CI 側でも同じことを確認して二重化する。
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, ready_for_review]
+
+jobs:
+  verify-quality-section:
+    runs-on: ubuntu-latest
+    # 日本語リテラルに対する grep がバイト単位に落ちないよう固定する。
+    # このテンプレートは案件ごとに複製されるので、規律ではなく環境で防ぐ。
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # テンプレート本体（および contribute 目的のフォーク）は開発プロジェクトではないため、
+      # 品質検証セクション・トレーサビリティの強制を外す。base repo 名で判定する。
+      # 「Use this template」で作った案件は別名になるので、通常どおり強制される。
+      - name: テンプレート本体か判定
+        id: template
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          case "$REPO" in
+            */ai-native-project-template) echo "is_template=true" >> $GITHUB_OUTPUT ;;
+            *) echo "is_template=false" >> $GITHUB_OUTPUT ;;
+          esac
+
+      - name: ドキュメントのみの PR か判定
+        if: steps.template.outputs.is_template == 'false'
+        id: scope
+        run: |
+          base="origin/${{ github.event.pull_request.base.ref }}"
+          changed="$(git diff --name-only "$base"...HEAD)"
+          echo "$changed"
+          if echo "$changed" | grep -qv '^\(docs/\|_templates/\)'; then
+            echo "docs_only=false" >> $GITHUB_OUTPUT
+          else
+            echo "docs_only=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 品質検証セクションを確認
+        if: steps.template.outputs.is_template == 'false' && steps.scope.outputs.docs_only == 'false'
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          fail=0
+          echo "$BODY" | grep -q '\- \[x\] 静的チェック: `scripts/quality-gate.sh` 通過' || {
+            echo "::error::PR 本文に静的チェック通過の記載がありません"; fail=1; }
+          echo "$BODY" | grep -q '\- \[x\] `/simplify max` 実行済み' || {
+            echo "::error::PR 本文に /simplify max 実行済みの記載がありません"; fail=1; }
+          echo "$BODY" | grep -q '\- \[x\] 静的チェック再実行: 通過' || {
+            echo "::error::PR 本文に静的チェック再実行の記載がありません"; fail=1; }
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::/quality-gate を実行し、PR 本文の品質検証セクションを埋めてください"
+            exit 1
+          fi
+          echo "品質検証の記載を確認しました"
+
+      # 作業 ID は REQ-XXXX。Issue は使わないので Refs: が唯一の追跡経路になる。
+      # AGENTS.md「全工程を通さなくてよい変更」に当たるものだけ ID を持たない。
+      # 理由を書かせて、妥当性の判断はレビュアーに残す。
+      - name: トレーサビリティを確認
+        if: steps.template.outputs.is_template == 'false'
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+          DOCS_ONLY: ${{ steps.scope.outputs.docs_only }}
+        run: |
+          refs="$(printf '%s' "$BODY" | tr -d '\r' | grep -m1 -E '^[[:space:]]*Refs:' || true)"
+          if [ -z "$refs" ]; then
+            echo "::error::PR 本文に Refs: の行がありません"
+            exit 1
+          fi
+
+          # 抜け道を使えるのは ID を 1 つも持たない PR だけ。先に ID の有無で分岐しないと、
+          # 説明文にたまたま「なし（」を含む PR が下の BL 件数検査を素通りする。
+          # 判定は case のリテラル一致で行う。否定文字クラス [^）] は
+          # UTF-8 の「ー」「変」等が全角括弧とバイトを共有するため使えない。
+          if ! printf '%s' "$refs" | grep -qE '(REQ|ADR|MTG)-'; then
+            case "$refs" in
+              *'なし（）'*|*'なし（　）'*)
+                echo "::error::Refs: なし（理由） の理由が空です"
+                exit 1 ;;
+              *'なし（'*'）'*)
+                echo "ID なしを許可しました: $refs"
+                exit 0 ;;
+            esac
+            echo "::error::Refs: には REQ / ADR / MTG のいずれかの ID を書いてください"
+            echo "::error::全工程を通さない変更の場合は Refs: なし（理由） と書いてください"
+            echo "::error::AGENTS.md「全工程を通さなくてよい変更」を参照してください"
+            exit 1
+          fi
+
+          # 1 つの PR が実装してよい要件は 1 件まで。Issue 廃止で Closes # が担っていた
+          # 対応付けを、ここで機械的に保証する。
+          # 逆向き（1 要件を複数 PR に分ける）は許す。実装の都合による分割は正当であり、
+          # 同じ REQ-XXXX を参照する PR が複数あってよい（AGENTS.md「作業の単位」）。
+          if [ "$DOCS_ONLY" = "false" ]; then
+            # run: は bash -eo pipefail で動く。無マッチの grep が 1 を返すと
+            # pipefail + set -e でこの行ごとステップが落ち、下のエラー文が出ない。
+            count="$(printf '%s' "$refs" | grep -oE 'REQ-[0-9]{4}' | sort -u | wc -l | tr -d ' ')" || true
+            if [ "$count" -eq 0 ]; then
+              echo "::error::実装 PR には Refs: に REQ-XXXX を含めてください（作業 ID は要件です）"
+              exit 1
+            fi
+            if [ "$count" -gt 1 ]; then
+              echo "::error::この PR が $count 件の要件を実装しています。1 つの PR で実装してよい要件は 1 件までです"
+              echo "::error::実装が大きいだけなら PR を分けてください（要件は 1 つのままでよい）"
+              echo "::error::実体が複数の要件なら /requirements-refine で要件そのものを分けてください"
+              exit 1
+            fi
+          fi
+          echo "トレーサビリティの記載を確認しました"
