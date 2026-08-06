@@ -3,6 +3,7 @@ id: AGENDA-2026-01-01
 title: 定例打ち合わせ アジェンダ
 date: 2026-01-01
 duration: 60min
+status: draft            # docs/03-meetings/ 配下は MTG 種別として検査されるため status 必須（draft | confirmed）
 updated: 2026-01-01
 ---
 
