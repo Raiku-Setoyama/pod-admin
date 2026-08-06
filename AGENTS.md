@@ -344,7 +344,7 @@ cd api && uv run ruff check .        # backend（line-length 100, py312）
 cd web && npm run lint               # frontend（eslint 9）
 ```
 
-`scripts/quality-gate.sh` の `PROJECT_CHECKS` にも同じコマンドを登録すること（段階4で導入する）。
+`scripts/quality-gate.sh` の `PROJECT_CHECKS` は現状 docs-lint のみ有効。上記のコード用チェック（ruff / mypy / eslint / tsc）は 2026-08-06 時点で大量に失敗するため導入予定（REQ-0041）。緑化したものから順に有効化する。
 
 ### このプロジェクト特有の注意点
 
