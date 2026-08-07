@@ -13,6 +13,7 @@ AC-005: Composite ID format: {shipment_item_id}_{order_item_id}
 """
 
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -24,25 +25,25 @@ from app.services.shipment_service import ShipmentService
 
 
 @pytest.fixture
-def mock_shipment_repo():
+def mock_shipment_repo() -> Any:
     """Mock shipment repository."""
     return AsyncMock()
 
 
 @pytest.fixture
-def mock_order_repo():
+def mock_order_repo() -> Any:
     """Mock order repository."""
     return AsyncMock()
 
 
 @pytest.fixture
-def mock_file_storage():
+def mock_file_storage() -> Any:
     """Mock file storage."""
     return AsyncMock()
 
 
 @pytest.fixture
-def shipment_service(mock_shipment_repo, mock_order_repo, mock_file_storage):
+def shipment_service(mock_shipment_repo: Any, mock_order_repo: Any, mock_file_storage: Any) -> Any:
     """Create ShipmentService with mocked dependencies."""
     return ShipmentService(
         shipment_repo=mock_shipment_repo,
@@ -144,7 +145,7 @@ class TestShipmentDetailProductView:
     # AC-001: ShipmentItemResponse has quantity field
     # ===========================================
 
-    def test_ac001_shipment_item_response_has_quantity_field(self):
+    def test_ac001_shipment_item_response_has_quantity_field(self) -> None:
         """AC-001: ShipmentItemResponse に quantity フィールドが含まれる.
 
         Given: ShipmentItemResponse スキーマが定義されている
@@ -164,7 +165,7 @@ class TestShipmentDetailProductView:
         # Assert
         assert response_item.quantity == 5
 
-    def test_ac001_quantity_field_is_optional(self):
+    def test_ac001_quantity_field_is_optional(self) -> None:
         """AC-001: quantity フィールドは None を許容する.
 
         Given: ShipmentItemResponse スキーマが定義されている
@@ -182,7 +183,7 @@ class TestShipmentDetailProductView:
 
         assert response_item.quantity is None
 
-    def test_ac001_quantity_field_defaults_to_none(self):
+    def test_ac001_quantity_field_defaults_to_none(self) -> None:
         """AC-001: quantity フィールドのデフォルト値は None.
 
         Given: ShipmentItemResponse スキーマが定義されている
@@ -202,7 +203,7 @@ class TestShipmentDetailProductView:
     # AC-001 (supplement): ShipmentItemResponse has thumbnail_image_url field
     # ===========================================
 
-    def test_ac001_shipment_item_response_has_thumbnail_image_url_field(self):
+    def test_ac001_shipment_item_response_has_thumbnail_image_url_field(self) -> None:
         """ShipmentItemResponse に thumbnail_image_url フィールドが含まれる.
 
         Given: ShipmentItemResponse スキーマが定義されている
@@ -220,7 +221,7 @@ class TestShipmentDetailProductView:
 
         assert response_item.thumbnail_image_url == "https://example.com/thumb.jpg"
 
-    def test_ac001_thumbnail_image_url_defaults_to_none(self):
+    def test_ac001_thumbnail_image_url_defaults_to_none(self) -> None:
         """thumbnail_image_url フィールドのデフォルト値は None."""
         response_item = ShipmentItemResponse(
             id="item-001",
@@ -235,7 +236,7 @@ class TestShipmentDetailProductView:
     # AC-002: Single OrderItem -> 1 row with quantity and thumbnail_image_url
     # ===========================================
 
-    def test_ac002_single_order_item_has_quantity_and_thumbnail(self, shipment_service):
+    def test_ac002_single_order_item_has_quantity_and_thumbnail(self, shipment_service: Any) -> None:
         """AC-002: OrderItem が1つの注文 -> 1行で quantity, thumbnail_image_url が含まれる.
 
         Given: 1つの OrderItem (quantity=2, thumbnail_image_url="https://example.com/a.jpg")
@@ -272,7 +273,7 @@ class TestShipmentDetailProductView:
     # AC-003: Multiple OrderItems -> expanded into N rows
     # ===========================================
 
-    def test_ac003_multiple_order_items_expanded(self, shipment_service):
+    def test_ac003_multiple_order_items_expanded(self, shipment_service: Any) -> None:
         """AC-003: OrderItem が複数の注文 -> OrderItem 数分の行に展開される.
 
         Given: 1つの注文に 3つの OrderItem
@@ -333,7 +334,7 @@ class TestShipmentDetailProductView:
     # AC-004: No OrderItems -> fallback with product_name, quantity=None
     # ===========================================
 
-    def test_ac004_no_order_items_fallback(self, shipment_service):
+    def test_ac004_no_order_items_fallback(self, shipment_service: Any) -> None:
         """AC-004: OrderItem がない古い注文 -> product_name フォールバック、quantity=None.
 
         Given: 注文に OrderItem が紐づいていない配送がある
@@ -360,7 +361,7 @@ class TestShipmentDetailProductView:
         assert response.items[0].quantity is None
         assert response.items[0].thumbnail_image_url is None
 
-    def test_ac004_no_order_items_no_legacy_product_name(self, shipment_service):
+    def test_ac004_no_order_items_no_legacy_product_name(self, shipment_service: Any) -> None:
         """AC-004: OrderItem もなく Order.product_name も null の場合.
 
         Given: 注文に OrderItem もなく、Order.product_name も None
@@ -386,7 +387,7 @@ class TestShipmentDetailProductView:
         assert response.items[0].quantity is None
         assert response.items[0].thumbnail_image_url is None
 
-    def test_ac004_order_is_none(self, shipment_service):
+    def test_ac004_order_is_none(self, shipment_service: Any) -> None:
         """AC-004: Order が None の場合もエラーにならない.
 
         Given: ShipmentItem の order が None
@@ -427,7 +428,7 @@ class TestShipmentDetailProductView:
     # AC-005: Composite ID format: {shipment_item_id}_{order_item_id}
     # ===========================================
 
-    def test_ac005_composite_id_format(self, shipment_service):
+    def test_ac005_composite_id_format(self, shipment_service: Any) -> None:
         """AC-005: 複合ID形式 {shipment_item_id}_{order_item_id}.
 
         Given: ShipmentItem (id="si-001") に OrderItem (id="oi-001") が紐づく
@@ -455,7 +456,7 @@ class TestShipmentDetailProductView:
         assert len(response.items) == 1
         assert response.items[0].id == "si-001_oi-001"
 
-    def test_ac005_composite_id_for_multiple_items(self, shipment_service):
+    def test_ac005_composite_id_for_multiple_items(self, shipment_service: Any) -> None:
         """AC-005: 複数 OrderItem の場合、各行の複合IDが正しい.
 
         Given: ShipmentItem (id="si-001") に 2つの OrderItem
@@ -490,7 +491,7 @@ class TestShipmentDetailProductView:
         assert response.items[0].id == "si-001_oi-001"
         assert response.items[1].id == "si-001_oi-002"
 
-    def test_ac005_fallback_id_when_no_order_items(self, shipment_service):
+    def test_ac005_fallback_id_when_no_order_items(self, shipment_service: Any) -> None:
         """AC-005: OrderItem がない場合は shipment_item.id をそのまま使う.
 
         Given: ShipmentItem (id="si-001") に OrderItem がない (フォールバック)
@@ -517,7 +518,7 @@ class TestShipmentDetailProductView:
     # Additional: Multiple orders with multiple OrderItems
     # ===========================================
 
-    def test_multiple_orders_each_with_order_items_expanded(self, shipment_service):
+    def test_multiple_orders_each_with_order_items_expanded(self, shipment_service: Any) -> None:
         """複数注文が含まれる配送で、各注文の OrderItem が正しく展開される.
 
         Given: 2つの注文（注文A: OrderItem 2件、注文B: OrderItem 1件）が含まれる配送

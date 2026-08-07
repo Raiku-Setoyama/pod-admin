@@ -10,6 +10,7 @@ illustrator-vm（Product Manufacturing API）で生成した製造データ（.a
 
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
@@ -68,7 +69,7 @@ class ManufacturingData(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     # 使用したレイヤー群。外部受注由来は {"layer_type": "color", "url": "..."}、
     # 管理画面から差し替えたものは {"layer_type": "color", "file_path": "...", "filename": "..."}。
-    source_images: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    source_images: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True)
 
     # 元画像を管理画面から差し替えた最終時刻（未差し替えは NULL = 外部受注のまま）
     source_images_replaced_at: Mapped[datetime | None] = mapped_column(

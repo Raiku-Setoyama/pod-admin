@@ -6,6 +6,7 @@
 - 全OrderItemがdeliveredになった場合のShipment作成
 """
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -20,7 +21,7 @@ from app.services.manufacturer_order_service import ManufacturerOrderService
 class TestDeriveOrderStatus:
     """Order.statusの導出ロジックテスト"""
 
-    def test_derive_status_all_ordered(self):
+    def test_derive_status_all_ordered(self) -> None:
         """全OrderItemがorderedの場合、Order.statusはorderedになる"""
         order = MagicMock(spec=Order)
         items = [MagicMock(status=OrderItemStatus.ORDERED.value) for _ in range(3)]
@@ -31,7 +32,7 @@ class TestDeriveOrderStatus:
 
         assert result == OrderStatus.ORDERED.value
 
-    def test_derive_status_all_manufacturing(self):
+    def test_derive_status_all_manufacturing(self) -> None:
         """全OrderItemがmanufacturingの場合、Order.statusはmanufacturingになる"""
         order = MagicMock(spec=Order)
         items = [MagicMock(status=OrderItemStatus.MANUFACTURING.value) for _ in range(3)]
@@ -42,7 +43,7 @@ class TestDeriveOrderStatus:
 
         assert result == OrderStatus.MANUFACTURING.value
 
-    def test_derive_status_all_delivered(self):
+    def test_derive_status_all_delivered(self) -> None:
         """全OrderItemがdeliveredの場合、Order.statusはdeliveredになる"""
         order = MagicMock(spec=Order)
         items = [MagicMock(status=OrderItemStatus.DELIVERED.value) for _ in range(3)]
@@ -53,7 +54,7 @@ class TestDeriveOrderStatus:
 
         assert result == OrderStatus.DELIVERED.value
 
-    def test_derive_status_mixed_with_manufacturing(self):
+    def test_derive_status_mixed_with_manufacturing(self) -> None:
         """1つでもmanufacturingがあればOrder.statusはmanufacturingになる"""
         order = MagicMock(spec=Order)
         items = [
@@ -68,7 +69,7 @@ class TestDeriveOrderStatus:
 
         assert result == OrderStatus.MANUFACTURING.value
 
-    def test_derive_status_ordered_and_delivered(self):
+    def test_derive_status_ordered_and_delivered(self) -> None:
         """orderedとdeliveredが混在（manufacturingなし）の場合はorderedになる"""
         order = MagicMock(spec=Order)
         items = [
@@ -82,7 +83,7 @@ class TestDeriveOrderStatus:
 
         assert result == OrderStatus.ORDERED.value
 
-    def test_derive_status_empty_items(self):
+    def test_derive_status_empty_items(self) -> None:
         """itemsが空の場合はorderedになる"""
         order = MagicMock(spec=Order)
         order.items = []
@@ -92,7 +93,7 @@ class TestDeriveOrderStatus:
 
         assert result == OrderStatus.ORDERED.value
 
-    def test_derive_status_any_preparing_order(self):
+    def test_derive_status_any_preparing_order(self) -> None:
         """1つでも発注準備中があり manufacturing が無ければ preparing_order になる"""
         order = MagicMock(spec=Order)
         items = [
@@ -106,7 +107,7 @@ class TestDeriveOrderStatus:
 
         assert result == OrderStatus.PREPARING_ORDER.value
 
-    def test_derive_status_manufacturing_beats_preparing_order(self):
+    def test_derive_status_manufacturing_beats_preparing_order(self) -> None:
         """manufacturing と preparing_order が混在する場合は manufacturing を優先する"""
         order = MagicMock(spec=Order)
         items = [
@@ -125,19 +126,19 @@ class TestUpdateOrderStatus:
     """ステータス更新サービステスト"""
 
     @pytest.fixture
-    def mock_order_repo(self):
+    def mock_order_repo(self) -> Any:
         return AsyncMock()
 
     @pytest.fixture
-    def mock_manufacturer_repo(self):
+    def mock_manufacturer_repo(self) -> Any:
         return AsyncMock()
 
     @pytest.fixture
-    def mock_shipment_repo(self):
+    def mock_shipment_repo(self) -> Any:
         return AsyncMock()
 
     @pytest.fixture
-    def service(self, mock_order_repo, mock_manufacturer_repo, mock_shipment_repo):
+    def service(self, mock_order_repo: Any, mock_manufacturer_repo: Any, mock_shipment_repo: Any) -> Any:
         return ManufacturerOrderService(
             order_repo=mock_order_repo,
             manufacturer_repo=mock_manufacturer_repo,
@@ -145,7 +146,7 @@ class TestUpdateOrderStatus:
         )
 
     @pytest.fixture
-    def mock_manufacturer(self):
+    def mock_manufacturer(self) -> Any:
         manufacturer = MagicMock()
         manufacturer.id = str(uuid4())
         manufacturer.name = "テストメーカー"
@@ -157,8 +158,8 @@ class TestUpdateOrderStatus:
         service: ManufacturerOrderService,
         mock_manufacturer_repo: AsyncMock,
         mock_order_repo: AsyncMock,
-        mock_manufacturer,
-    ):
+        mock_manufacturer: Any,
+    ) -> None:
         """OrderItemのステータスをmanufacturingに更新"""
         manufacturer_id = mock_manufacturer.id
         mock_manufacturer_repo.find_by_id.return_value = mock_manufacturer
@@ -190,8 +191,8 @@ class TestUpdateOrderStatus:
         mock_manufacturer_repo: AsyncMock,
         mock_order_repo: AsyncMock,
         mock_shipment_repo: AsyncMock,
-        mock_manufacturer,
-    ):
+        mock_manufacturer: Any,
+    ) -> None:
         """全OrderItemがdeliveredになった場合のみShipmentが作成される"""
         manufacturer_id = mock_manufacturer.id
         order_id = str(uuid4())
@@ -228,8 +229,8 @@ class TestUpdateOrderStatus:
         mock_manufacturer_repo: AsyncMock,
         mock_order_repo: AsyncMock,
         mock_shipment_repo: AsyncMock,
-        mock_manufacturer,
-    ):
+        mock_manufacturer: Any,
+    ) -> None:
         """一部のOrderItemのみdeliveredの場合はShipmentが作成されない"""
         manufacturer_id = mock_manufacturer.id
         order_id = str(uuid4())
@@ -265,8 +266,8 @@ class TestUpdateOrderStatus:
         mock_manufacturer_repo: AsyncMock,
         mock_order_repo: AsyncMock,
         mock_shipment_repo: AsyncMock,
-        mock_manufacturer,
-    ):
+        mock_manufacturer: Any,
+    ) -> None:
         """既にShipmentが存在する場合は重複作成されない"""
         manufacturer_id = mock_manufacturer.id
         order_id = str(uuid4())
@@ -302,8 +303,8 @@ class TestUpdateOrderStatus:
         service: ManufacturerOrderService,
         mock_manufacturer_repo: AsyncMock,
         mock_order_repo: AsyncMock,
-        mock_manufacturer,
-    ):
+        mock_manufacturer: Any,
+    ) -> None:
         """特定のOrderItem IDを指定してステータス更新"""
         manufacturer_id = mock_manufacturer.id
         target_item_ids = [str(uuid4()), str(uuid4())]
@@ -337,19 +338,19 @@ class TestOrderItemStatusIndependence:
     """同一Order内のOrderItem独立性テスト"""
 
     @pytest.fixture
-    def mock_order_repo(self):
+    def mock_order_repo(self) -> Any:
         return AsyncMock()
 
     @pytest.fixture
-    def mock_manufacturer_repo(self):
+    def mock_manufacturer_repo(self) -> Any:
         return AsyncMock()
 
     @pytest.fixture
-    def mock_shipment_repo(self):
+    def mock_shipment_repo(self) -> Any:
         return AsyncMock()
 
     @pytest.fixture
-    def service(self, mock_order_repo, mock_manufacturer_repo, mock_shipment_repo):
+    def service(self, mock_order_repo: Any, mock_manufacturer_repo: Any, mock_shipment_repo: Any) -> Any:
         return ManufacturerOrderService(
             order_repo=mock_order_repo,
             manufacturer_repo=mock_manufacturer_repo,
@@ -357,7 +358,7 @@ class TestOrderItemStatusIndependence:
         )
 
     @pytest.fixture
-    def mock_manufacturer(self):
+    def mock_manufacturer(self) -> Any:
         manufacturer = MagicMock()
         manufacturer.id = str(uuid4())
         manufacturer.name = "テストメーカー"
@@ -369,8 +370,8 @@ class TestOrderItemStatusIndependence:
         service: ManufacturerOrderService,
         mock_manufacturer_repo: AsyncMock,
         mock_order_repo: AsyncMock,
-        mock_manufacturer,
-    ):
+        mock_manufacturer: Any,
+    ) -> None:
         """複数アイテムを持つOrderの1アイテムのみ更新
 
         given: 注文#0001にTシャツ（メーカーA）とステッカー（メーカーB）がある

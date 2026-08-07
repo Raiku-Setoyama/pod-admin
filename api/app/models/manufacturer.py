@@ -1,7 +1,7 @@
 """Manufacturer model."""
 
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Boolean, Integer, String
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
@@ -29,7 +29,7 @@ class Manufacturer(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     email: Mapped[str] = mapped_column(String(255))
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     supported_products: Mapped[list[str]] = mapped_column(ARRAY(String))
-    unit_prices: Mapped[dict] = mapped_column(JSONB, default=dict)
+    unit_prices: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     lead_time_days: Mapped[int] = mapped_column(Integer)
     daily_order_limit: Mapped[int] = mapped_column(Integer)
     sharing_method: Mapped[str] = mapped_column(String(20), default=SharingMethod.PORTAL.value)

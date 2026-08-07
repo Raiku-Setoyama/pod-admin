@@ -1,7 +1,7 @@
 """Manufacturer portal router."""
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
@@ -92,7 +92,7 @@ async def update_profile(
 @router.get("/debug-token")
 async def debug_token(
     authorization: Annotated[str | None, Header()] = None,
-) -> dict:
+) -> dict[str, Any]:
     """デバッグ用: トークンの検証状態を確認"""
     if not authorization:
         return {"error": "No authorization header", "authorization": None}

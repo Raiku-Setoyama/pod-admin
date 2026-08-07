@@ -13,6 +13,7 @@ FEAT-0012: 発注資料ダウンロードの命名規則変更
 import io
 import zipfile
 from datetime import datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -42,7 +43,7 @@ def _make_order_item(
     cost: int = 1000,
     ordered_at: datetime | None = None,
     lead_time_days: int = 3,
-) -> tuple:
+) -> tuple[Any, ...]:
     """Create a mock order item tuple matching the repository return format.
 
     Returns: (OrderItem, order_number, ordered_at, customer_name, cost, item_status, order_status, lead_time_days)
@@ -92,22 +93,22 @@ class TestGenerateOrderDocumentsStatusUpdate:
     """発注資料ダウンロード時のステータス自動更新テスト"""
 
     @pytest.fixture
-    def mock_order_repo(self):
+    def mock_order_repo(self) -> Any:
         """モック OrderRepository"""
         return AsyncMock()
 
     @pytest.fixture
-    def mock_manufacturer_repo(self):
+    def mock_manufacturer_repo(self) -> Any:
         """モック ManufacturerRepository"""
         return AsyncMock()
 
     @pytest.fixture
-    def mock_shipment_repo(self):
+    def mock_shipment_repo(self) -> Any:
         """モック ShipmentRepository"""
         return AsyncMock()
 
     @pytest.fixture
-    def service(self, mock_order_repo, mock_manufacturer_repo, mock_shipment_repo):
+    def service(self, mock_order_repo: Any, mock_manufacturer_repo: Any, mock_shipment_repo: Any) -> Any:
         """テスト対象のサービスインスタンス"""
         return ManufacturerOrderService(
             order_repo=mock_order_repo,
@@ -116,7 +117,7 @@ class TestGenerateOrderDocumentsStatusUpdate:
         )
 
     @pytest.fixture
-    def mock_manufacturer(self):
+    def mock_manufacturer(self) -> Any:
         """モックメーカー"""
         manufacturer = MagicMock()
         manufacturer.id = str(uuid4())
@@ -124,7 +125,7 @@ class TestGenerateOrderDocumentsStatusUpdate:
         return manufacturer
 
     @pytest.fixture
-    def mock_order_items_ordered(self):
+    def mock_order_items_ordered(self) -> Any:
         """発注中ステータスの受注明細3件"""
         return [
             _make_order_item(
@@ -138,7 +139,7 @@ class TestGenerateOrderDocumentsStatusUpdate:
         ]
 
     @pytest.fixture
-    def mock_order_items_mixed(self):
+    def mock_order_items_mixed(self) -> Any:
         """発注中2件、製造中1件のミックス明細"""
         statuses = [OrderStatus.ORDERED, OrderStatus.ORDERED, OrderStatus.MANUFACTURING]
         return [
@@ -159,9 +160,9 @@ class TestGenerateOrderDocumentsStatusUpdate:
         service: ManufacturerOrderService,
         mock_manufacturer_repo: AsyncMock,
         mock_order_repo: AsyncMock,
-        mock_manufacturer,
-        mock_order_items_ordered,
-    ):
+        mock_manufacturer: Any,
+        mock_order_items_ordered: Any,
+    ) -> None:
         """AC-001: 発注資料ダウンロード時に「発注中」の明細が「製造中」に更新される
 
         given: メーカーAに「発注中」ステータスの受注明細が3件ある
@@ -207,9 +208,9 @@ class TestGenerateOrderDocumentsStatusUpdate:
         service: ManufacturerOrderService,
         mock_manufacturer_repo: AsyncMock,
         mock_order_repo: AsyncMock,
-        mock_manufacturer,
-        mock_order_items_mixed,
-    ):
+        mock_manufacturer: Any,
+        mock_order_items_mixed: Any,
+    ) -> None:
         """AC-002: 「発注中」以外のステータスはダウンロード対象外
 
         given: メーカーAに「発注中」2件、「製造中」1件の受注明細がある
@@ -258,8 +259,8 @@ class TestGenerateOrderDocumentsStatusUpdate:
         service: ManufacturerOrderService,
         mock_manufacturer_repo: AsyncMock,
         mock_order_repo: AsyncMock,
-        mock_manufacturer,
-    ):
+        mock_manufacturer: Any,
+    ) -> None:
         """AC-003: 発注中の明細が0件の場合は400エラー
 
         given: メーカーAに「製造中」の受注明細のみがある（発注中が0件）
@@ -285,9 +286,9 @@ class TestGenerateOrderDocumentsStatusUpdate:
         service: ManufacturerOrderService,
         mock_manufacturer_repo: AsyncMock,
         mock_order_repo: AsyncMock,
-        mock_manufacturer,
-        mock_order_items_ordered,
-    ):
+        mock_manufacturer: Any,
+        mock_order_items_ordered: Any,
+    ) -> None:
         """order_item_ids指定時は指定されたもののみダウンロード対象
 
         given: メーカーAに「発注中」ステータスの受注明細が3件ある
@@ -333,9 +334,9 @@ class TestGenerateOrderDocumentsStatusUpdate:
         service: ManufacturerOrderService,
         mock_manufacturer_repo: AsyncMock,
         mock_order_repo: AsyncMock,
-        mock_manufacturer,
-        mock_order_items_ordered,
-    ):
+        mock_manufacturer: Any,
+        mock_order_items_ordered: Any,
+    ) -> None:
         """ZIP生成成功後のみステータス更新が行われる（トランザクション整合性）
 
         given: メーカーAに「発注中」ステータスの受注明細がある
@@ -367,7 +368,7 @@ class TestGenerateOrderDocumentsStatusUpdate:
         self,
         service: ManufacturerOrderService,
         mock_manufacturer_repo: AsyncMock,
-    ):
+    ) -> None:
         """存在しないメーカーIDの場合はNotFoundError
 
         given: 存在しないメーカーID
@@ -401,19 +402,19 @@ class TestFeat0012NamingRules:
     """
 
     @pytest.fixture
-    def mock_order_repo(self):
+    def mock_order_repo(self) -> Any:
         return AsyncMock()
 
     @pytest.fixture
-    def mock_manufacturer_repo(self):
+    def mock_manufacturer_repo(self) -> Any:
         return AsyncMock()
 
     @pytest.fixture
-    def mock_shipment_repo(self):
+    def mock_shipment_repo(self) -> Any:
         return AsyncMock()
 
     @pytest.fixture
-    def service(self, mock_order_repo, mock_manufacturer_repo, mock_shipment_repo):
+    def service(self, mock_order_repo: Any, mock_manufacturer_repo: Any, mock_shipment_repo: Any) -> Any:
         return ManufacturerOrderService(
             order_repo=mock_order_repo,
             manufacturer_repo=mock_manufacturer_repo,
@@ -421,14 +422,14 @@ class TestFeat0012NamingRules:
         )
 
     @pytest.fixture
-    def mock_manufacturer(self):
+    def mock_manufacturer(self) -> Any:
         manufacturer = MagicMock()
         manufacturer.id = str(uuid4())
         manufacturer.name = "テストメーカー"
         return manufacturer
 
     @pytest.fixture
-    def fixed_now(self):
+    def fixed_now(self) -> Any:
         """テスト用の固定日時 (2026-02-24 10:30:00)"""
         return datetime(2026, 2, 24, 10, 30, 0)
 
@@ -446,10 +447,10 @@ class TestFeat0012NamingRules:
         service: ManufacturerOrderService,
         mock_manufacturer_repo: AsyncMock,
         mock_order_repo: AsyncMock,
-        mock_manufacturer,
-        items: list[tuple],
+        mock_manufacturer: Any,
+        items: list[tuple[Any, ...]],
         fixed_now: datetime,
-        download_file_side_effect=None,
+        download_file_side_effect: Any=None,
     ) -> tuple[bytes, str]:
         """テスト用にZIPを生成するヘルパー"""
         mock_manufacturer_repo.find_by_id.return_value = mock_manufacturer
@@ -466,7 +467,7 @@ class TestFeat0012NamingRules:
             side_effect = download_file_side_effect
         else:
             # デフォルト: design_image_url は .ai ファイル内容を返す、thumbnail は .png
-            async def default_download(url: str):
+            async def default_download(url: str) -> tuple[Any, ...]:
                 if not url:
                     return None, ""
                 if "design" in url:
@@ -494,8 +495,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_zip_filename_is_tapi_manufacturer_name(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """ZIP名が TAPI_{メーカー名}_発注資料.zip になる
 
         given: アクリルキーホルダーの明細1件
@@ -524,8 +525,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_type_folder_acrylic_keychain(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """タイプフォルダ名: アクリルキーホルダー_{YYYYMMDD}
 
         given: acrylic_keychain の明細
@@ -550,8 +551,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_type_folder_acrylic_figure(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """タイプフォルダ名: アクリルフィギュア_{YYYYMMDD}
 
         given: acrylic_stand (アクリルフィギュア) の明細
@@ -580,8 +581,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_type_folder_sticker(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """タイプフォルダ名: ステッカー_{YYYYMMDD}"""
         items = [
             _make_order_item(
@@ -604,8 +605,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_type_folder_tote_bag(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """タイプフォルダ名: トートバッグ_{YYYYMMDD}"""
         items = [
             _make_order_item(
@@ -618,7 +619,7 @@ class TestFeat0012NamingRules:
             ),
         ]
 
-        async def download_pdf(url):
+        async def download_pdf(url: Any) -> tuple[Any, ...]:
             if "design" in url:
                 return b"PDF_CONTENT", "design.pdf"
             if "thumb" in url:
@@ -641,8 +642,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_tshirt_folder_split_by_position(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """Tシャツは印刷位置ごとにフォルダが分割される
 
         given: Tシャツの正面1件、背面1件
@@ -678,8 +679,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_tshirt_front_items_in_front_folder(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """正面のTシャツ明細は正面フォルダに含まれる
 
         given: Tシャツ正面1件
@@ -711,8 +712,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_xlsx_filename_for_acrylic_keychain(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """XLSX名: アクリルキーホルダー_発注リスト_20260224.xlsx
 
         given: acrylic_keychain の明細
@@ -737,8 +738,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_xlsx_filename_for_tshirt_with_position(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """XLSX名: Tシャツ- 正面 -_発注リスト_20260224.xlsx
 
         given: Tシャツ正面の明細
@@ -764,8 +765,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_xlsx_filename_for_acrylic_figure(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """XLSX名: アクリルフィギュア_発注リスト_20260224.xlsx"""
         items = [
             _make_order_item(
@@ -790,8 +791,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_image_filename_format(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """画像ファイル名: {注文番号}_{製造番号}.png
 
         given: thumbnail_image_url を持つ明細
@@ -821,8 +822,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_image_filename_not_old_format(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """旧フォーマット thumbnail_{filename} が使われていないこと
 
         given: thumbnail_image_url を持つ明細
@@ -855,8 +856,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_manufacturing_data_tshirt_front_pdf(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """Tシャツの製造データ①: _front.pdf 拡張子
 
         given: Tシャツの明細（design_image_url あり）
@@ -875,7 +876,7 @@ class TestFeat0012NamingRules:
             ),
         ]
 
-        async def download_pdf(url):
+        async def download_pdf(url: Any) -> tuple[Any, ...]:
             if "design" in url:
                 return b"PDF_CONTENT", "design.pdf"
             if "thumb" in url:
@@ -895,8 +896,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_manufacturing_data_tote_bag_pdf(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """トートバッグの製造データ①: .pdf 拡張子（_front なし）
 
         given: トートバッグの明細
@@ -917,7 +918,7 @@ class TestFeat0012NamingRules:
             ),
         ]
 
-        async def download_pdf(url):
+        async def download_pdf(url: Any) -> tuple[Any, ...]:
             if "design" in url:
                 return b"PDF_CONTENT", "design.pdf"
             if "thumb" in url:
@@ -937,8 +938,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_manufacturing_data_acrylic_keychain_ai(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """アクリルキーホルダーの製造データ①: .ai 拡張子
 
         given: アクリルキーホルダーの明細
@@ -970,8 +971,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_manufacturing_data_acrylic_figure_ai(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """アクリルフィギュアの製造データ①: .ai 拡張子
 
         given: アクリルフィギュア (acrylic_stand) の明細
@@ -1003,8 +1004,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_manufacturing_data_sticker_ai(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """ステッカーの製造データ①: .ai 拡張子
 
         given: ステッカーの明細
@@ -1040,8 +1041,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_acrylic_figure_has_stand_file(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """アクリルフィギュアに製造データ②（_stand.ai）が含まれる
 
         given: アクリルフィギュアの明細
@@ -1073,8 +1074,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_non_acrylic_figure_has_no_stand_file(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """アクリルフィギュア以外に _stand.ai が含まれない
 
         given: アクリルキーホルダーの明細
@@ -1102,8 +1103,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_tshirt_has_no_stand_file(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """Tシャツに _stand.ai が含まれない"""
         items = [
             _make_order_item(
@@ -1128,8 +1129,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_order_number_subfolders(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """製造データ・画像が注文番号フォルダに配置される
 
         given: 同一タイプの明細2件（異なる注文番号）
@@ -1179,8 +1180,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_xlsx_at_type_folder_level(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """XLSXはタイプフォルダ直下に配置される（注文番号フォルダに入らない）
 
         given: 同一タイプの明細2件
@@ -1232,8 +1233,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_zip_contains_expected_structure_acrylic_keychain(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """アクリルキーホルダーのZIP構造が正しい
 
         given: アクリルキーホルダー明細1件
@@ -1283,8 +1284,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_zip_contains_expected_structure_acrylic_figure(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """アクリルフィギュアのZIP構造が正しい（スタンドファイル含む）
 
         given: アクリルフィギュア明細1件
@@ -1336,8 +1337,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_zip_contains_expected_structure_tshirt(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """TシャツのZIP構造が正しい（_front.pdf 含む）
 
         given: Tシャツ正面の明細1件
@@ -1362,7 +1363,7 @@ class TestFeat0012NamingRules:
             ),
         ]
 
-        async def download_pdf(url):
+        async def download_pdf(url: Any) -> tuple[Any, ...]:
             if "design" in url:
                 return b"PDF_CONTENT", "design.pdf"
             if "thumb" in url:
@@ -1393,8 +1394,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_manufacturer_name_in_zip_filename(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """ZIP名にメーカー名が含まれる
 
         given: テストメーカーの明細
@@ -1417,8 +1418,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_no_manufacturer_name_in_zip_paths(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """ZIP内パスにメーカー名が含まれない
 
         given: テストメーカーの明細
@@ -1443,8 +1444,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_no_old_xlsx_naming_format(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """旧XLSX命名フォーマット（ハイフン区切り）が使われていない
 
         given: 明細
@@ -1475,8 +1476,8 @@ class TestFeat0012NamingRules:
 
     @pytest.mark.asyncio
     async def test_no_old_design_file_naming(
-        self, service, mock_manufacturer_repo, mock_order_repo, mock_manufacturer, fixed_now,
-    ):
+        self, service: Any, mock_manufacturer_repo: Any, mock_order_repo: Any, mock_manufacturer: Any, fixed_now: Any,
+    ) -> None:
         """旧デザインファイル命名（{注文番号}_{uid}_{商品種類}.ai）が使われていない
 
         given: アクリルキーホルダーの明細

@@ -3,6 +3,7 @@
 import logging
 import os
 from datetime import date, datetime
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -321,14 +322,14 @@ class ManufacturerOrderService:
     }
 
     @staticmethod
-    def _hold_unready_items(rows: list[tuple]) -> list[tuple]:
+    def _hold_unready_items(rows: list[tuple[Any, ...]]) -> list[tuple[Any, ...]]:
         """製造データが未準備の明細（発注準備中）を発注資料から除外する.
 
         統合ステータスでは未 ready 明細は「発注準備中（preparing_order）」を取る。
         v1 明細（manufacturing_data_id が NULL）は常に ready 扱いで対象外（従来通り含める）。
         既に MANUFACTURING/DELIVERED の明細は発注済みのため保留しない。
         """
-        included: list[tuple] = []
+        included: list[tuple[Any, ...]] = []
         held = 0
         for row in rows:
             order_item = row[0]
@@ -426,7 +427,7 @@ class ManufacturerOrderService:
 
         # グループキー別にアイテムを整理
         # Tシャツは (product_type, position) でグループ、他は (product_type,) でグループ
-        items_by_group: dict[tuple, list[dict]] = {}
+        items_by_group: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
         for order_item, order_number, ordered_at, _customer_name, cost, _item_status, _order_status, _lead_time_days in rows:
             item_product_type = order_item.product_type
             if item_product_type == "tshirt":
@@ -564,7 +565,7 @@ class ManufacturerOrderService:
 
         return zip_bytes, zip_name
 
-    async def _load_manufacturing_content(self, item: dict) -> bytes | None:
+    async def _load_manufacturing_content(self, item: dict[str, Any]) -> bytes | None:
         """発注資料に封入する製造データ①のバイト列を取得する.
 
         v2（生成済み製造データ）は FileStorage の保存済みファイルを使用し、

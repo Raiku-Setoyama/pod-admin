@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 from fastapi import BackgroundTasks, UploadFile
@@ -222,7 +223,7 @@ class ManufacturingDataService:
         *,
         variant: str | None,
         status: MfgDataStatus,
-        source_images: list | None = None,
+        source_images: list[Any] | None = None,
         error_message: str | None = None,
     ) -> tuple[ManufacturingData, bool]:
         """製造データ行を作成する（キャッシュキー競合時は既存行を再取得）.
@@ -345,7 +346,7 @@ class ManufacturingDataService:
             logger.exception("manufacturing data generation failed for %s", md_id)
 
     async def _download_source_images(
-        self, source_images: list, wanted: set[str]
+        self, source_images: list[Any], wanted: set[str]
     ) -> dict[str, bytes]:
         """必要なレイヤーの PNG を並列取得する.
 
@@ -370,7 +371,7 @@ class ManufacturingDataService:
             timeout=_SOURCE_DOWNLOAD_TIMEOUT, follow_redirects=False
         ) as client:
 
-            async def fetch(img: dict) -> tuple[str, bytes] | None:
+            async def fetch(img: dict[str, Any]) -> tuple[str, bytes] | None:
                 async with semaphore:
                     try:
                         if img.get("file_path"):

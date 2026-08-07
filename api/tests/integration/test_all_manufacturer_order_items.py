@@ -12,7 +12,9 @@ FEAT-0018: 全メーカー分の発注明細を一覧で確認できる「すべ
 """
 
 import json
+from collections.abc import AsyncIterator
 from datetime import datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -25,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-async def test_manufacturer_a(db_session: AsyncSession):
+async def test_manufacturer_a(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """テスト用メーカーA"""
     manufacturer_id = str(uuid4())
     manufacturer_name = f"テストメーカーA_{manufacturer_id[:8]}"
@@ -59,7 +61,7 @@ async def test_manufacturer_a(db_session: AsyncSession):
 
 
 @pytest.fixture
-async def test_manufacturer_b(db_session: AsyncSession):
+async def test_manufacturer_b(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """テスト用メーカーB"""
     manufacturer_id = str(uuid4())
     manufacturer_name = f"テストメーカーB_{manufacturer_id[:8]}"
@@ -93,7 +95,7 @@ async def test_manufacturer_b(db_session: AsyncSession):
 
 
 @pytest.fixture
-async def test_product_a(db_session: AsyncSession, test_manufacturer_a: dict):
+async def test_product_a(db_session: AsyncSession, test_manufacturer_a: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """テスト用商品A（メーカーA）"""
     product_id = str(uuid4())
     unique_size = f"ALL-A-{product_id[:8]}"
@@ -127,7 +129,7 @@ async def test_product_a(db_session: AsyncSession, test_manufacturer_a: dict):
 
 
 @pytest.fixture
-async def test_product_b(db_session: AsyncSession, test_manufacturer_b: dict):
+async def test_product_b(db_session: AsyncSession, test_manufacturer_b: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """テスト用商品B（メーカーB）"""
     product_id = str(uuid4())
     unique_size = f"ALL-B-{product_id[:8]}"
@@ -163,12 +165,12 @@ async def test_product_b(db_session: AsyncSession, test_manufacturer_b: dict):
 @pytest.fixture
 async def test_all_orders(
     db_session: AsyncSession,
-    test_order_source: dict,
-    test_product_a: dict,
-    test_product_b: dict,
-    test_manufacturer_a: dict,
-    test_manufacturer_b: dict,
-):
+    test_order_source: dict[str, Any],
+    test_product_a: dict[str, Any],
+    test_product_b: dict[str, Any],
+    test_manufacturer_a: dict[str, Any],
+    test_manufacturer_b: dict[str, Any],
+) -> AsyncIterator[dict[str, Any]]:
     """複数メーカーの発注明細を作成するフィクスチャ
 
     以下のデータを作成:
@@ -298,9 +300,9 @@ class TestAllManufacturerOrderItemsAPI:
     async def test_api_returns_all_manufacturers_order_items(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_all_orders: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_all_orders: dict[str, Any],
+    ) -> None:
         """AC-006: 全メーカーの発注明細を返す
 
         given: メーカーAとメーカーBに紐づく発注明細がDBに存在する
@@ -342,9 +344,9 @@ class TestAllManufacturerOrderItemsAPI:
     async def test_api_filters_by_status_ordered(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_all_orders: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_all_orders: dict[str, Any],
+    ) -> None:
         """AC-007: ステータスフィルターに対応する
 
         given: orderedとmanufacturingの発注明細が存在する
@@ -371,9 +373,9 @@ class TestAllManufacturerOrderItemsAPI:
     async def test_api_search_by_keyword(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_all_orders: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_all_orders: dict[str, Any],
+    ) -> None:
         """AC-008: キーワード検索に対応する
 
         given: 注文番号 "ORD-{prefix}-AAA" と "ORD-{prefix}-BBB" の発注明細が存在する
@@ -398,9 +400,9 @@ class TestAllManufacturerOrderItemsAPI:
     async def test_api_search_by_product_name(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_all_orders: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_all_orders: dict[str, Any],
+    ) -> None:
         """AC-008: 商品名でキーワード検索
 
         given: 商品名に「キーホルダー」を含む明細が存在する
@@ -427,9 +429,9 @@ class TestAllManufacturerOrderItemsAPI:
     async def test_api_filters_by_manufacturer_id(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_all_orders: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_all_orders: dict[str, Any],
+    ) -> None:
         """AC-009: メーカーIDフィルターに対応する
 
         given: メーカーAとメーカーBの発注明細が存在する
@@ -456,8 +458,8 @@ class TestAllManufacturerOrderItemsAPI:
     async def test_api_returns_401_without_auth(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-    ):
+        auth_headers: dict[str, Any],
+    ) -> None:
         """AC-010: 認証なしの場合401が返される
 
         given: エンドポイントが存在する（認証ありでアクセス可能）
@@ -484,8 +486,8 @@ class TestAllManufacturerOrderItemsAPI:
     async def test_api_returns_empty_when_no_items(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-    ):
+        auth_headers: dict[str, Any],
+    ) -> None:
         """AC-011: 発注明細が0件の場合、空配列とtotal=0が返される
 
         given: 発注明細が存在しない（またはすべてshippedステータス）
@@ -515,9 +517,9 @@ class TestAllManufacturerOrderItemsAPI:
     async def test_api_combines_status_and_search_filters(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_all_orders: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_all_orders: dict[str, Any],
+    ) -> None:
         """ステータスとキーワード検索を組み合わせて使用できる
 
         given: 複数のステータスと商品名の明細が存在する
@@ -549,9 +551,9 @@ class TestAllManufacturerOrderItemsAPI:
     async def test_api_response_has_summary_fields(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_all_orders: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_all_orders: dict[str, Any],
+    ) -> None:
         """レスポンスに集計情報（total, total_quantity, total_amount）が含まれる
 
         given: 発注明細が存在する

@@ -6,6 +6,8 @@ FEAT-0003: 管理者が配送詳細画面でアップロード済みの梱包写
 動作を検証します。
 """
 
+from typing import Any
+
 import pytest
 from httpx import AsyncClient
 
@@ -15,8 +17,8 @@ class TestPackingPhotoAPI:
 
     @pytest.mark.asyncio
     async def test_get_packing_photo_returns_image_when_exists(
-        self, client: AsyncClient, auth_headers: dict, shipment_with_photo: dict
-    ):
+        self, client: AsyncClient, auth_headers: dict[str, Any], shipment_with_photo: dict[str, Any]
+    ) -> None:
         """AC-001: 梱包写真が存在する配送で、APIから画像を取得できる
 
         given: packing_photo_path が設定された配送データが存在する
@@ -47,8 +49,8 @@ class TestPackingPhotoAPI:
 
     @pytest.mark.asyncio
     async def test_get_packing_photo_returns_404_when_no_photo(
-        self, client: AsyncClient, auth_headers: dict, shipment_without_photo: dict
-    ):
+        self, client: AsyncClient, auth_headers: dict[str, Any], shipment_without_photo: dict[str, Any]
+    ) -> None:
         """AC-002: 梱包写真が存在しない配送でAPIを呼び出すと404エラー
 
         given: packing_photo_path が null の配送データが存在する
@@ -69,8 +71,8 @@ class TestPackingPhotoAPI:
 
     @pytest.mark.asyncio
     async def test_get_packing_photo_returns_404_when_shipment_not_exists(
-        self, client: AsyncClient, auth_headers: dict
-    ):
+        self, client: AsyncClient, auth_headers: dict[str, Any]
+    ) -> None:
         """AC-003: 存在しない配送IDでAPIを呼び出すと404エラー
 
         given: 存在しないshipment_id
@@ -91,8 +93,8 @@ class TestPackingPhotoAPI:
 
     @pytest.mark.asyncio
     async def test_get_packing_photo_returns_401_without_auth(
-        self, client: AsyncClient, shipment_with_photo: dict
-    ):
+        self, client: AsyncClient, shipment_with_photo: dict[str, Any]
+    ) -> None:
         """AC-004: 認証なしでAPIを呼び出すと401エラー
 
         given: 認証トークンなし

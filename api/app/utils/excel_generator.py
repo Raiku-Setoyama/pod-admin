@@ -2,6 +2,7 @@
 
 import io
 from datetime import datetime
+from typing import Any
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -11,7 +12,7 @@ from openpyxl.utils import get_column_letter
 class ExcelGenerator:
     """Excel file generator for purchase orders."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.header_font = Font(bold=True, color="FFFFFF")
         self.header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
         self.thin_border = Border(
@@ -26,7 +27,7 @@ class ExcelGenerator:
         manufacturer_name: str,
         order_date: datetime,
         expected_delivery: datetime,
-        items: list[dict],
+        items: list[dict[str, Any]],
     ) -> bytes:
         """Generate purchase order Excel file."""
         wb = Workbook()

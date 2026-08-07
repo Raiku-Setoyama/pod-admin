@@ -4,7 +4,9 @@ SendGrid client is mocked. Covers success/failure/exception handling,
 subject, multiple recipients, and plain-text body building (incl. admin link).
 """
 
+from collections.abc import Iterator
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -13,7 +15,7 @@ from app.services.email_service import EmailService
 
 
 @pytest.fixture
-def email_service():
+def email_service() -> Iterator[tuple[Any, ...]]:
     """Create EmailService with a mocked SendGrid client (no admin link)."""
     with patch("app.services.email_service.SendGridAPIClient") as mock_client_cls:
         mock_client = MagicMock()
@@ -27,7 +29,7 @@ def email_service():
 
 
 @pytest.fixture
-def sample_order_items():
+def sample_order_items() -> list[Any]:
     return [
         {"product_name": "オリジナルTシャツ", "quantity": 2},
         {"product_name": "アクリルキーホルダー", "quantity": 1},
@@ -40,8 +42,8 @@ ORDERED_AT = datetime(2026, 6, 28, 3, 0, tzinfo=UTC)  # JST 12:00
 class TestSendExternalOrderNotification:
     @pytest.mark.asyncio
     async def test_successful_send_to_multiple_recipients(
-        self, email_service, sample_order_items
-    ):
+        self, email_service: tuple[Any, ...], sample_order_items: list[Any]
+    ) -> None:
         service, mock_client = email_service
         mock_response = MagicMock()
         mock_response.status_code = 202
@@ -62,7 +64,7 @@ class TestSendExternalOrderNotification:
         mock_client.send.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_error_status_returns_false(self, email_service, sample_order_items):
+    async def test_error_status_returns_false(self, email_service: tuple[Any, ...], sample_order_items: list[Any]) -> None:
         service, mock_client = email_service
         mock_response = MagicMock()
         mock_response.status_code = 500
@@ -81,7 +83,7 @@ class TestSendExternalOrderNotification:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_exception_returns_false(self, email_service, sample_order_items):
+    async def test_exception_returns_false(self, email_service: tuple[Any, ...], sample_order_items: list[Any]) -> None:
         service, mock_client = email_service
         mock_client.send.side_effect = Exception("network error")
 
@@ -99,8 +101,8 @@ class TestSendExternalOrderNotification:
 
     @pytest.mark.asyncio
     async def test_subject_contains_order_number(
-        self, email_service, sample_order_items
-    ):
+        self, email_service: tuple[Any, ...], sample_order_items: list[Any]
+    ) -> None:
         service, mock_client = email_service
         mock_response = MagicMock()
         mock_response.status_code = 202
@@ -130,7 +132,7 @@ class TestBuildExternalOrderText:
                 admin_base_url=admin_base_url,
             )
 
-    def test_text_contains_order_info(self):
+    def test_text_contains_order_info(self) -> None:
         service = self._service()
         text = service._build_external_order_text(
             order_number="0000001",
@@ -150,7 +152,7 @@ class TestBuildExternalOrderText:
         assert "x 2" in text
         assert "5,000円" in text
 
-    def test_text_includes_link_when_provided(self):
+    def test_text_includes_link_when_provided(self) -> None:
         service = self._service()
         text = service._build_external_order_text(
             order_number="0000001",
@@ -164,7 +166,7 @@ class TestBuildExternalOrderText:
 
         assert "https://admin.example.com/orders/order-1" in text
 
-    def test_text_omits_link_when_absent(self):
+    def test_text_omits_link_when_absent(self) -> None:
         service = self._service()
         text = service._build_external_order_text(
             order_number="0000001",
@@ -179,7 +181,7 @@ class TestBuildExternalOrderText:
         assert "注文詳細" not in text
 
     @pytest.mark.asyncio
-    async def test_admin_link_built_from_base_url(self, sample_order_items):
+    async def test_admin_link_built_from_base_url(self, sample_order_items: list[Any]) -> None:
         service = self._service(admin_base_url="https://admin.example.com/")
         with patch.object(
             service, "_build_external_order_text", wraps=service._build_external_order_text

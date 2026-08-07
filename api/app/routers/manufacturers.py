@@ -1,7 +1,7 @@
 """Manufacturers router."""
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query
@@ -333,7 +333,7 @@ async def update_manufacturer_order_status(
     data: ManufacturerOrderStatusUpdate,
     service: Annotated[ManufacturerOrderService, Depends(get_manufacturer_order_service)],
     current_user: Annotated[User, Depends(get_current_admin)],
-) -> dict:
+) -> dict[str, Any]:
     """メーカーの受注ステータスを一括更新
 
     指定されたメーカーに紐づく受注を指定されたステータスに一括更新します。

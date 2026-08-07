@@ -13,6 +13,8 @@ Tests will fail until the implementation is completed.
 import io
 import json
 import zipfile
+from collections.abc import AsyncIterator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -26,7 +28,7 @@ class TestOrderImageDownloadAPI:
     """受注イメージ画像ZIPダウンロードAPIの統合テスト."""
 
     @pytest.fixture
-    async def test_product(self, db_session: AsyncSession, test_order_source: dict):
+    async def test_product(self, db_session: AsyncSession, test_order_source: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
         """テスト用商品（メーカーに紐づく）."""
         manufacturer_id = str(uuid4())
         manufacturer_name = f"テストメーカー_{manufacturer_id[:8]}"
@@ -79,9 +81,9 @@ class TestOrderImageDownloadAPI:
     async def orders_with_images(
         self,
         db_session: AsyncSession,
-        test_order_source: dict,
-        test_product: dict,
-    ):
+        test_order_source: dict[str, Any],
+        test_product: dict[str, Any],
+    ) -> AsyncIterator[Any]:
         """design_image_urlを持つOrderItemが紐づく受注を2件作成."""
         orders = []
         for i in range(2):
@@ -144,9 +146,9 @@ class TestOrderImageDownloadAPI:
     async def test_download_images_returns_zip(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        orders_with_images: list[dict],
-    ):
+        auth_headers: dict[str, Any],
+        orders_with_images: list[dict[str, Any]],
+    ) -> None:
         """AC-003: POST /api/v1/orders/download-images が対象画像を含むZIPファイルを返す.
 
         given: design_image_urlを持つOrderItemが紐づく受注が存在する
@@ -199,9 +201,9 @@ class TestOrderImageDownloadAPI:
     async def test_download_images_zip_filename_header(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        orders_with_images: list[dict],
-    ):
+        auth_headers: dict[str, Any],
+        orders_with_images: list[dict[str, Any]],
+    ) -> None:
         """ZIPファイル名が「受注画像_{YYYYMMDD_HHMMSS}.zip」形式であること."""
         order_ids = [item["order_id"] for item in orders_with_images]
 
@@ -239,8 +241,8 @@ class TestOrderImageDownloadAPI:
     async def test_download_images_returns_401_without_auth(
         self,
         client: AsyncClient,
-        orders_with_images: list[dict],
-    ):
+        orders_with_images: list[dict[str, Any]],
+    ) -> None:
         """AC-010: 認証されていないユーザーは401エラーが返される.
 
         given: 認証されていないユーザー
@@ -263,8 +265,8 @@ class TestOrderImageDownloadAPI:
     async def test_download_images_empty_order_ids_returns_422(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-    ):
+        auth_headers: dict[str, Any],
+    ) -> None:
         """空のorder_idsリストで422バリデーションエラーが返される."""
         response = await client.post(
             "/api/v1/orders/download-images",

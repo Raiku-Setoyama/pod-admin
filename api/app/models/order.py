@@ -3,7 +3,7 @@
 import datetime as dt
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
@@ -241,7 +241,7 @@ class OrderItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # rksyo の商品識別子（製造データキャッシュキー）
     product_code: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
     # 製造データ生成の元データ（PNGレイヤーURL群）
-    source_images: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    source_images: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True)
     # 紐づく製造データ（キャッシュ本体）
     manufacturing_data_id: Mapped[str | None] = mapped_column(
         ForeignKey("manufacturing_data.id", ondelete="SET NULL"), nullable=True, index=True

@@ -1,7 +1,7 @@
 """Order repository for database operations."""
 
 from datetime import date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -158,7 +158,7 @@ class OrderRepository:
         ordered_from: date | None = None,
         ordered_to: date | None = None,
         status: OrderStatus | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Find order items for a specific manufacturer.
 
         Joins: OrderItem -> Product -> Manufacturer
@@ -220,7 +220,7 @@ class OrderRepository:
 
     async def get_ordered_items_summary_by_manufacturer(
         self,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """メーカー別のORDERED受注明細サマリーを取得（OrderItem.statusベース）"""
         from app.models.manufacturer import Manufacturer
         from app.models.product import Product
@@ -301,7 +301,7 @@ class OrderRepository:
         search: str | None = None,
         expected_delivery_from: date | None = None,
         expected_delivery_to: date | None = None,
-    ) -> list[tuple]:
+    ) -> list[tuple[Any, ...]]:
         """メーカー別の受注明細を詳細情報付きで取得
 
         Args:
@@ -386,7 +386,7 @@ class OrderRepository:
         manufacturer_id: str | None = None,
         expected_delivery_from: date | None = None,
         expected_delivery_to: date | None = None,
-    ) -> list[tuple]:
+    ) -> list[tuple[Any, ...]]:
         """全メーカー横断の受注明細を詳細情報付きで取得
 
         Args:

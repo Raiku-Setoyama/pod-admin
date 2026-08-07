@@ -34,12 +34,12 @@ _COMMON = {
 }
 
 
-def test_manufacturer_order_item_allows_null_delivery_date():
+def test_manufacturer_order_item_allows_null_delivery_date() -> None:
     resp = ManufacturerOrderItemResponse(**_COMMON)
     assert resp.expected_delivery_date is None
 
 
-def test_all_manufacturer_order_item_allows_null_delivery_date():
+def test_all_manufacturer_order_item_allows_null_delivery_date() -> None:
     resp = AllManufacturerOrderItemResponse(
         **_COMMON, manufacturer_id="m1", manufacturer_name="M"
     )

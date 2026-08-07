@@ -22,6 +22,7 @@ import base64
 import logging
 import time
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 
@@ -83,7 +84,7 @@ class IllustratorVmClient:
         return httpx.AsyncClient(timeout=self._request_timeout, transport=self._transport)
 
     @classmethod
-    def from_settings(cls, settings) -> IllustratorVmClient | None:
+    def from_settings(cls, settings: Any) -> IllustratorVmClient | None:
         """Settings から生成。未設定（base_url 空）なら None を返す."""
         if not settings.ILLUSTRATOR_VM_BASE_URL:
             return None
@@ -221,7 +222,7 @@ class IllustratorVmClient:
             f"failed to download VM job {job_id}: {last_exc}"
         ) from last_exc
 
-    async def _request_json(self, method: str, path: str, *, json: dict | None = None) -> dict:
+    async def _request_json(self, method: str, path: str, *, json: dict[str, Any] | None = None) -> dict[str, Any]:
         """JSON を返すエンドポイントを叩く（ネットワークエラー・503 は簡易リトライ）."""
         url = f"{self._base_url}{path}"
         last_exc: Exception | None = None

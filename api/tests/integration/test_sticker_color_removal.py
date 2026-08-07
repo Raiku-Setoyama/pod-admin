@@ -11,6 +11,8 @@ FEAT-0007: ステッカー商品タイプから「クリア」カラーを削除
 - POST /api/v1/external/price-calculation
 """
 
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -23,7 +25,7 @@ class TestStickerColorRemovalAPI:
     """ステッカーカラー削除の統合テスト（API経由）"""
 
     @pytest.fixture
-    async def api_key_headers(self, db_session: AsyncSession):
+    async def api_key_headers(self, db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
         """テスト用のAPIキーを作成し、ヘッダーとして返す"""
         source_id = str(uuid4())
         source_code = f"STICKER{source_id[:6].upper()}"
@@ -54,8 +56,8 @@ class TestStickerColorRemovalAPI:
     async def test_product_options_sticker_returns_only_white(
         self,
         client: AsyncClient,
-        api_key_headers: dict,
-    ):
+        api_key_headers: dict[str, Any],
+    ) -> None:
         """AC-004 統合: ステッカーの商品オプションAPIが「ホワイト」のみ返すこと
 
         given: 外部API認証済み
@@ -84,8 +86,8 @@ class TestStickerColorRemovalAPI:
     async def test_price_calculation_sticker_rejects_clear(
         self,
         client: AsyncClient,
-        api_key_headers: dict,
-    ):
+        api_key_headers: dict[str, Any],
+    ) -> None:
         """AC-005 統合: ステッカーの価格計算APIで「クリア」が拒否されること
 
         given: 外部API認証済み
@@ -117,8 +119,8 @@ class TestStickerColorRemovalAPI:
     async def test_price_calculation_sticker_accepts_white(
         self,
         client: AsyncClient,
-        api_key_headers: dict,
-    ):
+        api_key_headers: dict[str, Any],
+    ) -> None:
         """AC-006 統合: ステッカーの価格計算APIで「ホワイト」が成功すること
 
         given: 外部API認証済み
@@ -155,8 +157,8 @@ class TestStickerColorRemovalAPI:
     async def test_price_calculation_sticker_white_single(
         self,
         client: AsyncClient,
-        api_key_headers: dict,
-    ):
+        api_key_headers: dict[str, Any],
+    ) -> None:
         """AC-006 統合: ステッカー「ホワイト」の単品価格計算
 
         given: 外部API認証済み
@@ -186,8 +188,8 @@ class TestStickerColorRemovalAPI:
     async def test_product_options_sticker_returns_correct_size(
         self,
         client: AsyncClient,
-        api_key_headers: dict,
-    ):
+        api_key_headers: dict[str, Any],
+    ) -> None:
         """統合: ステッカーの商品オプションAPIがサイズも正しく返すこと
 
         given: 外部API認証済み

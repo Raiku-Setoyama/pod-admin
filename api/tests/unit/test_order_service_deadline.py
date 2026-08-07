@@ -6,6 +6,7 @@ ordered_at（実受注時刻）は繰り下がらない（実時刻のまま）�
 
 from datetime import date
 from datetime import datetime as dt
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
@@ -28,7 +29,7 @@ def _setting(value: str) -> MagicMock:
 
 
 def _make_app_setting_repo(deadline_value: str | None) -> AsyncMock:
-    async def find_by_key(key: str):
+    async def find_by_key(key: str) -> Any:
         if key == ORDER_DEADLINE_TIME_KEY:
             return _setting(deadline_value) if deadline_value is not None else None
         if key == SHIPPING_PREPARATION_DAYS_KEY:
@@ -110,7 +111,7 @@ def _order_create() -> OrderCreate:
     )
 
 
-async def _create_at(now_jst: dt, deadline_value: str | None):
+async def _create_at(now_jst: dt, deadline_value: str | None) -> Any:
     service, order_repo = _make_order_service(deadline_value)
     with patch("app.services.order_service.datetime") as mock_datetime:
         mock_datetime.now.return_value = now_jst
@@ -120,7 +121,7 @@ async def _create_at(now_jst: dt, deadline_value: str | None):
 
 @pytest.mark.asyncio
 class TestOrderServiceDeadline:
-    async def test_before_deadline_uses_same_day(self):
+    async def test_before_deadline_uses_same_day(self) -> None:
         # 2026-07-09(木) 17:30、〆切 18:00 → 起算日 7/9 → 納品予定日 7/14(火)
         now = dt(2026, 7, 9, 17, 30, tzinfo=JST)
         order = await _create_at(now, "18:00")
@@ -131,7 +132,7 @@ class TestOrderServiceDeadline:
         # ordered_at は実受注時刻のまま
         assert order.ordered_at == now
 
-    async def test_after_deadline_defers_to_next_business_day(self):
+    async def test_after_deadline_defers_to_next_business_day(self) -> None:
         # 2026-07-09(木) 18:05、〆切 18:00 → 起算日 7/10(金) → 納品予定日 7/15(水)
         now = dt(2026, 7, 9, 18, 5, tzinfo=JST)
         order = await _create_at(now, "18:00")
@@ -142,7 +143,7 @@ class TestOrderServiceDeadline:
         # ordered_at は繰り下げない（実受注時刻のまま）
         assert order.ordered_at == now
 
-    async def test_no_deadline_uses_same_day(self):
+    async def test_no_deadline_uses_same_day(self) -> None:
         # 〆切未設定（空文字）→ 常に当日起算（後方互換）
         now = dt(2026, 7, 9, 23, 0, tzinfo=JST)
         order = await _create_at(now, "")
@@ -150,7 +151,7 @@ class TestOrderServiceDeadline:
         assert order.items[0].expected_delivery_date == date(2026, 7, 14)
         assert order.ordered_at == now
 
-    async def test_deadline_setting_absent_uses_same_day(self):
+    async def test_deadline_setting_absent_uses_same_day(self) -> None:
         # 設定キー自体が無い（find_by_key が None）→ 当日起算
         now = dt(2026, 7, 9, 23, 0, tzinfo=JST)
         order = await _create_at(now, None)

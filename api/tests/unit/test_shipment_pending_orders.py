@@ -29,7 +29,7 @@ class TestPendingOrderStatus:
     items DELIVERED automatically get a Shipment created.
     """
 
-    def test_preparing_status_when_not_all_items_delivered(self):
+    def test_preparing_status_when_not_all_items_delivered(self) -> None:
         """AC-01: Order with items not all DELIVERED should have status 'preparing'."""
         from app.schemas.shipment import PendingOrderStatus
 
@@ -38,7 +38,7 @@ class TestPendingOrderStatus:
 
         assert status == PendingOrderStatus.PREPARING
 
-    def test_preparing_status_when_some_items_ordered(self):
+    def test_preparing_status_when_some_items_ordered(self) -> None:
         """Order with some items still ORDERED should have status 'preparing'."""
         from app.schemas.shipment import PendingOrderStatus
 
@@ -47,7 +47,7 @@ class TestPendingOrderStatus:
 
         assert status == PendingOrderStatus.PREPARING
 
-    def test_preparing_status_when_some_items_manufacturing(self):
+    def test_preparing_status_when_some_items_manufacturing(self) -> None:
         """Order with some items in MANUFACTURING should have status 'preparing'."""
         from app.schemas.shipment import PendingOrderStatus
 
@@ -60,7 +60,7 @@ class TestPendingOrderStatus:
 class TestPendingOrderResponseSchema:
     """Tests for PendingOrderResponse schema."""
 
-    def test_pending_order_response_schema_structure(self):
+    def test_pending_order_response_schema_structure(self) -> None:
         """PendingOrderResponse should have all required fields."""
         from app.schemas.shipment import PendingOrderResponse, PendingOrderStatus
 
@@ -85,7 +85,7 @@ class TestPendingOrderResponseSchema:
         assert response.items_delivered == 1
         assert response.status == PendingOrderStatus.PREPARING
 
-    def test_pending_order_response_type_literal(self):
+    def test_pending_order_response_type_literal(self) -> None:
         """PendingOrderResponse type field must be 'pending_order'."""
         from app.schemas.shipment import PendingOrderResponse, PendingOrderStatus
 
@@ -109,7 +109,7 @@ class TestPendingOrderResponseSchema:
 class TestShipmentResponseType:
     """Tests for ShipmentResponse type field."""
 
-    def test_shipment_response_has_type_field(self):
+    def test_shipment_response_has_type_field(self) -> None:
         """ShipmentResponse should have type='shipment' field."""
         from app.schemas.shipment import ShipmentResponse
 
@@ -142,7 +142,7 @@ class TestShipmentResponseType:
 class TestUnionListResponse:
     """Tests for the union list response containing both shipments and pending orders."""
 
-    def test_union_list_response_structure(self):
+    def test_union_list_response_structure(self) -> None:
         """ShipmentListResponse should contain both shipments and pending_orders."""
         from app.schemas.shipment import (
             PendingOrderResponse,
@@ -204,7 +204,7 @@ class TestOrderRepositoryFindPendingOrders:
     """Tests for OrderRepository.find_pending_orders() method."""
 
     @pytest.mark.asyncio
-    async def test_find_pending_orders_returns_orders_without_shipment(self):
+    async def test_find_pending_orders_returns_orders_without_shipment(self) -> None:
         """find_pending_orders() should return orders that have no associated shipment."""
         from app.repositories.order_repository import OrderRepository
 
@@ -230,7 +230,7 @@ class TestOrderRepositoryFindPendingOrders:
         assert isinstance(total, int)
 
     @pytest.mark.asyncio
-    async def test_find_pending_orders_excludes_shipped_and_cancelled(self):
+    async def test_find_pending_orders_excludes_shipped_and_cancelled(self) -> None:
         """find_pending_orders() should exclude SHIPPED and CANCELLED orders."""
         from app.repositories.order_repository import OrderRepository
 
@@ -256,7 +256,7 @@ class TestShipmentServiceListWithPendingOrders:
     """Tests for ShipmentService.list() extension to include pending orders."""
 
     @pytest.mark.asyncio
-    async def test_list_includes_both_shipments_and_pending_orders(self):
+    async def test_list_includes_both_shipments_and_pending_orders(self) -> None:
         """list() should return both shipments and pending orders."""
         from app.schemas.shipment import ShipmentListWithPendingResponse
         from app.services.shipment_service import ShipmentService
@@ -330,7 +330,7 @@ class TestShipmentServiceListWithPendingOrders:
         # Second item should be pending order
 
     @pytest.mark.asyncio
-    async def test_list_pending_order_status_preparing(self):
+    async def test_list_pending_order_status_preparing(self) -> None:
         """Pending orders with incomplete items should have 'preparing' status."""
         from app.schemas.shipment import PendingOrderStatus
         from app.services.shipment_service import ShipmentService
@@ -393,7 +393,7 @@ class TestShipmentServiceListWithPendingOrders:
 class TestPendingOrderItemsSummary:
     """Tests for order items summary in PendingOrderResponse."""
 
-    def test_pending_order_item_count_and_delivered_count(self):
+    def test_pending_order_item_count_and_delivered_count(self) -> None:
         """PendingOrderResponse should correctly count total and delivered items."""
         from app.schemas.shipment import PendingOrderResponse, PendingOrderStatus
 
@@ -413,7 +413,7 @@ class TestPendingOrderItemsSummary:
         assert response.item_count == 5
         assert response.items_delivered == 2
 
-    def test_pending_order_partial_items_delivered_count(self):
+    def test_pending_order_partial_items_delivered_count(self) -> None:
         """Pending orders can have some items delivered."""
         from app.schemas.shipment import PendingOrderResponse, PendingOrderStatus
 

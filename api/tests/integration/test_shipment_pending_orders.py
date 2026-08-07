@@ -14,6 +14,8 @@ Test scenarios from Intent Spec acceptance criteria:
 - AC-06: Thumbnail download works for pending orders
 """
 
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -23,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.fixture
-async def test_manufacturer_for_pending(db_session: AsyncSession):
+async def test_manufacturer_for_pending(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """Test manufacturer for pending orders tests."""
     manufacturer_id = str(uuid4())
 
@@ -62,8 +64,8 @@ async def test_manufacturer_for_pending(db_session: AsyncSession):
 
 @pytest.fixture
 async def test_product_for_pending(
-    db_session: AsyncSession, test_manufacturer_for_pending: dict
-):
+    db_session: AsyncSession, test_manufacturer_for_pending: dict[str, Any]
+) -> AsyncIterator[dict[str, Any]]:
     """Test product for pending orders tests."""
     product_id = str(uuid4())
     # Use unique position to avoid constraint violation
@@ -102,9 +104,9 @@ async def test_product_for_pending(
 @pytest.fixture
 async def order_with_preparing_status(
     db_session: AsyncSession,
-    test_order_source: dict,
-    test_product_for_pending: dict,
-):
+    test_order_source: dict[str, Any],
+    test_product_for_pending: dict[str, Any],
+) -> AsyncIterator[dict[str, Any]]:
     """Create an order with items not all DELIVERED (preparing status).
 
     - 3 OrderItems: 1 DELIVERED, 1 MANUFACTURING, 1 ORDERED
@@ -197,9 +199,9 @@ async def order_with_preparing_status(
 @pytest.fixture
 async def existing_shipment(
     db_session: AsyncSession,
-    test_order_source: dict,
-    test_product_for_pending: dict,
-):
+    test_order_source: dict[str, Any],
+    test_product_for_pending: dict[str, Any],
+) -> AsyncIterator[dict[str, Any]]:
     """Create an existing shipment to verify it appears in the list."""
     order_id = str(uuid4())
     order_number = f"SHIP-{order_id[:8]}"
@@ -310,9 +312,9 @@ class TestShipmentListWithPendingOrdersAPI:
     async def test_ac01_preparing_orders_appear_in_shipment_list(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        order_with_preparing_status: dict,
-    ):
+        auth_headers: dict[str, Any],
+        order_with_preparing_status: dict[str, Any],
+    ) -> None:
         """AC-01: Orders with incomplete items appear as 'preparing' in shipment list.
 
         Given: An order exists with OrderItems not all DELIVERED
@@ -348,10 +350,10 @@ class TestShipmentListWithPendingOrdersAPI:
     async def test_ac03_type_field_distinguishes_shipment_and_pending_order(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        existing_shipment: dict,
-        order_with_preparing_status: dict,
-    ):
+        auth_headers: dict[str, Any],
+        existing_shipment: dict[str, Any],
+        order_with_preparing_status: dict[str, Any],
+    ) -> None:
         """AC-03: Type field correctly distinguishes 'shipment' from 'pending_order'.
 
         Given: Both a Shipment and a pending order exist
@@ -386,9 +388,9 @@ class TestShipmentListWithPendingOrdersAPI:
     async def test_ac04_order_with_shipment_does_not_appear_as_pending(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        existing_shipment: dict,
-    ):
+        auth_headers: dict[str, Any],
+        existing_shipment: dict[str, Any],
+    ) -> None:
         """AC-04: Orders that have Shipments do not appear as pending_order.
 
         Given: An order has an associated Shipment
@@ -415,10 +417,10 @@ class TestShipmentListWithPendingOrdersAPI:
     async def test_pagination_includes_both_shipments_and_pending_orders(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        existing_shipment: dict,
-        order_with_preparing_status: dict,
-    ):
+        auth_headers: dict[str, Any],
+        existing_shipment: dict[str, Any],
+        order_with_preparing_status: dict[str, Any],
+    ) -> None:
         """Total count includes both shipments and pending orders."""
         response = await client.get(
             "/api/v1/shipments?limit=10",
@@ -435,9 +437,9 @@ class TestShipmentListWithPendingOrdersAPI:
     async def test_customer_info_in_pending_order(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        order_with_preparing_status: dict,
-    ):
+        auth_headers: dict[str, Any],
+        order_with_preparing_status: dict[str, Any],
+    ) -> None:
         """Pending orders include customer information."""
         response = await client.get(
             "/api/v1/shipments",
@@ -467,9 +469,9 @@ class TestPendingOrderExclusions:
     async def shipped_order(
         self,
         db_session: AsyncSession,
-        test_order_source: dict,
-        test_product_for_pending: dict,
-    ):
+        test_order_source: dict[str, Any],
+        test_product_for_pending: dict[str, Any],
+    ) -> AsyncIterator[dict[str, Any]]:
         """Create an order with SHIPPED status (should be excluded)."""
         order_id = str(uuid4())
         order_number = f"SHIPPED-{order_id[:8]}"
@@ -515,9 +517,9 @@ class TestPendingOrderExclusions:
     async def cancelled_order(
         self,
         db_session: AsyncSession,
-        test_order_source: dict,
-        test_product_for_pending: dict,
-    ):
+        test_order_source: dict[str, Any],
+        test_product_for_pending: dict[str, Any],
+    ) -> AsyncIterator[dict[str, Any]]:
         """Create an order with CANCELLED status (should be excluded)."""
         order_id = str(uuid4())
         order_number = f"CANCELLED-{order_id[:8]}"
@@ -563,9 +565,9 @@ class TestPendingOrderExclusions:
     async def test_shipped_orders_not_in_pending_list(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        shipped_order: dict,
-    ):
+        auth_headers: dict[str, Any],
+        shipped_order: dict[str, Any],
+    ) -> None:
         """SHIPPED orders should not appear as pending orders."""
         response = await client.get(
             "/api/v1/shipments",
@@ -587,9 +589,9 @@ class TestPendingOrderExclusions:
     async def test_cancelled_orders_not_in_pending_list(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        cancelled_order: dict,
-    ):
+        auth_headers: dict[str, Any],
+        cancelled_order: dict[str, Any],
+    ) -> None:
         """CANCELLED orders should not appear as pending orders."""
         response = await client.get(
             "/api/v1/shipments",
@@ -621,9 +623,9 @@ class TestPendingOrderDownloads:
     async def test_ac05_csv_download_for_pending_order(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        order_with_preparing_status: dict,
-    ):
+        auth_headers: dict[str, Any],
+        order_with_preparing_status: dict[str, Any],
+    ) -> None:
         """AC-05: CSV download works for pending orders.
 
         Given: A pending order exists
@@ -648,11 +650,11 @@ class TestPendingOrderDownloads:
     async def test_ac06_thumbnail_download_for_pending_order(
         self,
         client: AsyncClient,
-        auth_headers: dict,
+        auth_headers: dict[str, Any],
         db_session: AsyncSession,
-        test_order_source: dict,
-        test_product_for_pending: dict,
-    ):
+        test_order_source: dict[str, Any],
+        test_product_for_pending: dict[str, Any],
+    ) -> None:
         """AC-06: Thumbnail download works for pending orders.
 
         Given: A pending order with thumbnail URLs exists

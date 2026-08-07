@@ -4,6 +4,8 @@ FEAT-0006: Order status manual switching functionality.
 Tests the full flow through API -> Service -> Repository -> Database.
 """
 
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -13,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.fixture
-async def test_order_ordered(db_session: AsyncSession, test_order_source: dict):
+async def test_order_ordered(db_session: AsyncSession, test_order_source: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """Create a test order in 'ordered' status."""
     order_id = str(uuid4())
 
@@ -53,7 +55,7 @@ async def test_order_ordered(db_session: AsyncSession, test_order_source: dict):
 
 
 @pytest.fixture
-async def test_order_manufacturing(db_session: AsyncSession, test_order_source: dict):
+async def test_order_manufacturing(db_session: AsyncSession, test_order_source: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """Create a test order in 'manufacturing' status."""
     order_id = str(uuid4())
 
@@ -94,8 +96,8 @@ async def test_order_manufacturing(db_session: AsyncSession, test_order_source: 
 
 @pytest.fixture
 async def test_order_delivered_with_shipment(
-    db_session: AsyncSession, test_order_source: dict
-):
+    db_session: AsyncSession, test_order_source: dict[str, Any]
+) -> AsyncIterator[dict[str, Any]]:
     """Create a test order in 'delivered' status with a pending shipment."""
     order_id = str(uuid4())
     shipment_id = str(uuid4())
@@ -162,8 +164,8 @@ async def test_order_delivered_with_shipment(
 
 @pytest.fixture
 async def test_order_delivered_with_shipped_shipment(
-    db_session: AsyncSession, test_order_source: dict
-):
+    db_session: AsyncSession, test_order_source: dict[str, Any]
+) -> AsyncIterator[dict[str, Any]]:
     """Create a test order in 'delivered' status with a shipped shipment."""
     order_id = str(uuid4())
     shipment_id = str(uuid4())
@@ -239,10 +241,10 @@ class TestOrderStatusTransitionAPI:
     async def test_ordered_to_manufacturing(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_order_ordered: dict,
+        auth_headers: dict[str, Any],
+        test_order_ordered: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """Test: ordered -> manufacturing via API."""
         order_id = test_order_ordered["id"]
 
@@ -268,10 +270,10 @@ class TestOrderStatusTransitionAPI:
     async def test_manufacturing_to_ordered(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_order_manufacturing: dict,
+        auth_headers: dict[str, Any],
+        test_order_manufacturing: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """Test: manufacturing -> ordered via API (reverse transition)."""
         order_id = test_order_manufacturing["id"]
 
@@ -289,10 +291,10 @@ class TestOrderStatusTransitionAPI:
     async def test_ordered_to_delivered_creates_shipment(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_order_ordered: dict,
+        auth_headers: dict[str, Any],
+        test_order_ordered: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """Test: ordered -> delivered creates shipment automatically."""
         order_id = test_order_ordered["id"]
 
@@ -322,10 +324,10 @@ class TestOrderStatusTransitionAPI:
     async def test_manufacturing_to_delivered_creates_shipment(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_order_manufacturing: dict,
+        auth_headers: dict[str, Any],
+        test_order_manufacturing: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """Test: manufacturing -> delivered creates shipment automatically."""
         order_id = test_order_manufacturing["id"]
 
@@ -359,10 +361,10 @@ class TestOrderStatusTransitionAPI:
     async def test_delivered_to_ordered_deletes_shipment(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_order_delivered_with_shipment: dict,
+        auth_headers: dict[str, Any],
+        test_order_delivered_with_shipment: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """Test: delivered -> ordered deletes related shipment."""
         order_id = test_order_delivered_with_shipment["id"]
 
@@ -391,10 +393,10 @@ class TestOrderStatusTransitionAPI:
     async def test_delivered_to_manufacturing_deletes_shipment(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_order_delivered_with_shipment: dict,
+        auth_headers: dict[str, Any],
+        test_order_delivered_with_shipment: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """Test: delivered -> manufacturing deletes related shipment."""
         order_id = test_order_delivered_with_shipment["id"]
 
@@ -427,9 +429,9 @@ class TestOrderStatusTransitionAPI:
     async def test_cannot_transition_to_shipped_directly(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_order_ordered: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_order_ordered: dict[str, Any],
+    ) -> None:
         """Test: Direct transition to shipped is rejected."""
         order_id = test_order_ordered["id"]
 
@@ -447,9 +449,9 @@ class TestOrderStatusTransitionAPI:
     async def test_cannot_revert_from_delivered_when_shipment_shipped(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_order_delivered_with_shipped_shipment: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_order_delivered_with_shipped_shipment: dict[str, Any],
+    ) -> None:
         """Test: Cannot go back from delivered when shipment is already shipped."""
         order_id = test_order_delivered_with_shipped_shipment["id"]
 
@@ -470,8 +472,8 @@ class TestOrderStatusTransitionAPI:
     async def test_order_not_found(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-    ):
+        auth_headers: dict[str, Any],
+    ) -> None:
         """Test: Returns 404 when order not found."""
         non_existent_id = str(uuid4())
 
@@ -487,9 +489,9 @@ class TestOrderStatusTransitionAPI:
     async def test_invalid_status_value(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_order_ordered: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_order_ordered: dict[str, Any],
+    ) -> None:
         """Test: Returns 422 when invalid status value provided."""
         order_id = test_order_ordered["id"]
 

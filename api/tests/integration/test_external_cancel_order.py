@@ -4,6 +4,8 @@ FEAT-0023: POST /api/v1/external/orders/{order_number}/cancel
 Tests the full flow through API -> Service -> Repository -> Database.
 """
 
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -17,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.fixture
-async def api_key_headers(db_session: AsyncSession):
+async def api_key_headers(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """Create an order source with API key and return headers for authenticated requests."""
     source_id = str(uuid4())
     api_key = f"test-cancel-api-key-{source_id}"
@@ -54,7 +56,7 @@ async def api_key_headers(db_session: AsyncSession):
 
 
 @pytest.fixture
-async def ordered_order(db_session: AsyncSession, api_key_headers: dict):
+async def ordered_order(db_session: AsyncSession, api_key_headers: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """Create a test order in 'ordered' status."""
     order_id = str(uuid4())
     order_number = f"CANCEL-ORD-{order_id[:8]}"
@@ -96,7 +98,7 @@ async def ordered_order(db_session: AsyncSession, api_key_headers: dict):
 
 
 @pytest.fixture
-async def manufacturing_order(db_session: AsyncSession, api_key_headers: dict):
+async def manufacturing_order(db_session: AsyncSession, api_key_headers: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """Create a test order in 'manufacturing' status."""
     order_id = str(uuid4())
     order_number = f"CANCEL-MFG-{order_id[:8]}"
@@ -149,10 +151,10 @@ class TestCancelOrderAPI:
     async def test_cancel_ordered_order_returns_200(
         self,
         client: AsyncClient,
-        api_key_headers: dict,
-        ordered_order: dict,
+        api_key_headers: dict[str, Any],
+        ordered_order: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """AC-008: POST /api/v1/external/orders/{order_number}/cancel が 200 を返す."""
         order_number = ordered_order["order_number"]
         headers = {"X-API-Key": api_key_headers["X-API-Key"]}
@@ -172,10 +174,10 @@ class TestCancelOrderAPI:
     async def test_cancel_ordered_order_updates_db(
         self,
         client: AsyncClient,
-        api_key_headers: dict,
-        ordered_order: dict,
+        api_key_headers: dict[str, Any],
+        ordered_order: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """AC-008: キャンセル後、DBの注文ステータスが cancelled に更新されている."""
         order_number = ordered_order["order_number"]
         order_id = ordered_order["id"]
@@ -208,8 +210,8 @@ class TestCancelOrderNotFoundAPI:
     async def test_cancel_nonexistent_order_returns_404(
         self,
         client: AsyncClient,
-        api_key_headers: dict,
-    ):
+        api_key_headers: dict[str, Any],
+    ) -> None:
         """AC-009: 存在しない order_number で 404 が返される."""
         headers = {"X-API-Key": api_key_headers["X-API-Key"]}
 
@@ -233,9 +235,9 @@ class TestCancelOrderConflictAPI:
     async def test_cancel_manufacturing_order_returns_409(
         self,
         client: AsyncClient,
-        api_key_headers: dict,
-        manufacturing_order: dict,
-    ):
+        api_key_headers: dict[str, Any],
+        manufacturing_order: dict[str, Any],
+    ) -> None:
         """AC-010: manufacturing ステータスの注文で 409 が返される."""
         order_number = manufacturing_order["order_number"]
         headers = {"X-API-Key": api_key_headers["X-API-Key"]}
@@ -260,7 +262,7 @@ class TestCancelOrderUnauthorizedAPI:
     async def test_cancel_without_api_key_returns_401(
         self,
         client: AsyncClient,
-    ):
+    ) -> None:
         """AC-011: APIキーなしで 401 が返される."""
         response = await client.post(
             "/api/v1/external/orders/ANY-ORDER-001/cancel",
@@ -272,7 +274,7 @@ class TestCancelOrderUnauthorizedAPI:
     async def test_cancel_with_invalid_api_key_returns_401(
         self,
         client: AsyncClient,
-    ):
+    ) -> None:
         """AC-011: 無効なAPIキーで 401 が返される."""
         headers = {"X-API-Key": "invalid-api-key-that-does-not-exist"}
 

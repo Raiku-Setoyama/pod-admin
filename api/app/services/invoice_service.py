@@ -2,6 +2,7 @@
 
 from calendar import monthrange
 from datetime import date
+from typing import Any
 
 from app.repositories.manufacturer_repository import ManufacturerRepository
 from app.repositories.order_repository import OrderRepository
@@ -16,7 +17,7 @@ class InvoiceService:
         self,
         manufacturer_repo: ManufacturerRepository,
         order_repo: OrderRepository,
-    ):
+    ) -> None:
         self._manufacturer_repo = manufacturer_repo
         self._order_repo = order_repo
 
@@ -61,8 +62,8 @@ class InvoiceService:
 
     async def _generate_invoice(
         self,
-        manufacturer,
-        rows: list,
+        manufacturer: Any,
+        rows: list[Any],
     ) -> tuple[bytes, str, int, int]:
         """
         Internal method to generate invoice PDF.

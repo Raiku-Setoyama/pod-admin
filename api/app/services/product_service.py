@@ -1,5 +1,7 @@
 """Product service."""
 
+from typing import Any
+
 from app.models.product import Product, ProductType
 from app.repositories.manufacturer_repository import ManufacturerRepository
 from app.repositories.product_repository import ProductRepository
@@ -23,12 +25,12 @@ class ProductService:
         self,
         product_repo: ProductRepository,
         manufacturer_repo: ManufacturerRepository,
-    ):
+    ) -> None:
         self._product_repo = product_repo
         self._manufacturer_repo = manufacturer_repo
 
     @staticmethod
-    def _to_response(product) -> ProductResponse:
+    def _to_response(product: Any) -> ProductResponse:
         """Convert a Product model to ProductResponse with manufacturer_name."""
         manufacturer = getattr(product, "manufacturer", None)
         manufacturer_name: str | None = None

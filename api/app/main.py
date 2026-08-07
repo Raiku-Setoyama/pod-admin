@@ -3,6 +3,7 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -70,7 +71,7 @@ app.add_middleware(
 @app.exception_handler(AppException)
 async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:
     """Handle application exceptions."""
-    content: dict = {
+    content: dict[str, Any] = {
         "error": {
             "code": exc.code,
             "message": exc.message,
@@ -82,7 +83,7 @@ async def app_exception_handler(request: Request, exc: AppException) -> JSONResp
 
 
 @app.get("/")
-async def root():
+async def root() -> dict[str, Any]:
     """Root endpoint returning API information."""
     return {
         "name": settings.PROJECT_NAME,
@@ -91,7 +92,7 @@ async def root():
 
 
 @app.get("/health")
-async def health_check():
+async def health_check() -> dict[str, Any]:
     """Health check endpoint."""
     return {"status": "healthy"}
 
@@ -126,21 +127,21 @@ if settings.DEBUG:
     )
 
     @app.get("/test/not-found")
-    async def test_not_found():
+    async def test_not_found() -> None:
         raise NotFoundError("Resource")
 
     @app.get("/test/validation-error")
-    async def test_validation_error():
+    async def test_validation_error() -> None:
         raise ValidationError("Invalid input")
 
     @app.get("/test/unauthorized")
-    async def test_unauthorized():
+    async def test_unauthorized() -> None:
         raise UnauthorizedError()
 
     @app.get("/test/forbidden")
-    async def test_forbidden():
+    async def test_forbidden() -> None:
         raise ForbiddenError()
 
     @app.get("/test/daily-limit-exceeded")
-    async def test_daily_limit_exceeded():
+    async def test_daily_limit_exceeded() -> None:
         raise DailyOrderLimitExceededError("Test Manufacturer")

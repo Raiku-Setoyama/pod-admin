@@ -5,6 +5,7 @@ Tests cover all order status transition scenarios.
 """
 
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -16,28 +17,28 @@ from app.utils.exceptions import InvalidStatusTransitionError, ValidationError
 
 
 @pytest.fixture
-def mock_order_repo():
+def mock_order_repo() -> Any:
     """Mock order repository."""
     repo = AsyncMock()
     return repo
 
 
 @pytest.fixture
-def mock_product_repo():
+def mock_product_repo() -> Any:
     """Mock product repository."""
     repo = AsyncMock()
     return repo
 
 
 @pytest.fixture
-def mock_shipment_repo():
+def mock_shipment_repo() -> Any:
     """Mock shipment repository."""
     repo = AsyncMock()
     return repo
 
 
 @pytest.fixture
-def order_service(mock_order_repo, mock_product_repo, mock_shipment_repo):
+def order_service(mock_order_repo: Any, mock_product_repo: Any, mock_shipment_repo: Any) -> Any:
     """Create OrderService with mocked dependencies."""
     return OrderService(
         order_repo=mock_order_repo,
@@ -111,8 +112,8 @@ class TestOrderStatusTransition:
 
     @pytest.mark.asyncio
     async def test_ordered_to_manufacturing_success(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: ordered -> manufacturing is allowed."""
         # Arrange
         order = create_mock_order(status=OrderStatus.ORDERED.value)
@@ -132,8 +133,8 @@ class TestOrderStatusTransition:
 
     @pytest.mark.asyncio
     async def test_manufacturing_to_ordered_success(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: manufacturing -> ordered is allowed (reverse transition)."""
         # Arrange
         order = create_mock_order(status=OrderStatus.MANUFACTURING.value)
@@ -153,8 +154,8 @@ class TestOrderStatusTransition:
 
     @pytest.mark.asyncio
     async def test_ordered_to_delivered_creates_shipment(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: ordered -> delivered creates shipment automatically."""
         # Arrange
         order = create_mock_order(status=OrderStatus.ORDERED.value)
@@ -175,8 +176,8 @@ class TestOrderStatusTransition:
 
     @pytest.mark.asyncio
     async def test_manufacturing_to_delivered_creates_shipment(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: manufacturing -> delivered creates shipment automatically."""
         # Arrange
         order = create_mock_order(status=OrderStatus.MANUFACTURING.value)
@@ -201,8 +202,8 @@ class TestOrderStatusTransition:
 
     @pytest.mark.asyncio
     async def test_delivered_to_ordered_deletes_shipment(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: delivered -> ordered deletes related shipment."""
         # Arrange
         order = create_mock_order(status=OrderStatus.DELIVERED.value)
@@ -225,8 +226,8 @@ class TestOrderStatusTransition:
 
     @pytest.mark.asyncio
     async def test_delivered_to_manufacturing_deletes_shipment(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: delivered -> manufacturing deletes related shipment."""
         # Arrange
         order = create_mock_order(status=OrderStatus.DELIVERED.value)
@@ -253,8 +254,8 @@ class TestOrderStatusTransition:
 
     @pytest.mark.asyncio
     async def test_cannot_transition_to_shipped_directly(
-        self, order_service, mock_order_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any
+    ) -> None:
         """Test: Direct transition to shipped is not allowed."""
         # Arrange
         order = create_mock_order(status=OrderStatus.ORDERED.value)
@@ -269,8 +270,8 @@ class TestOrderStatusTransition:
 
     @pytest.mark.asyncio
     async def test_cannot_transition_from_delivered_when_shipment_is_shipped(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: Cannot go back from delivered when shipment is already shipped."""
         # Arrange
         order = create_mock_order(status=OrderStatus.DELIVERED.value)
@@ -290,8 +291,8 @@ class TestOrderStatusTransition:
 
     @pytest.mark.asyncio
     async def test_cannot_transition_from_shipped(
-        self, order_service, mock_order_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any
+    ) -> None:
         """Test: Cannot transition from shipped status."""
         # Arrange
         order = create_mock_order(status=OrderStatus.SHIPPED.value)
@@ -310,8 +311,8 @@ class TestOrderStatusTransition:
 
     @pytest.mark.asyncio
     async def test_delivered_to_ordered_when_no_shipment_exists(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: delivered -> ordered when no shipment exists (no error)."""
         # Arrange
         order = create_mock_order(status=OrderStatus.DELIVERED.value)
@@ -331,8 +332,8 @@ class TestOrderStatusTransition:
 
     @pytest.mark.asyncio
     async def test_same_status_transition_is_idempotent(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: Transitioning to the same status is allowed (idempotent)."""
         # Arrange
         order = create_mock_order(status=OrderStatus.MANUFACTURING.value)
@@ -351,8 +352,8 @@ class TestOrderStatusTransition:
 
     @pytest.mark.asyncio
     async def test_to_delivered_does_not_duplicate_shipment(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: Going to delivered when shipment already exists does not create duplicate."""
         # Arrange
         order = create_mock_order(status=OrderStatus.MANUFACTURING.value)

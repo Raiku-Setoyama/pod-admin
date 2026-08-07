@@ -5,7 +5,7 @@ from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_not_found_error_response(client: AsyncClient):
+async def test_not_found_error_response(client: AsyncClient) -> None:
     """Test NotFoundError returns proper JSON response."""
     response = await client.get("/test/not-found")
     assert response.status_code == 404
@@ -15,7 +15,7 @@ async def test_not_found_error_response(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_validation_error_response(client: AsyncClient):
+async def test_validation_error_response(client: AsyncClient) -> None:
     """Test ValidationError returns proper JSON response."""
     response = await client.get("/test/validation-error")
     assert response.status_code == 400
@@ -25,7 +25,7 @@ async def test_validation_error_response(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_unauthorized_error_response(client: AsyncClient):
+async def test_unauthorized_error_response(client: AsyncClient) -> None:
     """Test UnauthorizedError returns proper JSON response."""
     response = await client.get("/test/unauthorized")
     assert response.status_code == 401
@@ -35,7 +35,7 @@ async def test_unauthorized_error_response(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_forbidden_error_response(client: AsyncClient):
+async def test_forbidden_error_response(client: AsyncClient) -> None:
     """Test ForbiddenError returns proper JSON response."""
     response = await client.get("/test/forbidden")
     assert response.status_code == 403
@@ -45,7 +45,7 @@ async def test_forbidden_error_response(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_daily_order_limit_exceeded_error_response(client: AsyncClient):
+async def test_daily_order_limit_exceeded_error_response(client: AsyncClient) -> None:
     """Test DailyOrderLimitExceededError returns proper JSON response."""
     response = await client.get("/test/daily-limit-exceeded")
     assert response.status_code == 400

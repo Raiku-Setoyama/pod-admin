@@ -18,6 +18,7 @@ AC-017: 同一注文番号が複数行に存在する場合、最後の行の値
 
 import csv
 import io
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -30,33 +31,33 @@ from app.services.shipment_service import ShipmentService
 
 
 @pytest.fixture
-def mock_shipment_repo():
+def mock_shipment_repo() -> Any:
     """Mock shipment repository."""
     return AsyncMock()
 
 
 @pytest.fixture
-def mock_order_repo():
+def mock_order_repo() -> Any:
     """Mock order repository."""
     return AsyncMock()
 
 
 @pytest.fixture
-def mock_file_storage():
+def mock_file_storage() -> Any:
     """Mock file storage."""
     return AsyncMock()
 
 
 @pytest.fixture
-def mock_order_source_repo():
+def mock_order_source_repo() -> Any:
     """Mock order source repository."""
     return AsyncMock()
 
 
 @pytest.fixture
 def shipment_service(
-    mock_shipment_repo, mock_order_repo, mock_file_storage, mock_order_source_repo
-):
+    mock_shipment_repo: Any, mock_order_repo: Any, mock_file_storage: Any, mock_order_source_repo: Any
+) -> Any:
     """Create ShipmentService with mocked dependencies."""
     return ShipmentService(
         shipment_repo=mock_shipment_repo,
@@ -159,8 +160,8 @@ class TestImportTrackingFromFile:
 
     @pytest.mark.asyncio
     async def test_ac006_missing_tracking_number_column_raises_validation_error(
-        self, shipment_service
-    ):
+        self, shipment_service: Any
+    ) -> None:
         """AC-006: 「伝票番号」列がないCSVはバリデーションエラーになる.
 
         Given: ヘッダーが「注文番号」列のみのCSV
@@ -180,8 +181,8 @@ class TestImportTrackingFromFile:
 
     @pytest.mark.asyncio
     async def test_ac006_missing_order_number_column_raises_validation_error(
-        self, shipment_service
-    ):
+        self, shipment_service: Any
+    ) -> None:
         """AC-006: 「注文番号」列がないCSVはバリデーションエラーになる.
 
         Given: ヘッダーが「伝票番号」列のみのCSV
@@ -205,8 +206,8 @@ class TestImportTrackingFromFile:
 
     @pytest.mark.asyncio
     async def test_ac007_empty_rows_are_skipped(
-        self, shipment_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """AC-007: データ行の間に空行が含まれるCSVで空行は無視される.
 
         Given: データ行の間に空行が含まれるCSV
@@ -245,8 +246,8 @@ class TestImportTrackingFromFile:
 
     @pytest.mark.asyncio
     async def test_ac008_empty_tracking_number_is_error(
-        self, shipment_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """AC-008: 伝票番号が空の行はエラーとして報告される.
 
         Given: 注文番号は入力されているが伝票番号が空の行
@@ -272,8 +273,8 @@ class TestImportTrackingFromFile:
 
     @pytest.mark.asyncio
     async def test_ac009_missing_carrier_column_sets_carrier_null(
-        self, shipment_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """AC-009: ヘッダーが「注文番号,伝票番号」のみのCSVで正常処理される.
 
         Given: ヘッダーが「注文番号,伝票番号」のみのCSV
@@ -308,8 +309,8 @@ class TestImportTrackingFromFile:
 
     @pytest.mark.asyncio
     async def test_ac010_unsupported_file_extension_raises_error(
-        self, shipment_service
-    ):
+        self, shipment_service: Any
+    ) -> None:
         """AC-010: .txtファイルはバリデーションエラーになる.
 
         Given: .txtファイル
@@ -330,8 +331,8 @@ class TestImportTrackingFromFile:
 
     @pytest.mark.asyncio
     async def test_ac010_pdf_file_raises_error(
-        self, shipment_service
-    ):
+        self, shipment_service: Any
+    ) -> None:
         """AC-010: .pdfファイルはバリデーションエラーになる."""
         mock_file = create_mock_upload_file(
             b"%PDF-1.4",
@@ -351,8 +352,8 @@ class TestImportTrackingFromFile:
 
     @pytest.mark.asyncio
     async def test_ac011_file_over_10mb_raises_error(
-        self, shipment_service
-    ):
+        self, shipment_service: Any
+    ) -> None:
         """AC-011: 11MBのCSVファイルはバリデーションエラーになる.
 
         Given: 11MBのCSVファイル
@@ -377,8 +378,8 @@ class TestImportTrackingFromFile:
 
     @pytest.mark.asyncio
     async def test_ac011_file_exactly_10mb_is_accepted(
-        self, shipment_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """AC-011: 10MB以下のファイルはサイズバリデーションを通過する."""
         csv_bytes = create_csv_bytes([
             ["注文番号", "伝票番号"],
@@ -409,8 +410,8 @@ class TestImportTrackingFromFile:
 
     @pytest.mark.asyncio
     async def test_ac013_shift_jis_csv_is_parsed_correctly(
-        self, shipment_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """AC-013: Shift-JISでエンコードされたCSVが正しく解析される.
 
         Given: Shift-JISでエンコードされたCSV
@@ -445,8 +446,8 @@ class TestImportTrackingFromFile:
 
     @pytest.mark.asyncio
     async def test_ac013_utf8_bom_csv_is_parsed_correctly(
-        self, shipment_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """AC-013: UTF-8 BOM付きCSVが正しく解析される."""
         csv_bytes = create_csv_bytes(
             [
@@ -479,8 +480,8 @@ class TestImportTrackingFromFile:
 
     @pytest.mark.asyncio
     async def test_ac017_duplicate_order_number_last_write_wins(
-        self, shipment_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """AC-017: 同じ注文番号が2行あると最後の行の伝票番号で更新される.
 
         Given: 同じ注文番号"ORD-001"が2行存在し、伝票番号がそれぞれ異なる
@@ -517,8 +518,8 @@ class TestImportTrackingFromFile:
 
     @pytest.mark.asyncio
     async def test_carrier_column_alternative_name_accepted(
-        self, shipment_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """運送会社名列のヘッダーが「運送会社」でも許容される.
 
         Spec assumption: 運送会社名の列ヘッダーは「運送会社名」「運送会社」のいずれも許容する
@@ -552,7 +553,7 @@ class TestGenerateImportTemplate:
     # ===========================================
 
     @pytest.mark.asyncio
-    async def test_template_has_correct_headers(self, shipment_service):
+    async def test_template_has_correct_headers(self, shipment_service: Any) -> None:
         """テンプレートCSVのヘッダー行が正しい.
 
         Given: ShipmentService.generate_import_template() が呼び出される
@@ -571,7 +572,7 @@ class TestGenerateImportTemplate:
         assert rows[0] == ["注文番号", "伝票番号", "運送会社名"]
 
     @pytest.mark.asyncio
-    async def test_template_has_sample_data_row(self, shipment_service):
+    async def test_template_has_sample_data_row(self, shipment_service: Any) -> None:
         """テンプレートCSVにサンプルデータ行が含まれる.
 
         Given: ShipmentService.generate_import_template() が呼び出される
@@ -590,7 +591,7 @@ class TestGenerateImportTemplate:
         assert len(rows[1]) == 3, f"Expected 3 columns in sample row, got {len(rows[1])}"
 
     @pytest.mark.asyncio
-    async def test_template_is_utf8_bom(self, shipment_service):
+    async def test_template_is_utf8_bom(self, shipment_service: Any) -> None:
         """テンプレートCSVがUTF-8 BOM付きである.
 
         Given: ShipmentService.generate_import_template() が呼び出される
@@ -603,7 +604,7 @@ class TestGenerateImportTemplate:
         assert csv_bytes[:3] == b"\xef\xbb\xbf", "Expected UTF-8 BOM at start of file"
 
     @pytest.mark.asyncio
-    async def test_template_filename_is_csv(self, shipment_service):
+    async def test_template_filename_is_csv(self, shipment_service: Any) -> None:
         """テンプレートのファイル名が.csv拡張子である."""
         csv_bytes, filename = await shipment_service.generate_import_template()
 

@@ -1,5 +1,7 @@
 """Unit tests for the server-side-fetch URL guard (SSRF protection)."""
 
+from typing import Any
+
 import pytest
 
 from app.utils.url_guard import UnsafeUrlError, _ip_is_blocked, validate_source_url
@@ -19,62 +21,62 @@ class TestIpIsBlocked:
             "224.0.0.1",  # multicast
         ],
     )
-    def test_blocks_non_public_addresses(self, ip):
+    def test_blocks_non_public_addresses(self, ip: Any) -> None:
         assert _ip_is_blocked(ip) is True
 
     @pytest.mark.parametrize("ip", ["8.8.8.8", "1.1.1.1", "93.184.216.34", "2606:2800:220:1:248:1893:25c8:1946"])
-    def test_allows_public_addresses(self, ip):
+    def test_allows_public_addresses(self, ip: Any) -> None:
         assert _ip_is_blocked(ip) is False
 
 
 class TestValidateSourceUrl:
-    def _resolver(self, mapping):
-        def resolve(host):
+    def _resolver(self, mapping: Any) -> Any:
+        def resolve(host: Any) -> Any:
             if host not in mapping:
                 raise OSError(f"no such host {host}")
             return mapping[host]
 
         return resolve
 
-    def test_rejects_non_http_scheme(self):
+    def test_rejects_non_http_scheme(self) -> None:
         with pytest.raises(UnsafeUrlError):
             validate_source_url("file:///etc/passwd", resolver=self._resolver({}))
         with pytest.raises(UnsafeUrlError):
             validate_source_url("ftp://example.com/x.png", resolver=self._resolver({}))
 
-    def test_rejects_missing_host(self):
+    def test_rejects_missing_host(self) -> None:
         with pytest.raises(UnsafeUrlError):
             validate_source_url("https:///x.png", resolver=self._resolver({}))
 
-    def test_rejects_plain_http_when_not_allowlisted(self):
+    def test_rejects_plain_http_when_not_allowlisted(self) -> None:
         with pytest.raises(UnsafeUrlError):
             validate_source_url(
                 "http://cdn.example.com/color.png",
                 resolver=self._resolver({"cdn.example.com": ["93.184.216.34"]}),
             )
 
-    def test_allows_public_https_host(self):
+    def test_allows_public_https_host(self) -> None:
         # should not raise
         validate_source_url(
             "https://cdn.example.com/color.png",
             resolver=self._resolver({"cdn.example.com": ["93.184.216.34"]}),
         )
 
-    def test_rejects_host_resolving_to_private_ip(self):
+    def test_rejects_host_resolving_to_private_ip(self) -> None:
         with pytest.raises(UnsafeUrlError):
             validate_source_url(
                 "https://evil.example.com/color.png",
                 resolver=self._resolver({"evil.example.com": ["10.0.0.9"]}),
             )
 
-    def test_rejects_metadata_ip_literal(self):
+    def test_rejects_metadata_ip_literal(self) -> None:
         with pytest.raises(UnsafeUrlError):
             validate_source_url(
                 "https://169.254.169.254/latest/meta-data/",
                 resolver=self._resolver({"169.254.169.254": ["169.254.169.254"]}),
             )
 
-    def test_rejects_if_any_resolved_ip_is_private(self):
+    def test_rejects_if_any_resolved_ip_is_private(self) -> None:
         # DNS returning a mix — must reject if ANY address is unsafe (rebinding defense)
         with pytest.raises(UnsafeUrlError):
             validate_source_url(
@@ -82,7 +84,7 @@ class TestValidateSourceUrl:
                 resolver=self._resolver({"mixed.example.com": ["93.184.216.34", "127.0.0.1"]}),
             )
 
-    def test_allowlisted_host_bypasses_ip_and_scheme_checks(self):
+    def test_allowlisted_host_bypasses_ip_and_scheme_checks(self) -> None:
         # An explicitly trusted host is allowed even over http / private IP (e.g. internal asset server, dev stub)
         validate_source_url(
             "http://host.docker.internal:9099/layers/color.png",
@@ -90,7 +92,7 @@ class TestValidateSourceUrl:
             resolver=self._resolver({"host.docker.internal": ["192.168.65.2"]}),
         )
 
-    def test_dns_failure_is_rejected(self):
+    def test_dns_failure_is_rejected(self) -> None:
         with pytest.raises(UnsafeUrlError):
             validate_source_url(
                 "https://nxdomain.example.com/x.png",

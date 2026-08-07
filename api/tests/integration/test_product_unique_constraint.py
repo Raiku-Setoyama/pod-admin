@@ -7,6 +7,8 @@ FEAT-0008: 商品マスタ（productsテーブル）に product_type / size / po
 409 Conflict エラーが返されることを検証します。
 """
 
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -22,7 +24,7 @@ from app.models.user import User, UserRole
 
 
 # 認証をバイパスするためのモックユーザー
-def get_mock_admin():
+def get_mock_admin() -> Any:
     """テスト用のモック管理者ユーザーを返す"""
     return User(
         id="test-admin-id",
@@ -39,7 +41,7 @@ API_PREFIX = settings.API_V1_PREFIX
 
 
 @pytest.fixture
-async def auth_client():
+async def auth_client() -> AsyncIterator[Any]:
     """認証をバイパスしたHTTPクライアント"""
     app.dependency_overrides[get_current_admin] = get_mock_admin
 
@@ -53,7 +55,7 @@ async def auth_client():
 
 
 @pytest.fixture
-async def test_manufacturer(db_session: AsyncSession):
+async def test_manufacturer(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """テスト用メーカーを作成"""
     manufacturer = Manufacturer(
         id=str(uuid4()),
@@ -75,7 +77,7 @@ async def test_manufacturer(db_session: AsyncSession):
 
 
 @pytest.fixture
-async def test_product(db_session: AsyncSession, test_manufacturer):
+async def test_product(db_session: AsyncSession, test_manufacturer: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """テスト用の商品を作成（ユニークな値を使用）"""
     # テストごとにユニークな値を使用して既存データとの衝突を避ける
     unique_suffix = str(uuid4())[:8]
@@ -109,7 +111,7 @@ async def test_product(db_session: AsyncSession, test_manufacturer):
 
 
 @pytest.fixture
-async def test_product_pair(db_session: AsyncSession, test_manufacturer):
+async def test_product_pair(db_session: AsyncSession, test_manufacturer: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """テスト用の商品ペア（2つの異なるサイズ）を作成"""
     unique_suffix = str(uuid4())[:8]
     size_a = f"PAIR-A-{unique_suffix}"
@@ -164,8 +166,8 @@ class TestProductUniqueConstraintAPI:
 
     @pytest.mark.asyncio
     async def test_ac007_create_duplicate_returns_409(
-        self, auth_client: AsyncClient, test_product: dict
-    ):
+        self, auth_client: AsyncClient, test_product: dict[str, Any]
+    ) -> None:
         """AC-007: API経由で重複作成すると409エラーレスポンスが返ること
 
         given: 商品マスタにテスト用の商品が存在する
@@ -197,8 +199,8 @@ class TestProductUniqueConstraintAPI:
 
     @pytest.mark.asyncio
     async def test_ac007_create_different_spec_succeeds(
-        self, auth_client: AsyncClient, test_product: dict
-    ):
+        self, auth_client: AsyncClient, test_product: dict[str, Any]
+    ) -> None:
         """異なる仕様の商品は正常に作成できること
 
         given: テスト用の商品が存在する
@@ -226,8 +228,8 @@ class TestProductUniqueConstraintAPI:
 
     @pytest.mark.asyncio
     async def test_ac008_update_to_duplicate_returns_409(
-        self, auth_client: AsyncClient, test_product_pair: dict
-    ):
+        self, auth_client: AsyncClient, test_product_pair: dict[str, Any]
+    ) -> None:
         """AC-008: API経由で重複更新すると409エラーレスポンスが返ること
 
         given:
@@ -255,8 +257,8 @@ class TestProductUniqueConstraintAPI:
 
     @pytest.mark.asyncio
     async def test_update_self_no_conflict(
-        self, auth_client: AsyncClient, test_product: dict
-    ):
+        self, auth_client: AsyncClient, test_product: dict[str, Any]
+    ) -> None:
         """自分自身の仕様と同じ更新は成功すること
 
         given: テスト用の商品が存在する
@@ -280,8 +282,8 @@ class TestProductUniqueConstraintAPI:
 
     @pytest.mark.asyncio
     async def test_create_with_null_position_and_color(
-        self, auth_client: AsyncClient, test_manufacturer: dict
-    ):
+        self, auth_client: AsyncClient, test_manufacturer: dict[str, Any]
+    ) -> None:
         """position と color が NULL の商品を作成できること"""
         unique_size = f"NULL-TEST-{str(uuid4())[:8]}"
         new_data = {
@@ -305,8 +307,8 @@ class TestProductUniqueConstraintAPI:
 
     @pytest.mark.asyncio
     async def test_create_duplicate_with_null_fields_returns_409(
-        self, auth_client: AsyncClient, test_manufacturer: dict, db_session: AsyncSession
-    ):
+        self, auth_client: AsyncClient, test_manufacturer: dict[str, Any], db_session: AsyncSession
+    ) -> None:
         """position と color が NULL の重複商品を作成すると409が返ること"""
         # ユニークなサイズを使用
         unique_size = f"DUP-NULL-{str(uuid4())[:8]}"

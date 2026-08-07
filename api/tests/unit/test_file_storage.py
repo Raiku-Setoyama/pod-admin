@@ -2,7 +2,9 @@
 
 import os
 import tempfile
+from collections.abc import Iterator
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -17,20 +19,20 @@ from app.utils.file_storage import (
 
 
 @pytest.fixture
-def temp_upload_dir():
+def temp_upload_dir() -> Iterator[Any]:
     """Create a temporary directory for uploads."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield tmpdir
 
 
 @pytest.fixture
-def file_storage(temp_upload_dir):
+def file_storage(temp_upload_dir: Any) -> Any:
     """Create a LocalFileStorage instance with temp directory."""
     return LocalFileStorage(temp_upload_dir)
 
 
 @pytest.mark.asyncio
-async def test_save_file(file_storage, temp_upload_dir):
+async def test_save_file(file_storage: Any, temp_upload_dir: Any) -> None:
     """Test saving a file."""
     # Create a mock UploadFile
     content = b"test file content"
@@ -56,7 +58,7 @@ async def test_save_file(file_storage, temp_upload_dir):
 
 
 @pytest.mark.asyncio
-async def test_save_file_creates_directory(file_storage, temp_upload_dir):
+async def test_save_file_creates_directory(file_storage: Any, temp_upload_dir: Any) -> None:
     """Test that save creates necessary directories."""
     mock_file = MagicMock()
     mock_file.filename = "test.pdf"
@@ -70,7 +72,7 @@ async def test_save_file_creates_directory(file_storage, temp_upload_dir):
 
 
 @pytest.mark.asyncio
-async def test_delete_file(file_storage, temp_upload_dir):
+async def test_delete_file(file_storage: Any, temp_upload_dir: Any) -> None:
     """Test deleting a file."""
     # Create a file first
     test_path = "test/file.txt"
@@ -87,14 +89,14 @@ async def test_delete_file(file_storage, temp_upload_dir):
 
 
 @pytest.mark.asyncio
-async def test_delete_nonexistent_file(file_storage):
+async def test_delete_nonexistent_file(file_storage: Any) -> None:
     """Test deleting a nonexistent file returns False."""
     result = await file_storage.delete("nonexistent/file.txt")
     assert result is False
 
 
 @pytest.mark.asyncio
-async def test_get_file(file_storage, temp_upload_dir):
+async def test_get_file(file_storage: Any, temp_upload_dir: Any) -> None:
     """Test getting file content."""
     # Create a file first
     test_path = "test/file.txt"
@@ -111,14 +113,14 @@ async def test_get_file(file_storage, temp_upload_dir):
 
 
 @pytest.mark.asyncio
-async def test_get_nonexistent_file(file_storage):
+async def test_get_nonexistent_file(file_storage: Any) -> None:
     """Test getting a nonexistent file returns None."""
     result = await file_storage.get("nonexistent/file.txt")
     assert result is None
 
 
 @pytest.mark.asyncio
-async def test_exists(file_storage, temp_upload_dir):
+async def test_exists(file_storage: Any, temp_upload_dir: Any) -> None:
     """Test checking file existence."""
     # Create a file
     test_path = "test/exists.txt"
@@ -201,19 +203,19 @@ def _mock_upload(filename: str, content: bytes) -> MagicMock:
 
 
 @pytest.fixture
-def fake_gcs_client():
+def fake_gcs_client() -> Any:
     """Fresh in-memory fake GCS client."""
     return _FakeGCSClient()
 
 
 @pytest.fixture
-def gcs_storage(fake_gcs_client):
+def gcs_storage(fake_gcs_client: Any) -> Any:
     """GCSFileStorage backed by the fake client (bucket 'test-bucket')."""
     return GCSFileStorage(bucket="test-bucket", client=fake_gcs_client)
 
 
 @pytest.mark.asyncio
-async def test_gcs_save_and_get_roundtrip(gcs_storage, fake_gcs_client):
+async def test_gcs_save_and_get_roundtrip(gcs_storage: Any, fake_gcs_client: Any) -> None:
     """save() uploads to GCS and get() returns the same bytes."""
     content = b"manufacturing data .ai bytes"
     saved_path = await gcs_storage.save(_mock_upload("design.ai", content), "manufacturing_data/")
@@ -230,7 +232,7 @@ async def test_gcs_save_and_get_roundtrip(gcs_storage, fake_gcs_client):
 
 
 @pytest.mark.asyncio
-async def test_gcs_save_sets_content_type_from_extension(gcs_storage, fake_gcs_client):
+async def test_gcs_save_sets_content_type_from_extension(gcs_storage: Any, fake_gcs_client: Any) -> None:
     """save() sets an accurate Content-Type from the file extension (not text/plain)."""
     cases = {
         "art.pdf": "application/pdf",
@@ -244,21 +246,21 @@ async def test_gcs_save_sets_content_type_from_extension(gcs_storage, fake_gcs_c
 
 @pytest.mark.asyncio
 async def test_gcs_save_unknown_extension_defaults_to_octet_stream(
-    gcs_storage, fake_gcs_client
-):
+    gcs_storage: Any, fake_gcs_client: Any
+) -> None:
     """Unknown/blank extensions fall back to application/octet-stream."""
     saved = await gcs_storage.save(_mock_upload("blob.xyzzy", b"x"), "misc/")
     assert fake_gcs_client.content_types["test-bucket"][saved] == "application/octet-stream"
 
 
 @pytest.mark.asyncio
-async def test_gcs_get_nonexistent_returns_none(gcs_storage):
+async def test_gcs_get_nonexistent_returns_none(gcs_storage: Any) -> None:
     """get() returns None when the object does not exist."""
     assert await gcs_storage.get("manufacturing_data/missing.ai") is None
 
 
 @pytest.mark.asyncio
-async def test_gcs_delete(gcs_storage):
+async def test_gcs_delete(gcs_storage: Any) -> None:
     """delete() removes an existing object and reports True."""
     saved_path = await gcs_storage.save(_mock_upload("a.pdf", b"pdf"), "shipments/1/")
 
@@ -267,13 +269,13 @@ async def test_gcs_delete(gcs_storage):
 
 
 @pytest.mark.asyncio
-async def test_gcs_delete_nonexistent_returns_false(gcs_storage):
+async def test_gcs_delete_nonexistent_returns_false(gcs_storage: Any) -> None:
     """delete() returns False when the object is missing."""
     assert await gcs_storage.delete("chat/missing.png") is False
 
 
 @pytest.mark.asyncio
-async def test_gcs_exists(gcs_storage):
+async def test_gcs_exists(gcs_storage: Any) -> None:
     """exists() reflects whether the object is present."""
     saved_path = await gcs_storage.save(_mock_upload("x.png", b"png"), "chat/")
 
@@ -282,7 +284,7 @@ async def test_gcs_exists(gcs_storage):
 
 
 @pytest.mark.asyncio
-async def test_gcs_prefix_is_prepended_to_object_name(fake_gcs_client):
+async def test_gcs_prefix_is_prepended_to_object_name(fake_gcs_client: Any) -> None:
     """GCS_PREFIX is prepended to the stored object name but not the returned key."""
     storage = GCSFileStorage(bucket="test-bucket", client=fake_gcs_client, prefix="prod")
     content = b"prefixed"
@@ -303,7 +305,7 @@ async def test_gcs_prefix_is_prepended_to_object_name(fake_gcs_client):
 # ---------------------------------------------------------------------------
 
 
-def _settings(**overrides):
+def _settings(**overrides) -> Any:
     """Minimal settings stub for the factory (duck-typed, no env required)."""
     base = {
         "UPLOAD_DIR": "uploads",
@@ -315,7 +317,7 @@ def _settings(**overrides):
     return SimpleNamespace(**base)
 
 
-def test_factory_returns_local_when_no_bucket():
+def test_factory_returns_local_when_no_bucket() -> None:
     """No GCS_BUCKET -> LocalFileStorage (default, behavior unchanged)."""
     storage = build_file_storage(_settings(UPLOAD_DIR="/data/uploads"))
 
@@ -323,7 +325,7 @@ def test_factory_returns_local_when_no_bucket():
     assert storage.base_dir == "/data/uploads"
 
 
-def test_factory_returns_gcs_when_bucket_set(monkeypatch):
+def test_factory_returns_gcs_when_bucket_set(monkeypatch: pytest.MonkeyPatch) -> None:
     """GCS_BUCKET set -> GCSFileStorage, wired with bucket/prefix (no real client)."""
     fake_client = _FakeGCSClient()
     monkeypatch.setattr(
@@ -338,7 +340,7 @@ def test_factory_returns_gcs_when_bucket_set(monkeypatch):
     assert storage._client is fake_client
 
 
-def test_gcs_client_is_cached_per_process(monkeypatch):
+def test_gcs_client_is_cached_per_process(monkeypatch: pytest.MonkeyPatch) -> None:
     """_build_gcs_client reuses one client (no per-request rebuild/auth)."""
     import google.cloud.storage as gcs_storage
 
@@ -346,7 +348,7 @@ def test_gcs_client_is_cached_per_process(monkeypatch):
 
     constructed: list[object] = []
 
-    def _fake_client_ctor(*args, **kwargs):
+    def _fake_client_ctor(*args, **kwargs) -> Any:
         client = object()
         constructed.append(client)
         return client
@@ -367,13 +369,13 @@ def test_gcs_client_is_cached_per_process(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_generate_stored_filename_preserves_extension():
+def test_generate_stored_filename_preserves_extension() -> None:
     """The generated name keeps the original extension."""
     assert generate_stored_filename("photo.PNG").endswith(".PNG")
     assert generate_stored_filename("archive.tar.gz").endswith(".gz")
 
 
-def test_generate_stored_filename_without_extension():
+def test_generate_stored_filename_without_extension() -> None:
     """A name without an extension yields a bare timestamp_uuid."""
     name = generate_stored_filename(None)
     assert "." not in name
@@ -381,6 +383,6 @@ def test_generate_stored_filename_without_extension():
     assert len(name.split("_")) == 3
 
 
-def test_generate_stored_filename_is_unique():
+def test_generate_stored_filename_is_unique() -> None:
     """Two calls produce distinct names (uuid component)."""
     assert generate_stored_filename("a.pdf") != generate_stored_filename("a.pdf")

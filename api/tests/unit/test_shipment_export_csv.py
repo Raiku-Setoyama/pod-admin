@@ -13,6 +13,7 @@ AC-005: Existing 17 columns remain unchanged
 
 import csv
 import io
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -48,33 +49,33 @@ EXPECTED_17_HEADERS = [
 
 
 @pytest.fixture
-def mock_shipment_repo():
+def mock_shipment_repo() -> Any:
     """Mock shipment repository."""
     return AsyncMock()
 
 
 @pytest.fixture
-def mock_order_repo():
+def mock_order_repo() -> Any:
     """Mock order repository."""
     return AsyncMock()
 
 
 @pytest.fixture
-def mock_file_storage():
+def mock_file_storage() -> Any:
     """Mock file storage."""
     return AsyncMock()
 
 
 @pytest.fixture
-def mock_order_source_repo():
+def mock_order_source_repo() -> Any:
     """Mock order source repository."""
     return AsyncMock()
 
 
 @pytest.fixture
 def shipment_service(
-    mock_shipment_repo, mock_order_repo, mock_file_storage, mock_order_source_repo
-):
+    mock_shipment_repo: Any, mock_order_repo: Any, mock_file_storage: Any, mock_order_source_repo: Any
+) -> Any:
     """Create ShipmentService with mocked dependencies."""
     return ShipmentService(
         shipment_repo=mock_shipment_repo,
@@ -200,8 +201,8 @@ class TestShipmentExportCsvColumn18:
 
     @pytest.mark.asyncio
     async def test_ac001_header_18th_column_is_processing_product_name(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """AC-001: CSVヘッダーの18列目に「商品名（処理用）」が含まれる.
 
         Given: ShipmentService.export_csv() が呼び出される
@@ -237,8 +238,8 @@ class TestShipmentExportCsvColumn18:
 
     @pytest.mark.asyncio
     async def test_ac002_data_row_18th_column_order_number_uid(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """AC-002: CSVデータ行の18列目に「注文番号_商品番号」形式の値が出力される.
 
         Given: 注文番号 "ORD-0001"、商品番号（uid） "ITEM-001" の OrderItem を持つ
@@ -278,8 +279,8 @@ class TestShipmentExportCsvColumn18:
 
     @pytest.mark.asyncio
     async def test_ac003_multiple_order_items_each_row_has_correct_value(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """AC-003: 複数OrderItemがある場合、各行にそれぞれの「注文番号_商品番号」が出力される.
 
         Given: 1つの注文に2つのOrderItem（uid: "ITEM-001", "ITEM-002"）が
@@ -327,8 +328,8 @@ class TestShipmentExportCsvColumn18:
 
     @pytest.mark.asyncio
     async def test_ac004_uid_none_produces_order_number_with_underscore(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """AC-004: OrderItem.uid が null の場合、注文番号のみ + アンダースコアが出力される.
 
         Given: OrderItem.uid が None の OrderItem を持つ Shipment が存在する
@@ -364,8 +365,8 @@ class TestShipmentExportCsvColumn18:
 
     @pytest.mark.asyncio
     async def test_ac005_existing_17_columns_unchanged(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """AC-005: 既存の17列のヘッダーと値が変更されていない.
 
         Given: ShipmentService.export_csv() が呼び出される
@@ -446,14 +447,14 @@ class TestShipmentExportCsvProductDetail:
     )
     async def test_product_detail_column_format(
         self,
-        shipment_service,
-        mock_shipment_repo,
-        product_type,
-        size,
-        position,
-        color,
-        expected,
-    ):
+        shipment_service: Any,
+        mock_shipment_repo: Any,
+        product_type: Any,
+        size: Any,
+        position: Any,
+        color: Any,
+        expected: Any,
+    ) -> None:
         """4列目「商品種類」が {商品種類} - {サイズ} - {位置} - {色} 形式で出力される."""
         order_item = create_mock_order_item(
             product_type=product_type, size=size, position=position, color=color

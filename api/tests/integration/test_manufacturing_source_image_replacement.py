@@ -9,6 +9,8 @@ failed になる。本テストは同期的に確定する状態（source_images
 """
 
 import json
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -25,7 +27,7 @@ def _order_number() -> str:
 
 
 @pytest.fixture
-async def keychain_setup(db_session: AsyncSession):
+async def keychain_setup(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """acrylic_keychain のメーカー・商品マスタ・API キー付き受注元を用意する."""
     manufacturer_id = str(uuid4())
     await db_session.execute(
@@ -85,7 +87,7 @@ async def keychain_setup(db_session: AsyncSession):
 
 async def _create_v2_order(
     client: AsyncClient, db_session: AsyncSession, api_key: str, order_number: str
-) -> dict:
+) -> dict[str, Any]:
     """v2 受注を1件作成し、注文IDと紐付いた製造データIDを返す.
 
     製造データの紐付けは受注レスポンス生成後（prepare_for_order）に確定するため、
@@ -139,9 +141,9 @@ class TestReplaceSourceImagesAPI:
         self,
         client: AsyncClient,
         db_session: AsyncSession,
-        keychain_setup: dict,
-        auth_headers: dict,
-    ):
+        keychain_setup: dict[str, Any],
+        auth_headers: dict[str, Any],
+    ) -> None:
         created = await _create_v2_order(client, db_session, keychain_setup["api_key"], _order_number())
 
         resp = await client.get(
@@ -160,9 +162,9 @@ class TestReplaceSourceImagesAPI:
         self,
         client: AsyncClient,
         db_session: AsyncSession,
-        keychain_setup: dict,
-        auth_headers: dict,
-    ):
+        keychain_setup: dict[str, Any],
+        auth_headers: dict[str, Any],
+    ) -> None:
         created = await _create_v2_order(client, db_session, keychain_setup["api_key"], _order_number())
         mfg_id = created["mfg_id"]
 
@@ -210,9 +212,9 @@ class TestReplaceSourceImagesAPI:
         self,
         client: AsyncClient,
         db_session: AsyncSession,
-        keychain_setup: dict,
-        auth_headers: dict,
-    ):
+        keychain_setup: dict[str, Any],
+        auth_headers: dict[str, Any],
+    ) -> None:
         created = await _create_v2_order(client, db_session, keychain_setup["api_key"], _order_number())
         # 生成完了済み（発注可能）の状態を作る
         await db_session.execute(
@@ -249,9 +251,9 @@ class TestReplaceSourceImagesAPI:
         self,
         client: AsyncClient,
         db_session: AsyncSession,
-        keychain_setup: dict,
-        auth_headers: dict,
-    ):
+        keychain_setup: dict[str, Any],
+        auth_headers: dict[str, Any],
+    ) -> None:
         created = await _create_v2_order(client, db_session, keychain_setup["api_key"], _order_number())
         await db_session.execute(
             text("UPDATE order_items SET status = 'manufacturing' WHERE order_id = :oid"),
@@ -271,9 +273,9 @@ class TestReplaceSourceImagesAPI:
         self,
         client: AsyncClient,
         db_session: AsyncSession,
-        keychain_setup: dict,
-        auth_headers: dict,
-    ):
+        keychain_setup: dict[str, Any],
+        auth_headers: dict[str, Any],
+    ) -> None:
         created = await _create_v2_order(client, db_session, keychain_setup["api_key"], _order_number())
 
         resp = await client.post(
@@ -284,7 +286,7 @@ class TestReplaceSourceImagesAPI:
         assert resp.status_code == 400, resp.text
 
     @pytest.mark.asyncio
-    async def test_requires_authentication(self, client: AsyncClient):
+    async def test_requires_authentication(self, client: AsyncClient) -> None:
         resp = await client.post(
             f"/api/v1/manufacturing-data/{uuid4()}/source-images",
             files={"color": ("fixed_color.png", PNG, "image/png")},

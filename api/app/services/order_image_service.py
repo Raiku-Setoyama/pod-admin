@@ -7,6 +7,7 @@ import asyncio
 import logging
 import mimetypes
 from datetime import datetime
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -39,7 +40,7 @@ class OrderImageService:
             HTTPException: 404 if no images could be collected.
         """
         # Collect image URLs with metadata from orders
-        image_tasks: list[dict] = []
+        image_tasks: list[dict[str, Any]] = []
 
         for order_id in order_ids:
             order = await self._order_repo.find_by_id(order_id)
@@ -67,11 +68,11 @@ class OrderImageService:
 
         # Fetch images in parallel with semaphore
         semaphore = asyncio.Semaphore(10)
-        fetched_images: list[dict | None] = []
+        fetched_images: list[dict[str, Any] | None] = []
 
         async with httpx.AsyncClient() as client:
 
-            async def fetch_image(task: dict) -> dict | None:
+            async def fetch_image(task: dict[str, Any]) -> dict[str, Any] | None:
                 async with semaphore:
                     try:
                         response = await client.get(task["design_image_url"])

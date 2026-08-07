@@ -8,7 +8,7 @@ from datetime import datetime
 class ZipBuilder:
     """ZIP file builder for purchase order documents."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._buffer = io.BytesIO()
         self._zip = zipfile.ZipFile(self._buffer, "w", zipfile.ZIP_DEFLATED)
 

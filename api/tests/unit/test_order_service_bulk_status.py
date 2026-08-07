@@ -8,6 +8,7 @@ Tests will fail until the implementation is completed.
 """
 
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -32,28 +33,28 @@ except ImportError:
 
 
 @pytest.fixture
-def mock_order_repo():
+def mock_order_repo() -> Any:
     """Mock order repository."""
     repo = AsyncMock()
     return repo
 
 
 @pytest.fixture
-def mock_product_repo():
+def mock_product_repo() -> Any:
     """Mock product repository."""
     repo = AsyncMock()
     return repo
 
 
 @pytest.fixture
-def mock_shipment_repo():
+def mock_shipment_repo() -> Any:
     """Mock shipment repository."""
     repo = AsyncMock()
     return repo
 
 
 @pytest.fixture
-def order_service(mock_order_repo, mock_product_repo, mock_shipment_repo):
+def order_service(mock_order_repo: Any, mock_product_repo: Any, mock_shipment_repo: Any) -> Any:
     """Create OrderService with mocked dependencies."""
     return OrderService(
         order_repo=mock_order_repo,
@@ -127,8 +128,8 @@ class TestOrderBulkStatusUpdate:
 
     @pytest.mark.asyncio
     async def test_bulk_update_all_orders_to_manufacturing_success(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: Multiple orders from ordered to manufacturing all succeed."""
         # Arrange
         order_ids = ["order-1", "order-2", "order-3"]
@@ -137,7 +138,7 @@ class TestOrderBulkStatusUpdate:
             for oid in order_ids
         }
 
-        async def find_by_id(order_id):
+        async def find_by_id(order_id: Any) -> Any:
             return orders.get(order_id)
 
         mock_order_repo.find_by_id.side_effect = find_by_id
@@ -159,8 +160,8 @@ class TestOrderBulkStatusUpdate:
 
     @pytest.mark.asyncio
     async def test_bulk_update_all_orders_to_delivered_creates_shipments(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: Bulk update to delivered creates shipments for all orders."""
         # Arrange
         order_ids = ["order-1", "order-2"]
@@ -169,7 +170,7 @@ class TestOrderBulkStatusUpdate:
             for oid in order_ids
         }
 
-        async def find_by_id(order_id):
+        async def find_by_id(order_id: Any) -> Any:
             return orders.get(order_id)
 
         mock_order_repo.find_by_id.side_effect = find_by_id
@@ -195,8 +196,8 @@ class TestOrderBulkStatusUpdate:
 
     @pytest.mark.asyncio
     async def test_bulk_update_partial_success_mixed_statuses(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: Mixed order statuses - only valid transitions succeed."""
         # Arrange: ordered and shipped orders mixed
         order_ordered = create_mock_order(
@@ -211,7 +212,7 @@ class TestOrderBulkStatusUpdate:
             "order-shipped": order_shipped,
         }
 
-        async def find_by_id(order_id):
+        async def find_by_id(order_id: Any) -> Any:
             return orders.get(order_id)
 
         mock_order_repo.find_by_id.side_effect = find_by_id
@@ -231,15 +232,15 @@ class TestOrderBulkStatusUpdate:
 
     @pytest.mark.asyncio
     async def test_bulk_update_partial_success_some_not_found(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: Some order IDs do not exist - only existing orders are updated."""
         # Arrange
         order_valid = create_mock_order(
             order_id="order-valid", status=OrderStatus.ORDERED.value
         )
 
-        async def find_by_id(order_id):
+        async def find_by_id(order_id: Any) -> Any:
             if order_id == "order-valid":
                 return order_valid
             return None  # Not found
@@ -265,8 +266,8 @@ class TestOrderBulkStatusUpdate:
 
     @pytest.mark.asyncio
     async def test_bulk_update_to_shipped_rejected(
-        self, order_service, mock_order_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any
+    ) -> None:
         """Test: Bulk update to shipped status is rejected with 422 error."""
         # Arrange
         order_ids = ["order-1", "order-2"]
@@ -282,8 +283,8 @@ class TestOrderBulkStatusUpdate:
 
     @pytest.mark.asyncio
     async def test_bulk_update_from_shipped_all_fail(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: Orders in shipped status cannot be updated."""
         # Arrange
         order_ids = ["order-1", "order-2"]
@@ -292,7 +293,7 @@ class TestOrderBulkStatusUpdate:
             for oid in order_ids
         }
 
-        async def find_by_id(order_id):
+        async def find_by_id(order_id: Any) -> Any:
             return orders.get(order_id)
 
         mock_order_repo.find_by_id.side_effect = find_by_id
@@ -315,8 +316,8 @@ class TestOrderBulkStatusUpdate:
 
     @pytest.mark.asyncio
     async def test_bulk_update_delivered_to_ordered_deletes_shipments(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: delivered -> ordered deletes related shipments for all orders."""
         # Arrange
         order_ids = ["order-1", "order-2"]
@@ -332,7 +333,7 @@ class TestOrderBulkStatusUpdate:
             for oid in order_ids
         }
 
-        async def find_by_id(order_id):
+        async def find_by_id(order_id: Any) -> Any:
             return orders.get(order_id)
 
         mock_order_repo.find_by_id.side_effect = find_by_id
@@ -353,8 +354,8 @@ class TestOrderBulkStatusUpdate:
 
     @pytest.mark.asyncio
     async def test_bulk_update_delivered_to_manufacturing_deletes_shipments(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: delivered -> manufacturing deletes related shipments."""
         # Arrange
         order_ids = ["order-1"]
@@ -385,8 +386,8 @@ class TestOrderBulkStatusUpdate:
 
     @pytest.mark.asyncio
     async def test_bulk_update_delivered_with_shipped_shipment_fails(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: delivered -> ordered fails if shipment is already shipped."""
         # Arrange
         order = create_mock_order(
@@ -412,8 +413,8 @@ class TestOrderBulkStatusUpdate:
 
     @pytest.mark.asyncio
     async def test_bulk_update_partial_delivered_shipped_shipment_mixed(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: delivered orders with mixed shipment statuses - only pending succeed."""
         # Arrange
         order_pending = create_mock_order(
@@ -433,7 +434,7 @@ class TestOrderBulkStatusUpdate:
             ),
         }
 
-        async def find_by_id(order_id):
+        async def find_by_id(order_id: Any) -> Any:
             return orders.get(order_id)
 
         mock_order_repo.find_by_id.side_effect = find_by_id
@@ -458,8 +459,8 @@ class TestOrderBulkStatusUpdate:
 
     @pytest.mark.asyncio
     async def test_bulk_update_empty_order_ids_raises_validation_error(
-        self, order_service
-    ):
+        self, order_service: Any
+    ) -> None:
         """Test: Empty order_ids list raises validation error."""
         # Act & Assert
         with pytest.raises(ValidationError) as exc_info:
@@ -476,8 +477,8 @@ class TestOrderBulkStatusUpdate:
 
     @pytest.mark.asyncio
     async def test_bulk_update_idempotent_same_status(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: Updating to the same status is idempotent (still succeeds)."""
         # Arrange
         order = create_mock_order(
@@ -500,8 +501,8 @@ class TestOrderBulkStatusUpdate:
 
     @pytest.mark.asyncio
     async def test_bulk_update_to_delivered_does_not_duplicate_shipment(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: Going to delivered when shipment already exists does not create duplicate."""
         # Arrange
         order = create_mock_order(
@@ -525,8 +526,8 @@ class TestOrderBulkStatusUpdate:
 
     @pytest.mark.asyncio
     async def test_bulk_update_large_batch(
-        self, order_service, mock_order_repo, mock_shipment_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: Large batch of orders can be updated efficiently."""
         # Arrange: 100 orders
         order_ids = [f"order-{i}" for i in range(100)]
@@ -535,7 +536,7 @@ class TestOrderBulkStatusUpdate:
             for oid in order_ids
         }
 
-        async def find_by_id(order_id):
+        async def find_by_id(order_id: Any) -> Any:
             return orders.get(order_id)
 
         mock_order_repo.find_by_id.side_effect = find_by_id
@@ -556,7 +557,7 @@ class TestOrderBulkStatusUpdate:
 class TestOrderBulkStatusUpdateResponse:
     """Test the response schema for bulk status update."""
 
-    def test_response_schema_structure(self):
+    def test_response_schema_structure(self) -> None:
         """Test: Response schema has correct structure."""
         response = OrderBulkStatusUpdateResponse(
             updated_count=5,
@@ -569,7 +570,7 @@ class TestOrderBulkStatusUpdateResponse:
         assert len(response.failed_ids) == 2
         assert "order-1" in response.failed_ids
 
-    def test_response_schema_all_success(self):
+    def test_response_schema_all_success(self) -> None:
         """Test: Response schema with all success."""
         response = OrderBulkStatusUpdateResponse(
             updated_count=10,
@@ -581,7 +582,7 @@ class TestOrderBulkStatusUpdateResponse:
         assert response.failed_count == 0
         assert response.failed_ids == []
 
-    def test_response_schema_all_failed(self):
+    def test_response_schema_all_failed(self) -> None:
         """Test: Response schema with all failed."""
         response = OrderBulkStatusUpdateResponse(
             updated_count=0,

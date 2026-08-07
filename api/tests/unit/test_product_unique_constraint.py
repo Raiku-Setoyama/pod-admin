@@ -10,6 +10,7 @@ FEAT-0008: 商品マスタ（productsテーブル）に product_type / size / po
 - DuplicateProductError 例外
 """
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -24,7 +25,7 @@ from app.utils.exceptions import DuplicateProductError
 class TestDuplicateProductError:
     """DuplicateProductError 例外のテスト"""
 
-    def test_duplicate_product_error_has_409_status(self):
+    def test_duplicate_product_error_has_409_status(self) -> None:
         """DuplicateProductError は 409 ステータスコードを持つこと"""
         error = DuplicateProductError(
             product_type="tshirt",
@@ -34,7 +35,7 @@ class TestDuplicateProductError:
         )
         assert error.status_code == 409
 
-    def test_duplicate_product_error_has_correct_code(self):
+    def test_duplicate_product_error_has_correct_code(self) -> None:
         """DuplicateProductError は DUPLICATE_PRODUCT コードを持つこと"""
         error = DuplicateProductError(
             product_type="tshirt",
@@ -44,7 +45,7 @@ class TestDuplicateProductError:
         )
         assert error.code == "DUPLICATE_PRODUCT"
 
-    def test_duplicate_product_error_message_contains_spec(self):
+    def test_duplicate_product_error_message_contains_spec(self) -> None:
         """DuplicateProductError のメッセージに仕様情報が含まれること"""
         error = DuplicateProductError(
             product_type="tshirt",
@@ -57,7 +58,7 @@ class TestDuplicateProductError:
         assert "正面" in error.message
         assert "白" in error.message
 
-    def test_duplicate_product_error_handles_none_values(self):
+    def test_duplicate_product_error_handles_none_values(self) -> None:
         """DuplicateProductError が NULL 値を正しく処理すること"""
         error = DuplicateProductError(
             product_type="acrylic_keychain",
@@ -73,7 +74,7 @@ class TestDuplicateProductError:
 class TestProductModelConstraint:
     """AC-001: Product モデルのユニーク制約定義テスト"""
 
-    def test_ac001_product_model_has_unique_constraint_comment(self):
+    def test_ac001_product_model_has_unique_constraint_comment(self) -> None:
         """AC-001: Product モデルにユニーク制約に関するコメント/定義があること
 
         given: Product モデルの定義
@@ -91,12 +92,12 @@ class TestProductServiceDuplicateCheck:
     """ProductService の重複チェックロジックのテスト"""
 
     @pytest.fixture
-    def mock_product_repo(self):
+    def mock_product_repo(self) -> Any:
         """モック ProductRepository"""
         return AsyncMock(spec=ProductRepository)
 
     @pytest.fixture
-    def mock_manufacturer_repo(self):
+    def mock_manufacturer_repo(self) -> Any:
         """モック ManufacturerRepository"""
         repo = AsyncMock()
         # デフォルトで有効なメーカーを返す
@@ -104,7 +105,7 @@ class TestProductServiceDuplicateCheck:
         return repo
 
     @pytest.fixture
-    def service(self, mock_product_repo, mock_manufacturer_repo):
+    def service(self, mock_product_repo: Any, mock_manufacturer_repo: Any) -> Any:
         """ProductService インスタンス"""
         return ProductService(
             product_repo=mock_product_repo,
@@ -113,8 +114,8 @@ class TestProductServiceDuplicateCheck:
 
     @pytest.mark.asyncio
     async def test_ac002_create_duplicate_raises_error(
-        self, service, mock_product_repo
-    ):
+        self, service: Any, mock_product_repo: Any
+    ) -> None:
         """AC-002: 同一仕様の商品を新規作成しようとすると重複エラー（409）が返ること
 
         given: product_type=tshirt, size=M, position=正面, color=白 の商品が既に存在する
@@ -150,8 +151,8 @@ class TestProductServiceDuplicateCheck:
 
     @pytest.mark.asyncio
     async def test_ac003_create_different_spec_succeeds(
-        self, service, mock_product_repo
-    ):
+        self, service: Any, mock_product_repo: Any
+    ) -> None:
         """AC-003: 異なる仕様の商品は正常に作成できること
 
         given: product_type=tshirt, size=M の商品が存在する
@@ -193,8 +194,8 @@ class TestProductServiceDuplicateCheck:
 
     @pytest.mark.asyncio
     async def test_ac004_create_duplicate_with_null_fields_raises_error(
-        self, service, mock_product_repo
-    ):
+        self, service: Any, mock_product_repo: Any
+    ) -> None:
         """AC-004: position と color が NULL の場合も重複チェックが機能すること
 
         given: product_type=acrylic_keychain, size=50x50mm, position=NULL, color=NULL の商品が存在する
@@ -229,8 +230,8 @@ class TestProductServiceDuplicateCheck:
 
     @pytest.mark.asyncio
     async def test_ac005_update_to_duplicate_raises_error(
-        self, service, mock_product_repo
-    ):
+        self, service: Any, mock_product_repo: Any
+    ) -> None:
         """AC-005: 商品更新時に他の商品と重複する場合はエラーになること
 
         given:
@@ -269,8 +270,8 @@ class TestProductServiceDuplicateCheck:
 
     @pytest.mark.asyncio
     async def test_ac006_update_self_no_conflict(
-        self, service, mock_product_repo
-    ):
+        self, service: Any, mock_product_repo: Any
+    ) -> None:
         """AC-006: 自分自身との重複は許容されること（更新時）
 
         given: 商品A: product_type=tshirt, size=M, position=正面, color=白
@@ -331,7 +332,7 @@ class TestProductServiceDuplicateCheck:
 class TestProductRepositoryFindDuplicate:
     """AC-010: ProductRepository の find_duplicate メソッドのテスト"""
 
-    def test_ac010_find_duplicate_method_exists(self):
+    def test_ac010_find_duplicate_method_exists(self) -> None:
         """AC-010: ProductRepository に find_duplicate メソッドが存在すること
 
         given: ProductRepository クラス
@@ -342,14 +343,14 @@ class TestProductRepositoryFindDuplicate:
             "ProductRepository に find_duplicate メソッドが存在しません"
         )
 
-    def test_ac010_find_duplicate_method_is_async(self):
+    def test_ac010_find_duplicate_method_is_async(self) -> None:
         """AC-010: find_duplicate メソッドが非同期であること"""
         import asyncio
         assert asyncio.iscoroutinefunction(ProductRepository.find_duplicate), (
             "find_duplicate メソッドは非同期関数であるべきです"
         )
 
-    def test_ac010_find_duplicate_accepts_required_params(self):
+    def test_ac010_find_duplicate_accepts_required_params(self) -> None:
         """AC-010: find_duplicate メソッドが必要なパラメータを受け付けること"""
         import inspect
         sig = inspect.signature(ProductRepository.find_duplicate)
@@ -364,7 +365,7 @@ class TestProductRepositoryFindDuplicate:
 class TestAlembicMigration:
     """AC-009: Alembicマイグレーションファイルのテスト"""
 
-    def test_ac009_migration_file_exists(self):
+    def test_ac009_migration_file_exists(self) -> None:
         """AC-009: マイグレーションファイルが存在すること"""
         from pathlib import Path
         migration_path = Path(__file__).parent.parent.parent / "alembic" / "versions" / "add_product_unique_constraint.py"
@@ -372,7 +373,7 @@ class TestAlembicMigration:
             f"マイグレーションファイルが見つかりません: {migration_path}"
         )
 
-    def test_ac009_migration_has_correct_revision(self):
+    def test_ac009_migration_has_correct_revision(self) -> None:
         """AC-009: マイグレーションのリビジョンIDが正しいこと"""
         import importlib.util
         from pathlib import Path
@@ -385,7 +386,7 @@ class TestAlembicMigration:
         assert module.revision == "add_product_uq_001"
         assert module.down_revision == "migrate_order_source_fk"
 
-    def test_ac009_migration_has_upgrade_function(self):
+    def test_ac009_migration_has_upgrade_function(self) -> None:
         """AC-009: マイグレーションに upgrade 関数が存在すること"""
         import importlib.util
         from pathlib import Path
@@ -398,7 +399,7 @@ class TestAlembicMigration:
         assert hasattr(module, "upgrade")
         assert callable(module.upgrade)
 
-    def test_ac009_migration_has_downgrade_function(self):
+    def test_ac009_migration_has_downgrade_function(self) -> None:
         """AC-009: マイグレーションに downgrade 関数が存在すること"""
         import importlib.util
         from pathlib import Path

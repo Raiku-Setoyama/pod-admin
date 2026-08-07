@@ -9,6 +9,8 @@ FEAT-0016: 商品マスター一覧で各商品のメーカー名が正しく表
 - AC-004: PATCH /products/{id} で更新した商品のレスポンスに manufacturer_name が含まれる
 """
 
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -27,7 +29,7 @@ API_PREFIX = settings.API_V1_PREFIX
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-async def test_manufacturer(db_session: AsyncSession):
+async def test_manufacturer(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """テスト用のメーカーを作成"""
     manufacturer_id = str(uuid4())
 
@@ -66,7 +68,7 @@ async def test_manufacturer(db_session: AsyncSession):
 
 
 @pytest.fixture
-async def test_product(db_session: AsyncSession, test_manufacturer: dict):
+async def test_product(db_session: AsyncSession, test_manufacturer: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """テスト用の商品を作成（メーカーに紐づく）"""
     product_id = str(uuid4())
     unique_suffix = product_id[:8]
@@ -117,9 +119,9 @@ class TestListProductsManufacturerName:
     async def test_ac001_list_products_includes_manufacturer_name(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_product: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_product: dict[str, Any],
+    ) -> None:
         """AC-001: GET /products のレスポンスに各商品の manufacturer_name フィールドが含まれる
 
         given: メーカーAに紐づく商品が1件以上登録されている
@@ -169,9 +171,9 @@ class TestGetProductManufacturerName:
     async def test_ac002_get_product_includes_manufacturer_name(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_product: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_product: dict[str, Any],
+    ) -> None:
         """AC-002: GET /products/{id} のレスポンスに manufacturer_name フィールドが含まれる
 
         given: メーカーAに紐づく商品が登録されている
@@ -209,9 +211,9 @@ class TestCreateProductManufacturerName:
     async def test_ac003_create_product_includes_manufacturer_name(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_manufacturer: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_manufacturer: dict[str, Any],
+    ) -> None:
         """AC-003: POST /products で作成した商品のレスポンスに manufacturer_name が含まれる
 
         given: メーカーAが存在する
@@ -263,9 +265,9 @@ class TestUpdateProductManufacturerName:
     async def test_ac004_update_product_includes_manufacturer_name(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_product: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_product: dict[str, Any],
+    ) -> None:
         """AC-004: PATCH /products/{id} で更新した商品のレスポンスに manufacturer_name が含まれる
 
         given: メーカーAに紐づく商品が登録されている

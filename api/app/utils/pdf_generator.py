@@ -3,6 +3,7 @@
 from datetime import date
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 
 from jinja2 import Environment, FileSystemLoader
 from weasyprint import CSS, HTML
@@ -19,8 +20,8 @@ def get_jinja_env() -> Environment:
 
 
 def generate_invoice_pdf(
-    manufacturer: dict,
-    items: list[dict],
+    manufacturer: dict[str, Any],
+    items: list[dict[str, Any]],
     invoice_number: str,
     issue_date: date,
     payment_due_date: date | None = None,

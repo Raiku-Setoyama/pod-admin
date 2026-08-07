@@ -16,6 +16,7 @@ Tests will fail until the implementation is completed.
 import io
 import logging
 import zipfile
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -32,13 +33,13 @@ from app.services.order_image_service import OrderImageService
 
 
 @pytest.fixture
-def mock_order_repo():
+def mock_order_repo() -> Any:
     """Mock order repository."""
     return AsyncMock()
 
 
 @pytest.fixture
-def order_image_service(mock_order_repo):
+def order_image_service(mock_order_repo: Any) -> Any:
     """Create OrderImageService with mocked dependencies."""
     return OrderImageService(order_repo=mock_order_repo)
 
@@ -52,7 +53,7 @@ def create_mock_order(
     order_id: str = "order-123",
     order_number: str = "ORD-001",
     status: str = OrderStatus.ORDERED.value,
-    items: list | None = None,
+    items: list[Any] | None = None,
 ) -> MagicMock:
     """Create a mock Order with OrderItems."""
     order = MagicMock(spec=Order)
@@ -87,8 +88,8 @@ class TestSkipNullDesignImageUrl:
     """AC-004: design_image_urlがnullのOrderItemはスキップされる."""
 
     async def test_null_design_image_url_items_are_skipped(
-        self, order_image_service, mock_order_repo
-    ):
+        self, order_image_service: Any, mock_order_repo: Any
+    ) -> None:
         """design_image_urlがnullのアイテムはスキップされ、画像を持つアイテムのみがZIPに含まれる."""
         # Arrange
         item_with_image = create_mock_order_item(
@@ -132,8 +133,8 @@ class TestSkipNullDesignImageUrl:
             assert len(file_list) == 1
 
     async def test_all_items_null_design_image_url_raises_error(
-        self, order_image_service, mock_order_repo
-    ):
+        self, order_image_service: Any, mock_order_repo: Any
+    ) -> None:
         """全てのアイテムのdesign_image_urlがnullの場合、エラーが発生する."""
         # Arrange
         item_null_1 = create_mock_order_item(
@@ -168,8 +169,8 @@ class TestImageFetchFailureSkipAndLog:
     """AC-005: 画像URLからの取得に失敗した場合はスキップしてログに記録する."""
 
     async def test_failed_image_fetch_is_skipped_and_logged(
-        self, order_image_service, mock_order_repo, caplog
-    ):
+        self, order_image_service: Any, mock_order_repo: Any, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """取得失敗した画像はスキップされ、ログに警告が記録される."""
         # Arrange
         item_good = create_mock_order_item(
@@ -199,7 +200,7 @@ class TestImageFetchFailureSkipAndLog:
         mock_response_bad.status_code = 404
         mock_response_bad.content = b""
 
-        async def side_effect_get(url, **kwargs):
+        async def side_effect_get(url: Any, **kwargs) -> Any:
             if "good" in url:
                 return mock_response_good
             return mock_response_bad
@@ -228,8 +229,8 @@ class TestImageFetchFailureSkipAndLog:
                     if record.levelno >= logging.WARNING)
 
     async def test_timeout_on_image_fetch_is_skipped(
-        self, order_image_service, mock_order_repo
-    ):
+        self, order_image_service: Any, mock_order_repo: Any
+    ) -> None:
         """タイムアウトした画像取得はスキップされる."""
         import httpx
 
@@ -256,7 +257,7 @@ class TestImageFetchFailureSkipAndLog:
         mock_response_good.content = b"good-image-data"
         mock_response_good.headers = {"content-type": "image/png"}
 
-        async def side_effect_get(url, **kwargs):
+        async def side_effect_get(url: Any, **kwargs) -> Any:
             if "timeout" in url:
                 raise httpx.TimeoutException("Connection timed out")
             return mock_response_good
@@ -287,8 +288,8 @@ class TestAllFetchFailuresReturn404:
     """AC-006: 全ての画像取得に失敗した場合は404エラーを返す."""
 
     async def test_all_images_fetch_failed_returns_404(
-        self, order_image_service, mock_order_repo
-    ):
+        self, order_image_service: Any, mock_order_repo: Any
+    ) -> None:
         """全ての画像URLからの取得に失敗した場合、404エラーが返される."""
         # Arrange
         item_bad_1 = create_mock_order_item(
@@ -327,8 +328,8 @@ class TestAllFetchFailuresReturn404:
             assert exc_info.value.status_code == 404
 
     async def test_no_design_image_urls_at_all_returns_404(
-        self, order_image_service, mock_order_repo
-    ):
+        self, order_image_service: Any, mock_order_repo: Any
+    ) -> None:
         """design_image_urlを持つアイテムが0件の場合は404エラーが返される."""
         # Arrange
         item_null = create_mock_order_item(
@@ -361,8 +362,8 @@ class TestNonExistentOrderIdsSkipped:
     """AC-007: 存在しない受注IDが含まれている場合、存在する受注のみ処理される."""
 
     async def test_nonexistent_order_ids_are_skipped(
-        self, order_image_service, mock_order_repo
-    ):
+        self, order_image_service: Any, mock_order_repo: Any
+    ) -> None:
         """存在しない受注IDはスキップされ、存在する受注の画像のみがZIPに含まれる."""
         # Arrange
         item = create_mock_order_item(
@@ -376,7 +377,7 @@ class TestNonExistentOrderIdsSkipped:
             items=[item],
         )
 
-        async def find_by_id(order_id):
+        async def find_by_id(order_id: Any) -> Any:
             if order_id == "order-valid":
                 return valid_order
             return None  # Not found
@@ -408,8 +409,8 @@ class TestNonExistentOrderIdsSkipped:
             assert any("ORD-VALID" in f for f in file_list)
 
     async def test_all_nonexistent_order_ids_returns_404(
-        self, order_image_service, mock_order_repo
-    ):
+        self, order_image_service: Any, mock_order_repo: Any
+    ) -> None:
         """全ての受注IDが存在しない場合は404エラーが返される."""
         # Arrange
         mock_order_repo.find_by_id.return_value = None
@@ -433,8 +434,8 @@ class TestZipFileNameFormat:
     """AC-008: ZIPファイル内のファイル名が注文番号と商品名で構成される."""
 
     async def test_zip_file_path_format(
-        self, order_image_service, mock_order_repo
-    ):
+        self, order_image_service: Any, mock_order_repo: Any
+    ) -> None:
         """ZIP内のファイルパスが「{注文番号}/{商品名}_{連番}.{拡張子}」形式になっている."""
         # Arrange
         item = create_mock_order_item(
@@ -478,8 +479,8 @@ class TestZipFileNameFormat:
             assert file_path.endswith(".png")
 
     async def test_zip_file_path_with_multiple_items_has_sequential_numbers(
-        self, order_image_service, mock_order_repo
-    ):
+        self, order_image_service: Any, mock_order_repo: Any
+    ) -> None:
         """同一注文の複数アイテムには連番が振られる."""
         # Arrange
         item_1 = create_mock_order_item(
@@ -524,8 +525,8 @@ class TestZipFileNameFormat:
             assert "_2." in file_list[1]
 
     async def test_zip_file_extension_from_url(
-        self, order_image_service, mock_order_repo
-    ):
+        self, order_image_service: Any, mock_order_repo: Any
+    ) -> None:
         """拡張子はURLのパスから推定される."""
         # Arrange
         item = create_mock_order_item(
@@ -564,8 +565,8 @@ class TestZipFileNameFormat:
             assert file_list[0].endswith(".jpg")
 
     async def test_zip_file_extension_fallback_to_content_type(
-        self, order_image_service, mock_order_repo
-    ):
+        self, order_image_service: Any, mock_order_repo: Any
+    ) -> None:
         """URLから拡張子が推定できない場合はContent-Typeから判定する."""
         # Arrange
         item = create_mock_order_item(
@@ -604,8 +605,8 @@ class TestZipFileNameFormat:
             assert file_list[0].endswith(".jpg") or file_list[0].endswith(".jpeg")
 
     async def test_zip_file_extension_fallback_to_png(
-        self, order_image_service, mock_order_repo
-    ):
+        self, order_image_service: Any, mock_order_repo: Any
+    ) -> None:
         """URLからもContent-Typeからも拡張子が推定できない場合は.pngとする."""
         # Arrange
         item = create_mock_order_item(
@@ -652,19 +653,19 @@ class TestZipFileNameFormat:
 class TestEmptyOrderIdsValidation:
     """AC-009: order_idsが空の場合は422エラーを返す."""
 
-    def test_empty_order_ids_validation_error(self):
+    def test_empty_order_ids_validation_error(self) -> None:
         """空のorder_idsリストはバリデーションエラーになる."""
         from pydantic import ValidationError as PydanticValidationError
 
         with pytest.raises(PydanticValidationError):
             OrderImageDownloadRequest(order_ids=[])
 
-    def test_valid_order_ids_accepted(self):
+    def test_valid_order_ids_accepted(self) -> None:
         """1件以上のorder_idsは受け入れられる."""
         request = OrderImageDownloadRequest(order_ids=["order-1"])
         assert request.order_ids == ["order-1"]
 
-    def test_multiple_order_ids_accepted(self):
+    def test_multiple_order_ids_accepted(self) -> None:
         """複数のorder_idsも受け入れられる."""
         request = OrderImageDownloadRequest(order_ids=["order-1", "order-2", "order-3"])
         assert len(request.order_ids) == 3

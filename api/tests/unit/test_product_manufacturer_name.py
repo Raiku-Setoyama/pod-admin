@@ -10,6 +10,7 @@ FEAT-0016: 商品マスター一覧で各商品のメーカー名が正しく表
 """
 
 from datetime import datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -72,7 +73,7 @@ def _make_product(
 class TestProductResponseSchema:
     """AC-005: ProductResponse スキーマのテスト"""
 
-    def test_ac005_product_response_has_manufacturer_name_field(self):
+    def test_ac005_product_response_has_manufacturer_name_field(self) -> None:
         """AC-005: ProductResponseスキーマに manufacturer_name フィールドが定義されている
 
         given: ProductResponseスキーマが定義されている
@@ -90,7 +91,7 @@ class TestProductResponseSchema:
             "manufacturer_name should have default value of None"
         )
 
-    def test_ac005_product_response_manufacturer_name_accepts_string(self):
+    def test_ac005_product_response_manufacturer_name_accepts_string(self) -> None:
         """manufacturer_name に文字列を設定できる
 
         given: ProductResponseのデータにmanufacturer_name文字列が含まれている
@@ -116,7 +117,7 @@ class TestProductResponseSchema:
         response = ProductResponse(**data)
         assert response.manufacturer_name == "テストメーカー"
 
-    def test_ac005_product_response_manufacturer_name_defaults_to_none(self):
+    def test_ac005_product_response_manufacturer_name_defaults_to_none(self) -> None:
         """manufacturer_name を省略した場合 None になる
 
         given: ProductResponseのデータにmanufacturer_nameが含まれていない
@@ -150,17 +151,17 @@ class TestProductServiceList:
     """AC-006: ProductService.list() のテスト"""
 
     @pytest.fixture
-    def mock_product_repo(self):
+    def mock_product_repo(self) -> Any:
         """モック ProductRepository"""
         return AsyncMock()
 
     @pytest.fixture
-    def mock_manufacturer_repo(self):
+    def mock_manufacturer_repo(self) -> Any:
         """モック ManufacturerRepository"""
         return AsyncMock()
 
     @pytest.fixture
-    def service(self, mock_product_repo, mock_manufacturer_repo):
+    def service(self, mock_product_repo: Any, mock_manufacturer_repo: Any) -> Any:
         """テスト対象のサービスインスタンス"""
         return ProductService(mock_product_repo, mock_manufacturer_repo)
 
@@ -169,7 +170,7 @@ class TestProductServiceList:
         self,
         service: ProductService,
         mock_product_repo: AsyncMock,
-    ):
+    ) -> None:
         """AC-006: ProductService.list() が manufacturer_name を含むレスポンスを返す
 
         given: manufacturer.name = "テストメーカー" のリレーションを持つ Product がリポジトリから返される
@@ -190,7 +191,7 @@ class TestProductServiceList:
         self,
         service: ProductService,
         mock_product_repo: AsyncMock,
-    ):
+    ) -> None:
         """複数商品それぞれに正しい manufacturer_name が返される
 
         given: 異なるメーカーに紐づく商品が2件ある
@@ -216,17 +217,17 @@ class TestProductServiceGetById:
     """AC-007: ProductService.get_by_id() のテスト"""
 
     @pytest.fixture
-    def mock_product_repo(self):
+    def mock_product_repo(self) -> Any:
         """モック ProductRepository"""
         return AsyncMock()
 
     @pytest.fixture
-    def mock_manufacturer_repo(self):
+    def mock_manufacturer_repo(self) -> Any:
         """モック ManufacturerRepository"""
         return AsyncMock()
 
     @pytest.fixture
-    def service(self, mock_product_repo, mock_manufacturer_repo):
+    def service(self, mock_product_repo: Any, mock_manufacturer_repo: Any) -> Any:
         """テスト対象のサービスインスタンス"""
         return ProductService(mock_product_repo, mock_manufacturer_repo)
 
@@ -235,7 +236,7 @@ class TestProductServiceGetById:
         self,
         service: ProductService,
         mock_product_repo: AsyncMock,
-    ):
+    ) -> None:
         """AC-007: ProductService.get_by_id() が manufacturer_name を含むレスポンスを返す
 
         given: manufacturer.name = "テストメーカー" のリレーションを持つ Product がリポジトリから返される
@@ -260,17 +261,17 @@ class TestProductManufacturerNameNull:
     """AC-008: manufacturer リレーションが None の場合のテスト"""
 
     @pytest.fixture
-    def mock_product_repo(self):
+    def mock_product_repo(self) -> Any:
         """モック ProductRepository"""
         return AsyncMock()
 
     @pytest.fixture
-    def mock_manufacturer_repo(self):
+    def mock_manufacturer_repo(self) -> Any:
         """モック ManufacturerRepository"""
         return AsyncMock()
 
     @pytest.fixture
-    def service(self, mock_product_repo, mock_manufacturer_repo):
+    def service(self, mock_product_repo: Any, mock_manufacturer_repo: Any) -> Any:
         """テスト対象のサービスインスタンス"""
         return ProductService(mock_product_repo, mock_manufacturer_repo)
 
@@ -279,7 +280,7 @@ class TestProductManufacturerNameNull:
         self,
         service: ProductService,
         mock_product_repo: AsyncMock,
-    ):
+    ) -> None:
         """AC-008: manufacturer リレーションが None の場合、manufacturer_name は null になる
 
         given: manufacturer リレーションが None の Product オブジェクトがある
@@ -300,7 +301,7 @@ class TestProductManufacturerNameNull:
         self,
         service: ProductService,
         mock_product_repo: AsyncMock,
-    ):
+    ) -> None:
         """一覧取得時も manufacturer が None の場合は manufacturer_name が null になる
 
         given: manufacturer リレーションが None の Product がリポジトリから返される
@@ -321,7 +322,7 @@ class TestProductManufacturerNameNull:
         service: ProductService,
         mock_product_repo: AsyncMock,
         mock_manufacturer_repo: AsyncMock,
-    ):
+    ) -> None:
         """商品作成後のレスポンスにも manufacturer_name が含まれる
 
         given: メーカー "テストメーカー" が存在する
@@ -366,7 +367,7 @@ class TestProductManufacturerNameNull:
         service: ProductService,
         mock_product_repo: AsyncMock,
         mock_manufacturer_repo: AsyncMock,
-    ):
+    ) -> None:
         """商品更新後のレスポンスにも manufacturer_name が含まれる
 
         given: メーカー "テストメーカー" に紐づく商品が存在する

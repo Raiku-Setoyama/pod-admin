@@ -5,6 +5,8 @@ Docker環境で実行することを前提としています。
 """
 
 import os
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -20,7 +22,7 @@ from app.utils.security import create_access_token
 
 
 @pytest.fixture(autouse=True)
-async def reset_db_cache():
+async def reset_db_cache() -> AsyncIterator[Any]:
     """各テスト前にDBエンジンのキャッシュをクリア
 
     lru_cacheでキャッシュされたエンジンが異なるイベントループに
@@ -47,7 +49,7 @@ async def reset_db_cache():
 
 
 @pytest.fixture
-async def client():
+async def client() -> AsyncIterator[Any]:
     """非同期HTTPクライアント"""
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -57,7 +59,7 @@ async def client():
 
 
 @pytest.fixture
-async def db_session():
+async def db_session() -> AsyncIterator[Any]:
     """データベースセッション
 
     各テスト関数ごとに新しいセッションとエンジンを作成します。
@@ -90,7 +92,7 @@ async def db_session():
 
 
 @pytest.fixture
-async def test_admin_user(db_session: AsyncSession):
+async def test_admin_user(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """テスト用管理者ユーザー"""
     from app.utils.security import hash_password
 
@@ -131,7 +133,7 @@ async def test_admin_user(db_session: AsyncSession):
 
 
 @pytest.fixture
-def auth_headers(test_admin_user: dict):
+def auth_headers(test_admin_user: dict[str, Any]) -> dict[str, Any]:
     """認証済みリクエスト用のヘッダー
 
     管理者権限を持つテストユーザー用のトークンを生成します。
@@ -142,7 +144,7 @@ def auth_headers(test_admin_user: dict):
 
 
 @pytest.fixture
-async def test_order_source(db_session: AsyncSession):
+async def test_order_source(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """テスト用の注文ソース"""
     source_id = str(uuid4())
     source_code = f"TEST{source_id[:8].upper()}"
@@ -173,7 +175,7 @@ async def test_order_source(db_session: AsyncSession):
 
 
 @pytest.fixture
-async def test_order(db_session: AsyncSession, test_order_source: dict):
+async def test_order(db_session: AsyncSession, test_order_source: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """テスト用の注文"""
     order_id = str(uuid4())
 
@@ -205,7 +207,7 @@ async def test_order(db_session: AsyncSession, test_order_source: dict):
 
 
 @pytest.fixture
-async def shipment_with_photo(db_session: AsyncSession, test_admin_user: dict, test_order: dict):
+async def shipment_with_photo(db_session: AsyncSession, test_admin_user: dict[str, Any], test_order: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """梱包写真がアップロード済みの配送データ"""
     shipment_id = str(uuid4())
     photo_path = f"shipments/{shipment_id}/photo.jpg"
@@ -286,7 +288,7 @@ async def shipment_with_photo(db_session: AsyncSession, test_admin_user: dict, t
 
 
 @pytest.fixture
-async def shipment_without_photo(db_session: AsyncSession, test_admin_user: dict):
+async def shipment_without_photo(db_session: AsyncSession, test_admin_user: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """梱包写真がない配送データ
 
     他のフィクスチャ（test_order_source）に依存せず、自己完結したデータを作成します。

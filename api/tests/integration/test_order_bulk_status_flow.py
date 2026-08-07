@@ -4,6 +4,8 @@ FEAT-0007: Order bulk status update functionality.
 Tests the full flow through API -> Service -> Repository -> Database.
 """
 
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -13,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.fixture
-async def test_orders_ordered(db_session: AsyncSession, test_order_source: dict):
+async def test_orders_ordered(db_session: AsyncSession, test_order_source: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """Create multiple test orders in 'ordered' status."""
     order_ids = [str(uuid4()) for _ in range(3)]
 
@@ -54,7 +56,7 @@ async def test_orders_ordered(db_session: AsyncSession, test_order_source: dict)
 
 
 @pytest.fixture
-async def test_orders_manufacturing(db_session: AsyncSession, test_order_source: dict):
+async def test_orders_manufacturing(db_session: AsyncSession, test_order_source: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """Create multiple test orders in 'manufacturing' status."""
     order_ids = [str(uuid4()) for _ in range(3)]
 
@@ -96,8 +98,8 @@ async def test_orders_manufacturing(db_session: AsyncSession, test_order_source:
 
 @pytest.fixture
 async def test_orders_delivered_with_shipments(
-    db_session: AsyncSession, test_order_source: dict
-):
+    db_session: AsyncSession, test_order_source: dict[str, Any]
+) -> AsyncIterator[dict[str, Any]]:
     """Create multiple test orders in 'delivered' status with pending shipments."""
     order_ids = [str(uuid4()) for _ in range(3)]
     shipment_ids = [str(uuid4()) for _ in range(3)]
@@ -165,8 +167,8 @@ async def test_orders_delivered_with_shipments(
 
 @pytest.fixture
 async def test_orders_mixed_statuses(
-    db_session: AsyncSession, test_order_source: dict
-):
+    db_session: AsyncSession, test_order_source: dict[str, Any]
+) -> AsyncIterator[dict[str, Any]]:
     """Create test orders with mixed statuses (ordered and shipped)."""
     order_ordered_id = str(uuid4())
     order_shipped_id = str(uuid4())
@@ -270,8 +272,8 @@ async def test_orders_mixed_statuses(
 
 @pytest.fixture
 async def test_orders_delivered_with_shipped_shipment(
-    db_session: AsyncSession, test_order_source: dict
-):
+    db_session: AsyncSession, test_order_source: dict[str, Any]
+) -> AsyncIterator[dict[str, Any]]:
     """Create test orders in 'delivered' status with shipped shipments."""
     order_ids = [str(uuid4()) for _ in range(2)]
     shipment_ids = [str(uuid4()) for _ in range(2)]
@@ -348,10 +350,10 @@ class TestOrderBulkStatusUpdateAPI:
     async def test_bulk_update_ordered_to_manufacturing_all_success(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_ordered: dict,
+        auth_headers: dict[str, Any],
+        test_orders_ordered: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """AC-007: PATCH /orders/bulk-status updates all orders and returns correct count."""
         order_ids = test_orders_ordered["order_ids"]
 
@@ -384,10 +386,10 @@ class TestOrderBulkStatusUpdateAPI:
     async def test_bulk_update_partial_success_mixed_statuses(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_mixed_statuses: dict,
+        auth_headers: dict[str, Any],
+        test_orders_mixed_statuses: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """AC-008: Mixed statuses - only valid transitions succeed, failed IDs returned."""
         order_ordered_id = test_orders_mixed_statuses["order_ordered_id"]
         order_shipped_id = test_orders_mixed_statuses["order_shipped_id"]
@@ -431,9 +433,9 @@ class TestOrderBulkStatusUpdateAPI:
     async def test_bulk_update_to_shipped_rejected_with_422(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_ordered: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_orders_ordered: dict[str, Any],
+    ) -> None:
         """AC-009: PATCH /orders/bulk-status with status=shipped returns 422."""
         order_ids = test_orders_ordered["order_ids"]
 
@@ -453,10 +455,10 @@ class TestOrderBulkStatusUpdateAPI:
     async def test_bulk_update_to_delivered_creates_shipments(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_manufacturing: dict,
+        auth_headers: dict[str, Any],
+        test_orders_manufacturing: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """AC-010: PATCH /orders/bulk-status to delivered creates shipments for all."""
         order_ids = test_orders_manufacturing["order_ids"]
 
@@ -500,10 +502,10 @@ class TestOrderBulkStatusUpdateAPI:
     async def test_bulk_update_delivered_to_ordered_deletes_shipments(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_delivered_with_shipments: dict,
+        auth_headers: dict[str, Any],
+        test_orders_delivered_with_shipments: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """AC-011: delivered -> ordered deletes related shipments."""
         order_ids = test_orders_delivered_with_shipments["order_ids"]
 
@@ -546,10 +548,10 @@ class TestOrderBulkStatusUpdateAPI:
     async def test_bulk_update_fails_when_shipment_is_shipped(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_delivered_with_shipped_shipment: dict,
+        auth_headers: dict[str, Any],
+        test_orders_delivered_with_shipped_shipment: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """AC-012: Orders with shipped shipments cannot be reverted."""
         order_ids = test_orders_delivered_with_shipped_shipment["order_ids"]
 
@@ -573,8 +575,8 @@ class TestOrderBulkStatusUpdateAPI:
     async def test_bulk_update_empty_order_ids_returns_error(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-    ):
+        auth_headers: dict[str, Any],
+    ) -> None:
         """AC-013: Empty order_ids returns 400/422 error."""
         response = await client.patch(
             "/api/v1/orders/bulk-status",
@@ -593,9 +595,9 @@ class TestOrderBulkStatusUpdateAPI:
     async def test_bulk_update_nonexistent_orders_in_failed_ids(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_ordered: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_orders_ordered: dict[str, Any],
+    ) -> None:
         """Non-existent order IDs are included in failed_ids."""
         valid_order_id = test_orders_ordered["order_ids"][0]
         nonexistent_id = str(uuid4())
@@ -619,8 +621,8 @@ class TestOrderBulkStatusUpdateAPI:
     async def test_bulk_update_requires_authentication(
         self,
         client: AsyncClient,
-        test_orders_ordered: dict,
-    ):
+        test_orders_ordered: dict[str, Any],
+    ) -> None:
         """Bulk update requires authentication."""
         order_ids = test_orders_ordered["order_ids"]
 
@@ -635,9 +637,9 @@ class TestOrderBulkStatusUpdateAPI:
     async def test_bulk_update_invalid_status_value(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_ordered: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_orders_ordered: dict[str, Any],
+    ) -> None:
         """Invalid status value returns 422."""
         order_ids = test_orders_ordered["order_ids"]
 
@@ -653,10 +655,10 @@ class TestOrderBulkStatusUpdateAPI:
     async def test_bulk_update_ordered_to_delivered_then_back_to_manufacturing(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_ordered: dict,
+        auth_headers: dict[str, Any],
+        test_orders_ordered: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """Full flow: ordered -> delivered -> manufacturing with shipment lifecycle."""
         order_ids = test_orders_ordered["order_ids"]
 

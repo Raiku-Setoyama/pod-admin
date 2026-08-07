@@ -1,5 +1,7 @@
 """Unit tests for the illustrator-vm client (httpx MockTransport)."""
 
+from collections.abc import Iterator
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -9,13 +11,13 @@ from app.services.illustrator_vm_client import IllustratorVmClient, IllustratorV
 
 
 @pytest.fixture(autouse=True)
-def _no_sleep():
+def _no_sleep() -> Iterator[Any]:
     """リトライ/ポーリングの sleep を無効化してテストを高速化."""
     with patch("app.services.illustrator_vm_client.asyncio.sleep", new=AsyncMock()):
         yield
 
 
-def _client(handler, **kwargs) -> IllustratorVmClient:
+def _client(handler: Any, **kwargs) -> IllustratorVmClient:
     return IllustratorVmClient(
         "http://vm.test",
         poll_interval=0,
@@ -28,7 +30,7 @@ def _client(handler, **kwargs) -> IllustratorVmClient:
 
 class TestSubmit:
     @pytest.mark.asyncio
-    async def test_submit_returns_job_id_and_base64_encodes(self):
+    async def test_submit_returns_job_id_and_base64_encodes(self) -> None:
         captured = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -65,7 +67,7 @@ class TestSubmit:
         assert body["variant"] == "clear"
 
     @pytest.mark.asyncio
-    async def test_submit_single_image_uses_image_data(self):
+    async def test_submit_single_image_uses_image_data(self) -> None:
         captured = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -92,8 +94,8 @@ class TestSubmit:
         assert body["order_id"] == "md-2"
 
     @pytest.mark.asyncio
-    async def test_submit_missing_job_id_raises(self):
-        def handler(request):
+    async def test_submit_missing_job_id_raises(self) -> None:
+        def handler(request: pytest.FixtureRequest) -> Any:
             return httpx.Response(202, json={"unexpected": True})
 
         with pytest.raises(IllustratorVmError):
@@ -106,8 +108,8 @@ class TestSubmit:
             )
 
     @pytest.mark.asyncio
-    async def test_submit_422_reads_detail(self):
-        def handler(request):
+    async def test_submit_422_reads_detail(self) -> None:
+        def handler(request: pytest.FixtureRequest) -> Any:
             return httpx.Response(422, json={"detail": [{"msg": "bad size"}]})
 
         with pytest.raises(IllustratorVmError) as exc:
@@ -123,10 +125,10 @@ class TestSubmit:
 
 class TestStatusAndWait:
     @pytest.mark.asyncio
-    async def test_wait_polls_until_complete(self):
+    async def test_wait_polls_until_complete(self) -> None:
         calls = {"n": 0}
 
-        def handler(request):
+        def handler(request: pytest.FixtureRequest) -> Any:
             calls["n"] += 1
             if calls["n"] < 3:
                 return httpx.Response(200, json={"status": "processing"})
@@ -140,8 +142,8 @@ class TestStatusAndWait:
         assert calls["n"] == 3
 
     @pytest.mark.asyncio
-    async def test_wait_raises_on_failed(self):
-        def handler(request):
+    async def test_wait_raises_on_failed(self) -> None:
+        def handler(request: pytest.FixtureRequest) -> Any:
             return httpx.Response(200, json={"status": "failed", "error": "boom"})
 
         with pytest.raises(IllustratorVmError) as exc:
@@ -149,8 +151,8 @@ class TestStatusAndWait:
         assert "boom" in str(exc.value)
 
     @pytest.mark.asyncio
-    async def test_wait_times_out(self):
-        def handler(request):
+    async def test_wait_times_out(self) -> None:
+        def handler(request: pytest.FixtureRequest) -> Any:
             return httpx.Response(200, json={"status": "processing"})
 
         client = IllustratorVmClient(
@@ -166,18 +168,18 @@ class TestStatusAndWait:
 
 class TestDownloadAndRetry:
     @pytest.mark.asyncio
-    async def test_download_returns_bytes(self):
-        def handler(request):
+    async def test_download_returns_bytes(self) -> None:
+        def handler(request: pytest.FixtureRequest) -> Any:
             return httpx.Response(200, content=b"AI-FILE-BYTES")
 
         content = await _client(handler).download("job-1")
         assert content == b"AI-FILE-BYTES"
 
     @pytest.mark.asyncio
-    async def test_503_is_retried_then_succeeds(self):
+    async def test_503_is_retried_then_succeeds(self) -> None:
         calls = {"n": 0}
 
-        def handler(request):
+        def handler(request: pytest.FixtureRequest) -> Any:
             calls["n"] += 1
             if calls["n"] == 1:
                 return httpx.Response(503, json={"detail": "queue full"})
@@ -188,8 +190,8 @@ class TestDownloadAndRetry:
         assert calls["n"] == 2
 
     @pytest.mark.asyncio
-    async def test_transport_error_retried_then_raises(self):
-        def handler(request):
+    async def test_transport_error_retried_then_raises(self) -> None:
+        def handler(request: pytest.FixtureRequest) -> None:
             raise httpx.ConnectError("refused")
 
         with pytest.raises(IllustratorVmError):
@@ -198,11 +200,11 @@ class TestDownloadAndRetry:
 
 class TestNonJsonResponse:
     @pytest.mark.asyncio
-    async def test_non_json_2xx_is_retried_then_succeeds(self):
+    async def test_non_json_2xx_is_retried_then_succeeds(self) -> None:
         # 2xx だが本文が JSON でない一過性応答はリトライ対象（生成を落とさない）。
         calls = {"n": 0}
 
-        def handler(request):
+        def handler(request: pytest.FixtureRequest) -> Any:
             calls["n"] += 1
             if calls["n"] == 1:
                 return httpx.Response(200, text="<html>502 Bad Gateway</html>")
@@ -215,8 +217,8 @@ class TestNonJsonResponse:
         assert calls["n"] == 2
 
     @pytest.mark.asyncio
-    async def test_persistent_non_json_raises_illustrator_error(self):
-        def handler(request):
+    async def test_persistent_non_json_raises_illustrator_error(self) -> None:
+        def handler(request: pytest.FixtureRequest) -> Any:
             return httpx.Response(200, text="not json")
 
         with pytest.raises(IllustratorVmError):
@@ -224,7 +226,7 @@ class TestNonJsonResponse:
 
 
 class TestFromSettings:
-    def test_returns_none_when_unconfigured(self):
+    def test_returns_none_when_unconfigured(self) -> None:
         from app.config import settings
 
         original = settings.ILLUSTRATOR_VM_BASE_URL
@@ -234,7 +236,7 @@ class TestFromSettings:
         finally:
             settings.ILLUSTRATOR_VM_BASE_URL = original
 
-    def test_builds_client_when_configured(self):
+    def test_builds_client_when_configured(self) -> None:
         from app.config import settings
 
         original = settings.ILLUSTRATOR_VM_BASE_URL

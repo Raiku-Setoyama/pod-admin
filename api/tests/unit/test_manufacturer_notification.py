@@ -19,10 +19,10 @@ from app.utils.exceptions import AppException, ManufacturerNotFoundError
 
 
 class TestNormalizeEmails:
-    def test_strips_and_drops_empty(self):
+    def test_strips_and_drops_empty(self) -> None:
         assert normalize_emails([" a@example.com ", "", "  "]) == ["a@example.com"]
 
-    def test_dedupes_preserving_order(self):
+    def test_dedupes_preserving_order(self) -> None:
         assert normalize_emails(["a@example.com", "b@example.com", "a@example.com"]) == [
             "a@example.com",
             "b@example.com",
@@ -30,46 +30,46 @@ class TestNormalizeEmails:
 
 
 class TestValidateEmails:
-    def test_accepts_valid(self):
+    def test_accepts_valid(self) -> None:
         validate_emails(["a@example.com", "b@example.com"])
 
-    def test_rejects_invalid(self):
+    def test_rejects_invalid(self) -> None:
         with pytest.raises(ValueError):
             validate_emails(["not-an-email"])
 
-    def test_rejects_too_many(self):
+    def test_rejects_too_many(self) -> None:
         with pytest.raises(ValueError):
             validate_emails([f"user{i}@example.com" for i in range(21)])
 
 
 class TestParseSendTime:
-    def test_parses_hhmm(self):
+    def test_parses_hhmm(self) -> None:
         t = parse_send_time("09:30")
         assert (t.hour, t.minute) == (9, 30)
 
-    def test_accepts_single_digit_hour(self):
+    def test_accepts_single_digit_hour(self) -> None:
         # strptime("%H:%M") は "9:30" を 09:30 として受理する（正当な時刻）
         assert parse_send_time("9:30").hour == 9
 
-    def test_rejects_invalid(self):
+    def test_rejects_invalid(self) -> None:
         for bad in ["24:00", "12:60", "abc", "09-30", ""]:
             with pytest.raises(ValueError):
                 parse_send_time(bad)
 
 
 class TestValidateDigestSettingValue:
-    def test_enabled_accepts_true_false(self):
+    def test_enabled_accepts_true_false(self) -> None:
         validate_digest_setting_value(DIGEST_ENABLED_KEY, "true")
         validate_digest_setting_value(DIGEST_ENABLED_KEY, "false")
 
-    def test_enabled_rejects_other(self):
+    def test_enabled_rejects_other(self) -> None:
         with pytest.raises(ValueError):
             validate_digest_setting_value(DIGEST_ENABLED_KEY, "yes")
 
-    def test_send_time_accepts_valid(self):
+    def test_send_time_accepts_valid(self) -> None:
         validate_digest_setting_value(DIGEST_SEND_TIME_KEY, "09:00")
 
-    def test_send_time_rejects_invalid(self):
+    def test_send_time_rejects_invalid(self) -> None:
         with pytest.raises(ValueError):
             validate_digest_setting_value(DIGEST_SEND_TIME_KEY, "9am")
 
@@ -83,7 +83,7 @@ def _make_manufacturer_repo(exists: bool) -> MagicMock:
 
 class TestManufacturerNotificationService:
     @pytest.mark.asyncio
-    async def test_get_returns_defaults_when_absent(self):
+    async def test_get_returns_defaults_when_absent(self) -> None:
         notif_repo = MagicMock()
         notif_repo.find_by_manufacturer_id = AsyncMock(return_value=None)
         service = ManufacturerNotificationService(notif_repo, _make_manufacturer_repo(True))
@@ -97,7 +97,7 @@ class TestManufacturerNotificationService:
         assert result.last_notified_at is None
 
     @pytest.mark.asyncio
-    async def test_get_raises_when_manufacturer_missing(self):
+    async def test_get_raises_when_manufacturer_missing(self) -> None:
         notif_repo = MagicMock()
         service = ManufacturerNotificationService(notif_repo, _make_manufacturer_repo(False))
 
@@ -105,7 +105,7 @@ class TestManufacturerNotificationService:
             await service.get_settings("missing")
 
     @pytest.mark.asyncio
-    async def test_update_normalizes_and_persists(self):
+    async def test_update_normalizes_and_persists(self) -> None:
         saved = types.SimpleNamespace(
             manufacturer_id="m1",
             daily_digest_enabled=True,
@@ -131,7 +131,7 @@ class TestManufacturerNotificationService:
         assert kwargs["cc_emails"] == ["c@example.com"]
 
     @pytest.mark.asyncio
-    async def test_update_rejects_invalid_email(self):
+    async def test_update_rejects_invalid_email(self) -> None:
         notif_repo = MagicMock()
         notif_repo.upsert = AsyncMock()
         service = ManufacturerNotificationService(notif_repo, _make_manufacturer_repo(True))

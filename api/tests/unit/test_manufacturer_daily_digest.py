@@ -6,6 +6,7 @@
 
 import types
 from datetime import datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -30,7 +31,7 @@ def _setting(value: str | None) -> types.SimpleNamespace | None:
 
 
 def _make_app_setting_repo(*, enabled="true", send_time="09:00", claim=True) -> MagicMock:
-    async def find_by_key(key: str):
+    async def find_by_key(key: str) -> Any:
         if key == DIGEST_ENABLED_KEY:
             return _setting(enabled)
         if key == DIGEST_SEND_TIME_KEY:
@@ -43,11 +44,11 @@ def _make_app_setting_repo(*, enabled="true", send_time="09:00", claim=True) -> 
     return repo
 
 
-def _manufacturer(mid="m1", name="メーカーA", email="mfr@example.com"):
+def _manufacturer(mid: Any="m1", name: Any="メーカーA", email="mfr@ex: Any: Any: Any: Any: Anyample.com") -> Any:
     return types.SimpleNamespace(id=mid, name=name, email=email)
 
 
-def _settings(to_emails=None, cc_emails=None, last_notified_at=None):
+def _settings(to_emails: Any=None, cc_emails: Any=None, last_notified_at: Any=None) -> Any:
     return types.SimpleNamespace(
         to_emails=to_emails or [],
         cc_emails=cc_emails or [],
@@ -55,15 +56,15 @@ def _settings(to_emails=None, cc_emails=None, last_notified_at=None):
     )
 
 
-def _make_notif_repo(pairs) -> MagicMock:
+def _make_notif_repo(pairs: Any) -> MagicMock:
     repo = MagicMock()
     repo.list_enabled_with_manufacturer = AsyncMock(return_value=pairs)
     repo.update_last_notified_at = AsyncMock()
     return repo
 
 
-def _make_order_repo(summary_by_id) -> MagicMock:
-    async def get_summary(manufacturer_id, since=None):
+def _make_order_repo(summary_by_id: Any) -> MagicMock:
+    async def get_summary(manufacturer_id: Any, since: Any=None) -> Any:
         return summary_by_id.get(
             manufacturer_id, {"ordered_item_count": 0, "total_quantity": 0}
         )
@@ -73,7 +74,7 @@ def _make_order_repo(summary_by_id) -> MagicMock:
     return repo
 
 
-def _make_email_service(result=True) -> MagicMock:
+def _make_email_service(result: Any=True) -> MagicMock:
     svc = MagicMock()
     svc.send_manufacturer_daily_digest = AsyncMock(return_value=result)
     return svc
@@ -85,7 +86,7 @@ def _make_db() -> MagicMock:
     return db
 
 
-def _service(*, app_setting_repo=None, notif_repo=None, order_repo=None, email_service="default", db=None):
+def _service(*, app_setting_repo=None, notif_repo=None, order_repo=None, email_service="default", db=None) -> Any:
     return ManufacturerDailyDigestService(
         db or _make_db(),
         order_repo or _make_order_repo({}),
@@ -97,7 +98,7 @@ def _service(*, app_setting_repo=None, notif_repo=None, order_repo=None, email_s
 
 class TestGates:
     @pytest.mark.asyncio
-    async def test_skips_when_master_disabled(self):
+    async def test_skips_when_master_disabled(self) -> None:
         notif_repo = _make_notif_repo([(_settings(), _manufacturer())])
         service = _service(
             app_setting_repo=_make_app_setting_repo(enabled="false"), notif_repo=notif_repo
@@ -110,7 +111,7 @@ class TestGates:
         notif_repo.list_enabled_with_manufacturer.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_skips_before_send_time(self):
+    async def test_skips_before_send_time(self) -> None:
         service = _service(app_setting_repo=_make_app_setting_repo(send_time="23:00"))
 
         result = await service.run_daily_digest(now=NOW)
@@ -119,7 +120,7 @@ class TestGates:
         assert result["reason"] == "before_send_time"
 
     @pytest.mark.asyncio
-    async def test_skips_when_send_time_missing(self):
+    async def test_skips_when_send_time_missing(self) -> None:
         service = _service(app_setting_repo=_make_app_setting_repo(send_time=None))
 
         result = await service.run_daily_digest(now=NOW)
@@ -127,7 +128,7 @@ class TestGates:
         assert result["reason"] == "send_time_not_set"
 
     @pytest.mark.asyncio
-    async def test_skips_when_already_ran_today(self):
+    async def test_skips_when_already_ran_today(self) -> None:
         app_repo = _make_app_setting_repo(claim=False)
         notif_repo = _make_notif_repo([(_settings(), _manufacturer())])
         service = _service(app_setting_repo=app_repo, notif_repo=notif_repo)
@@ -139,7 +140,7 @@ class TestGates:
         notif_repo.list_enabled_with_manufacturer.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_claims_today_and_commits(self):
+    async def test_claims_today_and_commits(self) -> None:
         app_repo = _make_app_setting_repo()
         db = _make_db()
         service = _service(app_setting_repo=app_repo, db=db)
@@ -152,7 +153,7 @@ class TestGates:
 
 class TestSending:
     @pytest.mark.asyncio
-    async def test_sends_and_updates_watermark(self):
+    async def test_sends_and_updates_watermark(self) -> None:
         watermark = datetime(2026, 7, 8, 10, 0, tzinfo=JST)
         settings = _settings(
             to_emails=["to@x.com"], cc_emails=["cc@x.com"], last_notified_at=watermark
@@ -184,7 +185,7 @@ class TestSending:
         notif_repo.update_last_notified_at.assert_awaited_once_with(settings, NOW)
 
     @pytest.mark.asyncio
-    async def test_skips_zero_item_manufacturer(self):
+    async def test_skips_zero_item_manufacturer(self) -> None:
         settings = _settings(to_emails=["to@x.com"])
         notif_repo = _make_notif_repo([(settings, _manufacturer())])
         order_repo = _make_order_repo({"m1": {"ordered_item_count": 0, "total_quantity": 0}})
@@ -200,7 +201,7 @@ class TestSending:
         notif_repo.update_last_notified_at.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_defaults_to_manufacturer_email_when_to_empty(self):
+    async def test_defaults_to_manufacturer_email_when_to_empty(self) -> None:
         settings = _settings(to_emails=[])  # 未設定
         notif_repo = _make_notif_repo([(settings, _manufacturer(email="fallback@x.com"))])
         order_repo = _make_order_repo({"m1": {"ordered_item_count": 1, "total_quantity": 1}})
@@ -213,7 +214,7 @@ class TestSending:
         assert kwargs["to_emails"] == ["fallback@x.com"]
 
     @pytest.mark.asyncio
-    async def test_failed_send_keeps_watermark(self):
+    async def test_failed_send_keeps_watermark(self) -> None:
         settings = _settings(to_emails=["to@x.com"])
         notif_repo = _make_notif_repo([(settings, _manufacturer())])
         order_repo = _make_order_repo({"m1": {"ordered_item_count": 2, "total_quantity": 4}})
@@ -227,7 +228,7 @@ class TestSending:
         notif_repo.update_last_notified_at.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_no_email_service_marks_failed(self):
+    async def test_no_email_service_marks_failed(self) -> None:
         settings = _settings(to_emails=["to@x.com"])
         notif_repo = _make_notif_repo([(settings, _manufacturer())])
         order_repo = _make_order_repo({"m1": {"ordered_item_count": 2, "total_quantity": 4}})
@@ -241,7 +242,7 @@ class TestSending:
 
 class TestForce:
     @pytest.mark.asyncio
-    async def test_force_bypasses_gates(self):
+    async def test_force_bypasses_gates(self) -> None:
         # マスタスイッチ off でも force なら送信する
         app_repo = _make_app_setting_repo(enabled="false")
         settings = _settings(to_emails=["to@x.com"])

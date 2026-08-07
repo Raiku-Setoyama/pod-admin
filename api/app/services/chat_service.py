@@ -1,5 +1,7 @@
 """Chat service."""
 
+from typing import Any
+
 from fastapi import UploadFile
 
 from app.models.chat_message import MessageSender
@@ -47,7 +49,7 @@ class ChatService:
         chat_repo: ChatRepository,
         manufacturer_repo: ManufacturerRepository,
         file_storage: FileStorage,
-    ):
+    ) -> None:
         self._chat_repo = chat_repo
         self._manufacturer_repo = manufacturer_repo
         self._file_storage = file_storage
@@ -136,7 +138,7 @@ class ChatService:
         message = await self._chat_repo.find_by_id(message.id)
         return self._to_response(message)  # type: ignore
 
-    def _to_response(self, message) -> ChatMessageResponse:
+    def _to_response(self, message: Any) -> ChatMessageResponse:
         """Convert message model to response schema."""
         return ChatMessageResponse(
             id=message.id,

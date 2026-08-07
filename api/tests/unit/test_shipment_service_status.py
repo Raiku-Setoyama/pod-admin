@@ -6,6 +6,7 @@ bidirectional transitions and order status synchronization.
 """
 
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -17,28 +18,28 @@ from app.services.shipment_service import ShipmentService
 
 
 @pytest.fixture
-def mock_shipment_repo():
+def mock_shipment_repo() -> Any:
     """Mock shipment repository."""
     repo = AsyncMock()
     return repo
 
 
 @pytest.fixture
-def mock_order_repo():
+def mock_order_repo() -> Any:
     """Mock order repository."""
     repo = AsyncMock()
     return repo
 
 
 @pytest.fixture
-def mock_file_storage():
+def mock_file_storage() -> Any:
     """Mock file storage."""
     storage = AsyncMock()
     return storage
 
 
 @pytest.fixture
-def shipment_service(mock_shipment_repo, mock_order_repo, mock_file_storage):
+def shipment_service(mock_shipment_repo: Any, mock_order_repo: Any, mock_file_storage: Any) -> Any:
     """Create ShipmentService with mocked dependencies."""
     return ShipmentService(
         shipment_repo=mock_shipment_repo,
@@ -119,8 +120,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_pending_to_ready_success(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: pending -> ready is allowed."""
         # Arrange
         shipment = create_mock_shipment(status=ShipmentStatus.PENDING.value)
@@ -141,8 +142,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_ready_to_pending_success(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: ready -> pending is allowed (reverse transition)."""
         # Arrange
         shipment = create_mock_shipment(status=ShipmentStatus.READY.value)
@@ -163,8 +164,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_pending_to_shipped_success(
-        self, shipment_service, mock_shipment_repo, mock_order_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any, mock_order_repo: Any
+    ) -> None:
         """Test: pending -> shipped is allowed, sets shipped_at and updates orders."""
         # Arrange
         order_ids = ["order-123", "order-456"]
@@ -191,8 +192,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_ready_to_shipped_success(
-        self, shipment_service, mock_shipment_repo, mock_order_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any, mock_order_repo: Any
+    ) -> None:
         """Test: ready -> shipped is allowed, sets shipped_at and updates orders."""
         # Arrange
         order_ids = ["order-123"]
@@ -224,8 +225,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_shipped_to_pending_success(
-        self, shipment_service, mock_shipment_repo, mock_order_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any, mock_order_repo: Any
+    ) -> None:
         """Test: shipped -> pending clears shipped_at and reverts order status to delivered."""
         # Arrange
         order_ids = ["order-123"]
@@ -254,8 +255,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_shipped_to_ready_success(
-        self, shipment_service, mock_shipment_repo, mock_order_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any, mock_order_repo: Any
+    ) -> None:
         """Test: shipped -> ready clears shipped_at and reverts order status to delivered."""
         # Arrange
         order_ids = ["order-123", "order-456"]
@@ -289,8 +290,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_shipped_to_pending_updates_all_orders(
-        self, shipment_service, mock_shipment_repo, mock_order_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any, mock_order_repo: Any
+    ) -> None:
         """Test: When multiple orders in shipment, all are updated on status change."""
         # Arrange
         order_ids = ["order-1", "order-2", "order-3"]
@@ -321,8 +322,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_tracking_number_updated_on_transition(
-        self, shipment_service, mock_shipment_repo, mock_order_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any, mock_order_repo: Any
+    ) -> None:
         """Test: Tracking number can be set during status update."""
         # Arrange
         shipment = create_mock_shipment(
@@ -350,8 +351,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_note_updated_on_transition(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: Note can be set during status update."""
         # Arrange
         shipment = create_mock_shipment(status=ShipmentStatus.PENDING.value)
@@ -378,8 +379,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_all_transitions_allowed(
-        self, shipment_service, mock_shipment_repo, mock_order_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any, mock_order_repo: Any
+    ) -> None:
         """Test: All status transitions are allowed in the new bidirectional model."""
         transitions = [
             (ShipmentStatus.PENDING, ShipmentStatus.READY),
@@ -418,8 +419,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_same_status_transition_is_idempotent(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: Transitioning to the same status is allowed (idempotent)."""
         # Arrange
         shipment = create_mock_shipment(status=ShipmentStatus.READY.value)

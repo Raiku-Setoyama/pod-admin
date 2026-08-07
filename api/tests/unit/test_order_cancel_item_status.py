@@ -5,6 +5,7 @@
 """
 
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -18,14 +19,14 @@ from app.services.order_service import OrderService
 
 
 @pytest.fixture
-def mock_order_repo():
+def mock_order_repo() -> Any:
     repo = AsyncMock()
     # apply_cancellation_to_items は同期メソッド（ロード済み Order を書き換えるだけ）
     repo.apply_cancellation_to_items = MagicMock()
     return repo
 
 
-def test_cancelled_matches_order_status():
+def test_cancelled_matches_order_status() -> None:
     """明細と注文の cancelled は同じ値（画面のラベル解決を共通化できる）."""
     assert OrderItemStatus.CANCELLED.value == OrderStatus.CANCELLED.value
 
@@ -55,7 +56,7 @@ def apply(items: list[OrderItem], *, cancelled: bool) -> list[str]:
 class TestApplyCancellationToItems:
     """キャンセルの開始/解除が明細ステータスへ反映されること."""
 
-    def test_cancel_marks_every_item_cancelled(self):
+    def test_cancel_marks_every_item_cancelled(self) -> None:
         """工程の進み具合にかかわらず全明細をキャンセル済みにする."""
         items = [
             make_item(OrderItemStatus.ORDERED.value),
@@ -65,7 +66,7 @@ class TestApplyCancellationToItems:
 
         assert apply(items, cancelled=True) == ["cancelled"] * 3
 
-    def test_uncancel_restores_ready_items_to_ordered(self):
+    def test_uncancel_restores_ready_items_to_ordered(self) -> None:
         """製造データ不要／ready の明細は「発注済み」へ戻す."""
         items = [
             make_item(OrderItemStatus.CANCELLED.value),
@@ -74,7 +75,7 @@ class TestApplyCancellationToItems:
 
         assert apply(items, cancelled=False) == ["ordered", "ordered"]
 
-    def test_uncancel_restores_unready_items_to_preparing_order(self):
+    def test_uncancel_restores_unready_items_to_preparing_order(self) -> None:
         """製造データが未 ready の明細は「発注準備中」へ戻す（発注ゲートを維持）."""
         items = [
             make_item(
@@ -84,7 +85,7 @@ class TestApplyCancellationToItems:
 
         assert apply(items, cancelled=False) == ["preparing_order"]
 
-    def test_uncancel_leaves_non_cancelled_items_untouched(self):
+    def test_uncancel_leaves_non_cancelled_items_untouched(self) -> None:
         """キャンセル済み以外の明細には触れない."""
         items = [make_item(OrderItemStatus.MANUFACTURING.value)]
 
@@ -134,7 +135,7 @@ class TestExternalCancelPropagatesToItems:
     """ExternalService.cancel_order が明細へキャンセルを波及させること."""
 
     @pytest.mark.asyncio
-    async def test_cancel_order_syncs_items(self, mock_order_repo):
+    async def test_cancel_order_syncs_items(self, mock_order_repo: Any) -> None:
         service = ExternalService(product_repo=AsyncMock(), order_repo=mock_order_repo)
         order = create_mock_order(status=OrderStatus.ORDERED.value)
         mock_order_repo.find_by_order_number.return_value = order
@@ -155,7 +156,7 @@ class TestExternalCancelPropagatesToItems:
 
 
 @pytest.fixture
-def order_service(mock_order_repo):
+def order_service(mock_order_repo: Any) -> Any:
     shipment_repo = AsyncMock()
     shipment_repo.find_by_order_ids.return_value = {}
     return OrderService(
@@ -170,8 +171,8 @@ class TestOrderServiceCancellationSync:
 
     @pytest.mark.asyncio
     async def test_update_status_to_cancelled_syncs_items(
-        self, order_service, mock_order_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any
+    ) -> None:
         """ordered -> cancelled で明細もキャンセル済みにする."""
         order = create_mock_order(status=OrderStatus.ORDERED.value)
         mock_order_repo.find_by_id.return_value = order
@@ -185,8 +186,8 @@ class TestOrderServiceCancellationSync:
 
     @pytest.mark.asyncio
     async def test_update_status_from_cancelled_restores_items(
-        self, order_service, mock_order_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any
+    ) -> None:
         """cancelled -> ordered でキャンセルを解除し明細をライフサイクルへ戻す."""
         order = create_mock_order(status=OrderStatus.CANCELLED.value)
         mock_order_repo.find_by_id.return_value = order
@@ -200,8 +201,8 @@ class TestOrderServiceCancellationSync:
 
     @pytest.mark.asyncio
     async def test_update_status_unrelated_transition_does_not_sync(
-        self, order_service, mock_order_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any
+    ) -> None:
         """キャンセルが絡まない遷移では波及処理を呼ばない."""
         order = create_mock_order(status=OrderStatus.ORDERED.value)
         mock_order_repo.find_by_id.return_value = order
@@ -213,8 +214,8 @@ class TestOrderServiceCancellationSync:
 
     @pytest.mark.asyncio
     async def test_bulk_update_status_to_cancelled_syncs_items(
-        self, order_service, mock_order_repo
-    ):
+        self, order_service: Any, mock_order_repo: Any
+    ) -> None:
         """一括更新でも明細へキャンセルを波及させる."""
         order = create_mock_order(status=OrderStatus.ORDERED.value)
         mock_order_repo.find_by_id.return_value = order
@@ -233,7 +234,7 @@ class TestOrderServiceCancellationSync:
 
 
 @pytest.fixture
-def manufacturer_order_service(mock_order_repo):
+def manufacturer_order_service(mock_order_repo: Any) -> Any:
     manufacturer_repo = AsyncMock()
     manufacturer_repo.find_by_id.return_value = MagicMock(name="メーカー")
     return ManufacturerOrderService(
@@ -243,7 +244,7 @@ def manufacturer_order_service(mock_order_repo):
     )
 
 
-def create_row(item_id: str, status: str) -> tuple:
+def create_row(item_id: str, status: str) -> tuple[Any, ...]:
     """find_ordered_items_by_manufacturer_detail が返す行タプルのモック."""
     order_item = MagicMock()
     order_item.id = item_id
@@ -270,8 +271,8 @@ class TestOrderDocumentsExcludeCancelled:
 
     @pytest.mark.asyncio
     async def test_cancelled_items_are_excluded(
-        self, manufacturer_order_service, mock_order_repo
-    ):
+        self, manufacturer_order_service: Any, mock_order_repo: Any
+    ) -> None:
         mock_order_repo.find_ordered_items_by_manufacturer_detail.return_value = [
             create_row("item-ordered", OrderItemStatus.ORDERED.value),
             create_row("item-cancelled", OrderItemStatus.CANCELLED.value),
@@ -286,8 +287,8 @@ class TestOrderDocumentsExcludeCancelled:
 
     @pytest.mark.asyncio
     async def test_all_cancelled_raises_no_ordered_items(
-        self, manufacturer_order_service, mock_order_repo
-    ):
+        self, manufacturer_order_service: Any, mock_order_repo: Any
+    ) -> None:
         """全明細がキャンセル済みならダウンロード対象なしとして扱う."""
         from app.utils.exceptions import NoOrderedItemsError
 

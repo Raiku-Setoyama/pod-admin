@@ -3,6 +3,7 @@
 import csv
 import io
 from datetime import datetime
+from typing import Any
 
 
 class CSVGenerator:
@@ -12,7 +13,7 @@ class CSVGenerator:
         self,
         manufacturer_name: str,
         order_date: datetime,
-        items: list[dict],
+        items: list[dict[str, Any]],
     ) -> bytes:
         """Generate purchase order CSV file."""
         output = io.StringIO()
@@ -41,7 +42,7 @@ class CSVGenerator:
     def generate_shipping_csv(
         self,
         carrier: str,
-        shipments: list[dict],
+        shipments: list[dict[str, Any]],
     ) -> bytes:
         """Generate shipping label CSV for carrier."""
         output = io.StringIO()
@@ -72,7 +73,7 @@ class CSVGenerator:
     def generate_packing_list_csv(
         self,
         order_number: str,
-        items: list[dict],
+        items: list[dict[str, Any]],
     ) -> bytes:
         """Generate packing list CSV."""
         output = io.StringIO()

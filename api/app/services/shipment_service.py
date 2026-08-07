@@ -8,7 +8,7 @@ import io
 import logging
 import mimetypes
 from datetime import UTC, date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import chardet
@@ -60,7 +60,7 @@ class ShipmentService:
         file_storage: FileStorage,
         order_source_repo: OrderSourceRepository | None = None,
         email_service: EmailService | None = None,
-    ):
+    ) -> None:
 
         self._shipment_repo = shipment_repo
         self._order_repo = order_repo
@@ -168,7 +168,7 @@ class ShipmentService:
             pending_order_status: Filter by PendingOrderStatus (preparing).
                                   If set, only pending orders are returned.
         """
-        items: list = []
+        items: list[Any] = []
         shipment_total = 0
         pending_total = 0
 
@@ -220,7 +220,7 @@ class ShipmentService:
             limit=limit,
         )
 
-    def _to_pending_order_response(self, order) -> PendingOrderResponse:
+    def _to_pending_order_response(self, order: Any) -> PendingOrderResponse:
         """Convert Order to PendingOrderResponse.
 
         Status is always 'preparing' since orders with all items delivered
@@ -693,7 +693,7 @@ class ShipmentService:
             raise ValidationError("shipment_ids または order_ids が必要です")
 
         # Collect image tasks from shipments and orders
-        image_tasks: list[dict] = []
+        image_tasks: list[dict[str, Any]] = []
 
         # Process shipments
         for shipment_id in shipment_ids:
@@ -727,7 +727,7 @@ class ShipmentService:
 
         async with httpx.AsyncClient() as client:
 
-            async def fetch_image(task: dict) -> dict | None:
+            async def fetch_image(task: dict[str, Any]) -> dict[str, Any] | None:
                 async with semaphore:
                     try:
                         response = await client.get(
@@ -1033,7 +1033,7 @@ class ShipmentService:
             rows.append(row)
 
     def _collect_order_thumbnails(
-        self, order: Order, image_tasks: list[dict]
+        self, order: Order, image_tasks: list[dict[str, Any]]
     ) -> None:
         """Collect thumbnail image tasks from an order.
 

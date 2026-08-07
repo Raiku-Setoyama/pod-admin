@@ -6,6 +6,8 @@
 """
 
 import json
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -17,7 +19,7 @@ from app.utils.security import create_access_token
 
 
 @pytest.fixture
-async def cancel_manufacturer(db_session: AsyncSession):
+async def cancel_manufacturer(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """テスト用のメーカー（ポータルログイン可能）."""
     manufacturer_id = str(uuid4())
     manufacturer_name = f"キャンセル検証メーカー_{manufacturer_id[:8]}"
@@ -51,7 +53,7 @@ async def cancel_manufacturer(db_session: AsyncSession):
 
 
 @pytest.fixture
-def manufacturer_headers(cancel_manufacturer: dict):
+def manufacturer_headers(cancel_manufacturer: dict[str, Any]) -> dict[str, Any]:
     """メーカーポータル（manufacturer-login）用の認証ヘッダー."""
     token = create_access_token({
         "sub": cancel_manufacturer["id"],
@@ -62,7 +64,7 @@ def manufacturer_headers(cancel_manufacturer: dict):
 
 
 @pytest.fixture
-async def cancel_product(db_session: AsyncSession, cancel_manufacturer: dict):
+async def cancel_product(db_session: AsyncSession, cancel_manufacturer: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """テスト用の商品（メーカー紐づけ用）."""
     product_id = str(uuid4())
 
@@ -97,9 +99,9 @@ async def cancel_product(db_session: AsyncSession, cancel_manufacturer: dict):
 @pytest.fixture
 async def ordered_order_with_items(
     db_session: AsyncSession,
-    test_order_source: dict,
-    cancel_product: dict,
-):
+    test_order_source: dict[str, Any],
+    cancel_product: dict[str, Any],
+) -> AsyncIterator[dict[str, Any]]:
     """発注済み（ordered）の注文と、その明細2件."""
     order_id = str(uuid4())
     order_number = f"CANCEL-ITEMS-{order_id[:8]}"
@@ -184,9 +186,9 @@ class TestExternalCancelPropagatesToItems:
         self,
         client: AsyncClient,
         db_session: AsyncSession,
-        test_order_source: dict,
-        ordered_order_with_items: dict,
-    ):
+        test_order_source: dict[str, Any],
+        ordered_order_with_items: dict[str, Any],
+    ) -> None:
         """キャンセル後、order_items.status が全て cancelled になる."""
         response = await client.post(
             f"/api/v1/external/orders/{ordered_order_with_items['order_number']}/cancel",
@@ -205,11 +207,11 @@ class TestManufacturerScreensShowCancelled:
     async def test_admin_manufacturer_order_items_show_cancelled(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_order_source: dict,
-        cancel_manufacturer: dict,
-        ordered_order_with_items: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_order_source: dict[str, Any],
+        cancel_manufacturer: dict[str, Any],
+        ordered_order_with_items: dict[str, Any],
+    ) -> None:
         """管理側のメーカー画面（発注詳細）でステータスが cancelled になる."""
         await client.post(
             f"/api/v1/external/orders/{ordered_order_with_items['order_number']}/cancel",
@@ -230,10 +232,10 @@ class TestManufacturerScreensShowCancelled:
     async def test_manufacturer_portal_order_items_show_cancelled(
         self,
         client: AsyncClient,
-        manufacturer_headers: dict,
-        test_order_source: dict,
-        ordered_order_with_items: dict,
-    ):
+        manufacturer_headers: dict[str, Any],
+        test_order_source: dict[str, Any],
+        ordered_order_with_items: dict[str, Any],
+    ) -> None:
         """manufacturer-login 側（メーカーポータル）でもステータスが cancelled になる."""
         await client.post(
             f"/api/v1/external/orders/{ordered_order_with_items['order_number']}/cancel",
@@ -254,11 +256,11 @@ class TestManufacturerScreensShowCancelled:
     async def test_cancelled_items_are_excluded_from_order_summary(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_order_source: dict,
-        cancel_manufacturer: dict,
-        ordered_order_with_items: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_order_source: dict[str, Any],
+        cancel_manufacturer: dict[str, Any],
+        ordered_order_with_items: dict[str, Any],
+    ) -> None:
         """キャンセル済み明細はメーカー別発注サマリー（発注中の件数）から外れる."""
         before = await client.get(
             "/api/v1/manufacturers/order-summary", headers=auth_headers
@@ -290,9 +292,9 @@ class TestAdminCancelPropagatesToItems:
         self,
         client: AsyncClient,
         db_session: AsyncSession,
-        auth_headers: dict,
-        ordered_order_with_items: dict,
-    ):
+        auth_headers: dict[str, Any],
+        ordered_order_with_items: dict[str, Any],
+    ) -> None:
         """PATCH /orders/{id}/status で cancelled にすると明細も cancelled になる."""
         response = await client.patch(
             f"/api/v1/orders/{ordered_order_with_items['id']}/status",
@@ -311,9 +313,9 @@ class TestAdminCancelPropagatesToItems:
         self,
         client: AsyncClient,
         db_session: AsyncSession,
-        auth_headers: dict,
-        ordered_order_with_items: dict,
-    ):
+        auth_headers: dict[str, Any],
+        ordered_order_with_items: dict[str, Any],
+    ) -> None:
         """キャンセルを解除すると明細が発注済みへ戻る（取り残されない）."""
         order_id = ordered_order_with_items["id"]
 

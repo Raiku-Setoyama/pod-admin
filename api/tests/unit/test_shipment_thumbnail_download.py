@@ -19,6 +19,7 @@ import io
 import logging
 import re
 import zipfile
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -37,25 +38,25 @@ from app.services.shipment_service import ShipmentService
 
 
 @pytest.fixture
-def mock_shipment_repo():
+def mock_shipment_repo() -> Any:
     """Mock shipment repository."""
     return AsyncMock()
 
 
 @pytest.fixture
-def mock_order_repo():
+def mock_order_repo() -> Any:
     """Mock order repository."""
     return AsyncMock()
 
 
 @pytest.fixture
-def mock_file_storage():
+def mock_file_storage() -> Any:
     """Mock file storage."""
     return AsyncMock()
 
 
 @pytest.fixture
-def shipment_service(mock_shipment_repo, mock_order_repo, mock_file_storage):
+def shipment_service(mock_shipment_repo: Any, mock_order_repo: Any, mock_file_storage: Any) -> Any:
     """Create ShipmentService with mocked dependencies."""
     return ShipmentService(
         shipment_repo=mock_shipment_repo,
@@ -90,7 +91,7 @@ def create_mock_order_item(
 def create_mock_order(
     order_id: str = "order-123",
     order_number: str = "ORD-001",
-    items: list | None = None,
+    items: list[Any] | None = None,
 ) -> MagicMock:
     """Create a mock Order with OrderItems."""
     order = MagicMock(spec=Order)
@@ -115,7 +116,7 @@ def create_mock_shipment_item(
 
 def create_mock_shipment(
     shipment_id: str = "shipment-123",
-    items: list | None = None,
+    items: list[Any] | None = None,
 ) -> MagicMock:
     """Create a mock Shipment with ShipmentItems."""
     shipment = MagicMock(spec=Shipment)
@@ -133,12 +134,12 @@ def create_mock_shipment(
 class TestShipmentThumbnailDownloadRequestSchema:
     """AC-001: ShipmentThumbnailDownloadRequest が shipment_ids フィールドを持ち、min_length=1 のバリデーションがある."""
 
-    def test_valid_shipment_ids_accepted(self):
+    def test_valid_shipment_ids_accepted(self) -> None:
         """shipment_ids フィールドが正しく設定される（1件）."""
         request = ShipmentThumbnailDownloadRequest(shipment_ids=["shipment-1"])
         assert request.shipment_ids == ["shipment-1"]
 
-    def test_multiple_shipment_ids_accepted(self):
+    def test_multiple_shipment_ids_accepted(self) -> None:
         """shipment_ids フィールドが正しく設定される（複数件）."""
         request = ShipmentThumbnailDownloadRequest(
             shipment_ids=["shipment-1", "shipment-2", "shipment-3"]
@@ -154,7 +155,7 @@ class TestShipmentThumbnailDownloadRequestSchema:
 class TestEmptyShipmentIdsValidation:
     """AC-002: shipment_ids が空リストの場合は 422 バリデーションエラーになる."""
 
-    def test_empty_shipment_ids_validation_error(self):
+    def test_empty_shipment_ids_validation_error(self) -> None:
         """空の shipment_ids リストは ValidationError になる."""
         from pydantic import ValidationError as PydanticValidationError
 
@@ -172,8 +173,8 @@ class TestDownloadThumbnailsReturnsZip:
 
     @pytest.mark.asyncio
     async def test_download_thumbnails_returns_zip_bytes_and_filename(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """対象画像を含むZIPファイルのバイトデータとファイル名のタプルが返される."""
         # Arrange: shipment -> shipment_item -> order -> order_item with thumbnail
         order_item = create_mock_order_item(
@@ -238,8 +239,8 @@ class TestSkipNullThumbnailImageUrl:
 
     @pytest.mark.asyncio
     async def test_null_thumbnail_items_are_skipped(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """thumbnail_image_url が null のアイテムはスキップされ、画像を持つアイテムのみがZIPに含まれる."""
         # Arrange
         item_with_thumb = create_mock_order_item(
@@ -298,8 +299,8 @@ class TestImageFetchFailureSkipAndLog:
 
     @pytest.mark.asyncio
     async def test_failed_image_fetch_is_skipped_and_logged(
-        self, shipment_service, mock_shipment_repo, caplog
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """取得失敗した画像はスキップされ、ログに警告が記録される."""
         # Arrange
         item_good = create_mock_order_item(
@@ -335,7 +336,7 @@ class TestImageFetchFailureSkipAndLog:
         mock_response_bad.status_code = 404
         mock_response_bad.content = b""
 
-        async def side_effect_get(url, **kwargs):
+        async def side_effect_get(url: Any, **kwargs) -> Any:
             if "good" in url:
                 return mock_response_good
             return mock_response_bad
@@ -367,8 +368,8 @@ class TestImageFetchFailureSkipAndLog:
 
     @pytest.mark.asyncio
     async def test_timeout_on_image_fetch_is_skipped(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """タイムアウトした画像取得はスキップされる."""
         import httpx
 
@@ -401,7 +402,7 @@ class TestImageFetchFailureSkipAndLog:
         mock_response_good.content = b"good-image-data"
         mock_response_good.headers = {"content-type": "image/png"}
 
-        async def side_effect_get(url, **kwargs):
+        async def side_effect_get(url: Any, **kwargs) -> Any:
             if "timeout" in url:
                 raise httpx.TimeoutException("Connection timed out")
             return mock_response_good
@@ -433,8 +434,8 @@ class TestAllThumbnailsNullOrFailedReturn404:
 
     @pytest.mark.asyncio
     async def test_all_thumbnails_null_returns_404(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """全ての thumbnail_image_url が null の場合、404 エラーが返される."""
         # Arrange
         item_null_1 = create_mock_order_item(
@@ -466,8 +467,8 @@ class TestAllThumbnailsNullOrFailedReturn404:
 
     @pytest.mark.asyncio
     async def test_all_image_fetches_failed_returns_404(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """全ての画像URLからの取得に失敗した場合、404 エラーが返される."""
         # Arrange
         item_1 = create_mock_order_item(
@@ -520,8 +521,8 @@ class TestNonExistentShipmentIdsSkipped:
 
     @pytest.mark.asyncio
     async def test_nonexistent_shipment_ids_are_skipped(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """存在しない配送IDはスキップされ、存在する配送の画像のみがZIPに含まれる."""
         # Arrange
         order_item = create_mock_order_item(
@@ -541,7 +542,7 @@ class TestNonExistentShipmentIdsSkipped:
             shipment_id="shipment-valid", items=[shipment_item]
         )
 
-        async def find_by_id(shipment_id):
+        async def find_by_id(shipment_id: Any) -> Any:
             if shipment_id == "shipment-valid":
                 return valid_shipment
             return None  # Not found
@@ -573,8 +574,8 @@ class TestNonExistentShipmentIdsSkipped:
 
     @pytest.mark.asyncio
     async def test_all_nonexistent_shipment_ids_returns_404(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """全ての配送IDが存在しない場合は 404 エラーが返される."""
         # Arrange
         mock_shipment_repo.find_by_id.return_value = None
@@ -598,8 +599,8 @@ class TestZipFilePathFormat:
 
     @pytest.mark.asyncio
     async def test_zip_file_path_flat_format_with_uid(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """AC-002: ZIP内ファイルパスが「{order_number}_{uid}{ext}」形式のフラット構造."""
         # Arrange
         order_item = create_mock_order_item(
@@ -649,8 +650,8 @@ class TestZipFilePathFormat:
 
     @pytest.mark.asyncio
     async def test_zip_file_path_no_product_name_or_index(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """AC-001: image_tasks に uid が含まれ、product_name と index が含まれない.
 
         ファイルパスに product_name や連番 index が使われていないことを確認する。
@@ -706,8 +707,8 @@ class TestZipFilePathFormat:
 
     @pytest.mark.asyncio
     async def test_zip_file_path_uid_none_uses_empty_string(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """AC-003: uid が None の場合は空文字として扱われ「{order_number}_{ext}」形式になる."""
         # Arrange
         order_item = create_mock_order_item(
@@ -756,8 +757,8 @@ class TestZipFilePathFormat:
 
     @pytest.mark.asyncio
     async def test_zip_file_path_multiple_items_with_individual_uids(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """AC-004: 複数アイテムがある場合、各ファイルが個別のuidで命名される."""
         # Arrange
         item_1 = create_mock_order_item(
@@ -814,8 +815,8 @@ class TestZipFilePathFormat:
 
     @pytest.mark.asyncio
     async def test_zip_file_extension_from_url(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """拡張子はURLのパスから推定される."""
         # Arrange
         order_item = create_mock_order_item(
@@ -862,8 +863,8 @@ class TestZipFilePathFormat:
 
     @pytest.mark.asyncio
     async def test_zip_file_extension_fallback_to_png(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """URLからもContent-Typeからも拡張子が推定できない場合は.pngとする."""
         # Arrange
         order_item = create_mock_order_item(
@@ -919,8 +920,8 @@ class TestZipFilenameFormat:
 
     @pytest.mark.asyncio
     async def test_zip_filename_matches_expected_pattern(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """ファイル名が「配送サムネイル_YYYYMMDD_HHMMSS.zip」のパターンに一致する."""
         # Arrange
         order_item = create_mock_order_item(

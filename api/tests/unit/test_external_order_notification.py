@@ -8,6 +8,7 @@
 
 import types
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -27,7 +28,7 @@ def _setting(value: str) -> types.SimpleNamespace:
 
 
 def _make_repo(enabled_value: str | None, recipients_value: str | None) -> MagicMock:
-    async def find_by_key(key: str):
+    async def find_by_key(key: str) -> Any:
         if key == NOTIFICATION_ENABLED_KEY:
             return _setting(enabled_value) if enabled_value is not None else None
         if key == NOTIFICATION_RECIPIENTS_KEY:
@@ -53,17 +54,17 @@ def _make_order() -> types.SimpleNamespace:
 
 
 class TestParseRecipients:
-    def test_empty_returns_empty_list(self):
+    def test_empty_returns_empty_list(self) -> None:
         assert parse_recipients("") == []
         assert parse_recipients(None) == []
 
-    def test_splits_and_strips(self):
+    def test_splits_and_strips(self) -> None:
         assert parse_recipients("a@example.com, b@example.com") == [
             "a@example.com",
             "b@example.com",
         ]
 
-    def test_drops_empty_segments(self):
+    def test_drops_empty_segments(self) -> None:
         assert parse_recipients("a@example.com,,  ,b@example.com") == [
             "a@example.com",
             "b@example.com",
@@ -71,29 +72,29 @@ class TestParseRecipients:
 
 
 class TestValidateSettingValue:
-    def test_enabled_accepts_true_false(self):
+    def test_enabled_accepts_true_false(self) -> None:
         validate_setting_value(NOTIFICATION_ENABLED_KEY, "true")
         validate_setting_value(NOTIFICATION_ENABLED_KEY, "false")
 
-    def test_enabled_rejects_other(self):
+    def test_enabled_rejects_other(self) -> None:
         with pytest.raises(ValueError):
             validate_setting_value(NOTIFICATION_ENABLED_KEY, "yes")
 
-    def test_recipients_accepts_empty(self):
+    def test_recipients_accepts_empty(self) -> None:
         validate_setting_value(NOTIFICATION_RECIPIENTS_KEY, "")
 
-    def test_recipients_accepts_multiple_valid(self):
+    def test_recipients_accepts_multiple_valid(self) -> None:
         validate_setting_value(
             NOTIFICATION_RECIPIENTS_KEY, "a@example.com, b@example.com"
         )
 
-    def test_recipients_rejects_invalid_email(self):
+    def test_recipients_rejects_invalid_email(self) -> None:
         with pytest.raises(ValueError):
             validate_setting_value(
                 NOTIFICATION_RECIPIENTS_KEY, "a@example.com, not-an-email"
             )
 
-    def test_recipients_rejects_too_long(self):
+    def test_recipients_rejects_too_long(self) -> None:
         long_value = ",".join(f"user{i}@example.com" for i in range(40))
         assert len(long_value) > 500
         with pytest.raises(ValueError):
@@ -102,7 +103,7 @@ class TestValidateSettingValue:
 
 class TestEnqueueIfEnabled:
     @pytest.mark.asyncio
-    async def test_skips_when_email_service_missing(self):
+    async def test_skips_when_email_service_missing(self) -> None:
         repo = _make_repo("true", "a@example.com")
         service = ExternalOrderNotificationService(repo, None)
         bg = BackgroundTasks()
@@ -112,7 +113,7 @@ class TestEnqueueIfEnabled:
         assert len(bg.tasks) == 0
 
     @pytest.mark.asyncio
-    async def test_skips_when_disabled(self):
+    async def test_skips_when_disabled(self) -> None:
         repo = _make_repo("false", "a@example.com")
         service = ExternalOrderNotificationService(repo, MagicMock())
         bg = BackgroundTasks()
@@ -122,7 +123,7 @@ class TestEnqueueIfEnabled:
         assert len(bg.tasks) == 0
 
     @pytest.mark.asyncio
-    async def test_skips_when_enabled_setting_missing(self):
+    async def test_skips_when_enabled_setting_missing(self) -> None:
         repo = _make_repo(None, "a@example.com")
         service = ExternalOrderNotificationService(repo, MagicMock())
         bg = BackgroundTasks()
@@ -132,7 +133,7 @@ class TestEnqueueIfEnabled:
         assert len(bg.tasks) == 0
 
     @pytest.mark.asyncio
-    async def test_skips_when_recipients_empty(self):
+    async def test_skips_when_recipients_empty(self) -> None:
         repo = _make_repo("true", "")
         service = ExternalOrderNotificationService(repo, MagicMock())
         bg = BackgroundTasks()
@@ -142,7 +143,7 @@ class TestEnqueueIfEnabled:
         assert len(bg.tasks) == 0
 
     @pytest.mark.asyncio
-    async def test_enqueues_when_enabled_with_recipients(self):
+    async def test_enqueues_when_enabled_with_recipients(self) -> None:
         repo = _make_repo("true", "a@example.com, b@example.com")
         email_service = MagicMock()
         service = ExternalOrderNotificationService(repo, email_service)
@@ -162,7 +163,7 @@ class TestEnqueueIfEnabled:
         ]
 
     @pytest.mark.asyncio
-    async def test_never_raises_on_repo_error(self):
+    async def test_never_raises_on_repo_error(self) -> None:
         repo = MagicMock()
         repo.find_by_key = AsyncMock(side_effect=RuntimeError("db down"))
         service = ExternalOrderNotificationService(repo, MagicMock())

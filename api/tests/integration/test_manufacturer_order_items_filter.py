@@ -10,7 +10,9 @@ FEAT-0012: 発注詳細画面にステータスフィルター・キーワード
 """
 
 import json
+from collections.abc import AsyncIterator
 from datetime import datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -20,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.fixture
-async def test_manufacturer(db_session: AsyncSession):
+async def test_manufacturer(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """テスト用のメーカー"""
     manufacturer_id = str(uuid4())
     # ユニークな名前を生成（並列テスト対策）
@@ -55,7 +57,7 @@ async def test_manufacturer(db_session: AsyncSession):
 
 
 @pytest.fixture
-async def test_product(db_session: AsyncSession, test_manufacturer: dict):
+async def test_product(db_session: AsyncSession, test_manufacturer: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """テスト用の商品"""
     product_id = str(uuid4())
     # ユニークなサイズを使用して既存データとの衝突を避ける
@@ -90,10 +92,10 @@ async def test_product(db_session: AsyncSession, test_manufacturer: dict):
 @pytest.fixture
 async def test_orders_with_items(
     db_session: AsyncSession,
-    test_order_source: dict,
-    test_product: dict,
-    test_manufacturer: dict,
-):
+    test_order_source: dict[str, Any],
+    test_product: dict[str, Any],
+    test_manufacturer: dict[str, Any],
+) -> AsyncIterator[dict[str, Any]]:
     """複数ステータスの受注と明細を作成するフィクスチャ
 
     以下のデータを作成:
@@ -218,9 +220,9 @@ class TestManufacturerOrderItemsAPI:
     async def test_api_returns_all_statuses_by_default(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_with_items: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_orders_with_items: dict[str, Any],
+    ) -> None:
         """AC-007/AC-015: デフォルトでは全OrderItemステータス（ordered/manufacturing/delivered）が返される
 
         given: 複数のステータスの明細が存在する
@@ -256,9 +258,9 @@ class TestManufacturerOrderItemsAPI:
     async def test_api_filters_by_status_manufacturing(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_with_items: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_orders_with_items: dict[str, Any],
+    ) -> None:
         """AC-006/AC-014: ステータスフィルターで特定のステータスのアイテムのみが返される
 
         given: 複数のステータスの明細が存在する
@@ -285,9 +287,9 @@ class TestManufacturerOrderItemsAPI:
     async def test_api_filters_by_status_ordered(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_with_items: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_orders_with_items: dict[str, Any],
+    ) -> None:
         """AC-006/AC-014: 発注済みステータスでフィルタリング
 
         given: 複数のステータスの明細が存在する
@@ -314,9 +316,9 @@ class TestManufacturerOrderItemsAPI:
     async def test_api_filters_by_status_delivered(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_with_items: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_orders_with_items: dict[str, Any],
+    ) -> None:
         """AC-006/AC-014: 納入済みステータスでフィルタリング
 
         given: 複数のステータスの明細が存在する
@@ -346,9 +348,9 @@ class TestManufacturerOrderItemsAPI:
     async def test_api_search_by_order_number(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_with_items: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_orders_with_items: dict[str, Any],
+    ) -> None:
         """AC-002/AC-013: 注文番号でキーワード検索
 
         given: 複数の明細が存在する
@@ -374,9 +376,9 @@ class TestManufacturerOrderItemsAPI:
     async def test_api_search_by_uid(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_with_items: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_orders_with_items: dict[str, Any],
+    ) -> None:
         """AC-003/AC-013: 製品番号(uid)でキーワード検索
 
         given: 複数の明細が存在する
@@ -405,9 +407,9 @@ class TestManufacturerOrderItemsAPI:
     async def test_api_search_by_product_name(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_with_items: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_orders_with_items: dict[str, Any],
+    ) -> None:
         """AC-004/AC-013: 商品名でキーワード検索
 
         given: 複数の明細が存在する
@@ -434,9 +436,9 @@ class TestManufacturerOrderItemsAPI:
     async def test_api_search_is_case_insensitive(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_with_items: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_orders_with_items: dict[str, Any],
+    ) -> None:
         """AC-013: 検索は大文字小文字を区別しない
 
         given: 複数の明細が存在する
@@ -463,9 +465,9 @@ class TestManufacturerOrderItemsAPI:
     async def test_api_combines_status_and_search(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_with_items: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_orders_with_items: dict[str, Any],
+    ) -> None:
         """AC-011: 検索とステータスフィルターを組み合わせて使用できる
 
         given: 複数のステータスと商品名の明細が存在する
@@ -496,9 +498,9 @@ class TestManufacturerOrderItemsAPI:
     async def test_api_response_includes_status_field(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_with_items: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_orders_with_items: dict[str, Any],
+    ) -> None:
         """AC-008/AC-016: APIレスポンスの各アイテムにstatusフィールドが含まれる
 
         given: 明細が存在する
@@ -524,9 +526,9 @@ class TestManufacturerOrderItemsAPI:
     async def test_api_returns_empty_when_no_match(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_with_items: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_orders_with_items: dict[str, Any],
+    ) -> None:
         """検索条件に一致するアイテムがない場合は空のリストを返す
 
         given: 明細が存在する
@@ -551,9 +553,9 @@ class TestManufacturerOrderItemsAPI:
     async def test_api_excludes_shipped_status_from_all_statuses(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_orders_with_items: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_orders_with_items: dict[str, Any],
+    ) -> None:
         """OrderItem.status には shipped がないことを確認
 
         given: Order.status が shipped のアイテムを含む複数のステータスの明細が存在する
