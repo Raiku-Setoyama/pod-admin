@@ -27,7 +27,7 @@
 - 実装作業は `/implement-requirement <REQ-ID>` から開始する。例外は AGENTS.md「全工程を通さなくてよい変更」だけ。
 - コードを変更したら、コミット前・push 前に `/quality-gate` を実行する。
   push を機械的に止める push フック（`.claude/hooks/guard-push.sh`）を配置済み。**有効化には `.claude/settings.json` の登録が必要**（`docs/*` ブランチは対象外）。
-  `quality-gate.sh` の `PROJECT_CHECKS` は現状 docs-lint のみ有効。ruff / eslint / mypy / tsc は大量失敗のため導入予定（REQ-0041）。`ci.yml` はコードチェックを非ブロッキングで可視化する。
+  `quality-gate.sh` の `PROJECT_CHECKS` では docs-lint + ruff / mypy / eslint / tsc がすべて有効（REQ-0041 で緑化済み）。`ci.yml` も同じ 4 つをブロッキングで実行する。詳細と除外の方針は AGENTS.md「ビルド・テストコマンド」を参照。
 - `/effort` の使い分け: 要件整理・設計判断は `high` 以上、定型のドキュメント更新は `medium` で足りる。
 
 
