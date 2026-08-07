@@ -1,6 +1,6 @@
 ---
 name: client-export
-description: 顧客に提出する資料一式を生成する。要件・検討事項・決定事項を 3 タブの Excel（プロジェクト管理表）と CSV で、要件定義書を 1 つの Word 文書として出力する。「顧客向けの資料を作って」「要件定義書を出して」「要件をスプレッドシートにして」「3 タブの Excel を出して」「客先に提出する資料」「検討事項の一覧が欲しい」と言われたときは必ずこのスキルを使う。定例の前や検収前にも実行する。
+description: 顧客に提出する資料一式を生成する。要件・検討事項・決定事項・不具合を 4 タブの Excel（プロジェクト管理表）と CSV で、要件定義書を 1 つの Word 文書として出力する。「顧客向けの資料を作って」「要件定義書を出して」「要件をスプレッドシートにして」「4 タブの Excel を出して」「客先に提出する資料」「検討事項の一覧が欲しい」「不具合一覧を出して」と言われたときは必ずこのスキルを使う。定例の前や検収前にも実行する。
 argument-hint: [review | agreed]
 allowed-tools: Bash(python3 scripts/export-csv.py:*) Bash(python3 scripts/export-xlsx.py:*) Bash(python3 scripts/export-requirements.py:*) Bash(python3 scripts/docs-lint.py:*) Bash(git tag:*) Bash(git log:*)
 ---
@@ -43,10 +43,11 @@ python3 scripts/export-requirements.py --agreed-only --docx
 
 | ファイル | 内容 | 用途 |
 |---|---|---|
-| `dist/プロジェクト管理表.xlsx` | 要件・検討事項・決定事項の 3 タブ | 1 ファイルで顧客に手渡す一覧 |
+| `dist/プロジェクト管理表.xlsx` | 要件・検討事項・決定事項・不具合の 4 タブ | 1 ファイルで顧客に手渡す一覧 |
 | `dist/requirements.csv` | 要件一覧（`must` / `future`）。実装状況の列を含む | 進捗とチェックリストを兼ねる |
 | `dist/pending.csv` | 検討事項一覧（`undecided` / `wont`）。判断内容と判断日を含む | 顧客の判断待ちと見送り記録 |
 | `dist/decisions.csv` | 決定事項・論点（ADR）一覧 | 決定の履歴と判断待ちの論点 |
+| `dist/defects.csv` | 不具合一覧（`docs/05-defects/`）。対象要件と修正状況を含む | 瑕疵対応の状況 |
 | `dist/要件定義書.md` | 結合済み要件定義 | 中間生成物 |
 | `dist/要件定義書.docx` | Word 版 | 顧客提出・検収用 |
 
@@ -54,7 +55,12 @@ python3 scripts/export-requirements.py --agreed-only --docx
 合意済み（`must` / `future`）が要件、未判断・見送り（`undecided` / `wont`）が検討事項になる。
 旧モデルのように 2 つの一覧を ID で突き合わせる必要はない。
 
-`プロジェクト管理表.xlsx` は 3 つの CSV と同じ列を 1 つの Excel（要件 / 検討事項 / 決定事項タブ）に束ねたもの。
+**不具合タブだけは別のディレクトリ（`docs/05-defects/`）から出る。**
+要件定義書には載らない。**不具合は要件ではないので、検収の対象文書に混ぜない。**
+要件タブの「未修正の不具合」列が、完了した要件のうち今どれが壊れているかを示す
+（`defect_of` の逆引きで導出。要件を `done` のまま戻さないぶん、この列が実態を担保する）。
+
+`プロジェクト管理表.xlsx` は 4 つの CSV と同じ列を 1 つの Excel（要件 / 検討事項 / 決定事項 / 不具合タブ）に束ねたもの。
 Google スプレッドシート連携（手順 4）は CSV を使うので、Excel はメール等で 1 ファイルを手渡すときに使う。
 `--internal` を付けると内部項目も含む `プロジェクト管理表-internal.xlsx` が出る。
 
@@ -66,7 +72,7 @@ Google スプレッドシート連携（手順 4）は CSV を使うので、Exc
 - CSV の「判断内容」列 — 見送った理由が顧客に対して失礼な表現になっていないか
 - 社内向けメモが `## 実装メモ` から漏れていないか（要件本文はそのまま要件定義書に出る）
 - **「領域」列に「未分類」が残っていないか** — 顧客資料に「未分類」が並ぶのは内部の整理不足である。
-  残っていたら資料を出す前に `/requirements-refine` で潰す
+  残っていたら資料を出す前に `/docs-audit` で潰す
 - **要件定義書の節（領域）が顧客の言葉になっているか** — `docs/00-charter/areas.md` の
   「表示名」列がそのまま章立てに出る。開発側の用語になっていたら `areas.md` を直して再生成する
 
@@ -89,7 +95,7 @@ python3 scripts/push-sheets.py \
 python3 scripts/push-sheets.py --pull 検討事項
 ```
 
-回収した内容は `/meeting-intake` の入力として扱い、新しい要件を `priority: undecided` で起票する。
+回収した内容は `/meeting-intake` の入力として扱い、新しい要件として起票する（採否は根拠に応じて提案する）。
 **シートを直接 docs に取り込まない。** 経緯が追えなくなる。
 
 ## 5. 合意版を確定させる（agreed の場合のみ）

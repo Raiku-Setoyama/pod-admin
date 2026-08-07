@@ -5,11 +5,12 @@
   1. frontmatter の必須フィールドが揃っているか
   2. ファイル名と frontmatter の id が一致しているか
   3. 参照している ID が実在するか（参照切れ）
-  4. status / priority が定義された値か
+  4. status / priority が定義された値か（priority の語彙は要件と不具合で違う）
   5. 採否と実装状態の整合（合意していないものを実装していないか、完了の申告が正しいか）
-  6. 合意した要件に受入基準があるか
+  6. 合意した要件・直すと決めた不具合に受入基準があるか
   7. 議事録 raw ファイルに対応する構造化議事録があるか
   8. area が areas.md に定義された領域か、判断ゲートまでに確定しているか
+  9. 不具合が違反している約束（defect_of）を指しているか
 
 依存パッケージなし。Python 3.9+ で動く。
 """
@@ -23,7 +24,7 @@ from _docmodel import (
     AGREED,
     CHECKBOX,
     KINDS,
-    PRIORITIES,
+    PRIORITIES_BY_KIND,
     REQUIRES_REASON,
     as_list,
     load_areas,
@@ -40,6 +41,7 @@ STATUSES = {
     "REQ": {"not-started", "in-progress", "done", "on-hold"},
     "ADR": {"proposed", "accepted", "superseded"},
     "MTG": {"draft", "confirmed"},
+    "BUG": {"not-started", "in-progress", "done", "on-hold"},
 }
 
 # 領域（area）が未確定（unassigned）のままでよい段階を、種別ごとに (フィールド, 値) で表す。
@@ -52,7 +54,9 @@ AREA_PENDING = {
 }
 
 # 領域が必須になる種別。議事録は複数領域にまたがるイベントなので対象外。
-AREA_REQUIRED = set(AREA_PENDING)
+# 不具合は AREA_PENDING に載せない。猶予段階が無い＝起票時から領域が確定している。
+# 壊れている場所は分かっているし、多くは元の要件から引き継げる。
+AREA_REQUIRED = set(AREA_PENDING) | {"BUG"}
 
 # 語彙に必ず存在すべきキー。common は「複数領域にまたがる」、unassigned は「まだ分からない」で
 # 意味が異なり、docs-lint は 2 つを別々に扱う。だから areas.md 側の列にはできない。
@@ -62,7 +66,7 @@ UNASSIGNED = "unassigned"
 # 旧 3 層（RQ / BL）も認識する。移行した案件の議事録に旧 ID が残るため。
 # 実在するかどうかは id-migration.md の対応表で解決する。
 ID_PATTERN = re.compile(
-    r"\b(RQ-\d{4}|REQ-\d{4}|BL-\d{4}|ADR-\d{4}|MTG-\d{4}-\d{2}-\d{2}(?:-[a-z])?)\b"
+    r"\b(RQ-\d{4}|REQ-\d{4}|BUG-\d{4}|BL-\d{4}|ADR-\d{4}|MTG-\d{4}-\d{2}-\d{2}(?:-[a-z])?)\b"
 )
 
 CODE_BLOCK = re.compile(r"```.*?```", re.DOTALL)
@@ -126,7 +130,7 @@ def check_document(doc_id: str, entry: dict, index: dict, aliases: set) -> None:
 
     # 参照切れ検査（frontmatter と本文の両方）
     referenced: set[str] = set()
-    for key in ("source", "related", "depends_on", "supersedes"):
+    for key in ("source", "related", "depends_on", "supersedes", "defect_of"):
         referenced.update(as_list(fm.get(key)))
     referenced.update(ID_PATTERN.findall(strip_noise(body)))
     for ref in sorted(referenced):
@@ -146,19 +150,33 @@ def check_document(doc_id: str, entry: dict, index: dict, aliases: set) -> None:
             warnings.append(f"{where}: 未決事項 {target} が残っています")
 
 
-def check_requirements(index: dict) -> None:
-    """要件の 2 つの軸（採否 priority と実装 status）の整合を検査する。"""
+def check_work_items(index: dict) -> None:
+    """要件と不具合の 2 つの軸（採否 priority と実装 status）の整合を検査する。
+
+    検査の内容は同じで、違うのは priority の語彙だけ。不具合に undecided は無い
+    （約束は元の受入基準として既に存在するので、採否を問う段階が存在しない）。
+    種別ごとに関数を分けると、同じ検査が 2 つに増えて片方だけ直される。
+    """
     for entry in index.values():
-        if entry["kind"] != "REQ":
+        allowed = PRIORITIES_BY_KIND.get(entry["kind"])
+        if not allowed:
             continue
         fm, path, body = entry["fm"], entry["path"], entry["body"]
         priority, status = fm.get("priority"), fm.get("status")
 
-        if priority not in PRIORITIES:
+        if priority not in allowed:
             errors.append(
-                f"{path}: priority '{priority}' は不正です。使えるのは {sorted(PRIORITIES)}"
+                f"{path}: priority '{priority}' は不正です。使えるのは {sorted(allowed)}"
             )
             continue
+
+        # 不具合は「どの約束に違反しているか」を指していなければ、不具合と判定した根拠がない。
+        # 憲章由来などで特定できないことはあるので、エラーではなく警告にする。
+        if entry["kind"] == "BUG" and not as_list(fm.get("defect_of")):
+            warnings.append(
+                f"{path}: defect_of が空です。違反している受入基準を持つ文書"
+                "（REQ-XXXX / NFR / CONSTRAINTS）を指すか、本文に根拠を書いてください"
+            )
 
         # 判断済みなら理由が必須。理由のない判断は必ず蒸し返される。
         if priority in REQUIRES_REASON:
@@ -297,7 +315,7 @@ def main() -> int:
     aliases = load_id_aliases()
     for doc_id, entry in index.items():
         check_document(doc_id, entry, index, aliases)
-    check_requirements(index)
+    check_work_items(index)
     check_areas(index, load_areas())
     check_meetings(index)
 
