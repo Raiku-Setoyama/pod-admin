@@ -2,6 +2,7 @@
 
 from datetime import date
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -28,7 +29,6 @@ from app.schemas.order import (
     OrderStatusUpdate,
     OrderThumbnailDownloadRequest,
 )
-from urllib.parse import quote
 from app.services.external_order_notification import ExternalOrderNotificationService
 from app.services.order_image_service import OrderImageService
 from app.services.order_service import OrderService
@@ -209,7 +209,7 @@ async def bulk_update_order_status(
         return await service.bulk_update_status(data.order_ids, data.status)
     except ValidationError as e:
         # shipped への直接遷移は 422 として返す
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
 
 @router.get("/{order_id}", response_model=OrderResponse)

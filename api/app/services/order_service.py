@@ -555,7 +555,7 @@ class OrderService:
             valid_sizes = [s.value for s in TshirtSize]
             raise ValidationError(
                 f"Invalid size '{item_data.size}'. Valid: {valid_sizes} (uid: {item_data.uid})"
-            )
+            ) from None
 
         # 色必須・値検証
         if not item_data.color:
@@ -568,7 +568,7 @@ class OrderService:
             valid_colors = [c.value for c in TshirtColor]
             raise ValidationError(
                 f"Invalid color '{item_data.color}'. Valid: {valid_colors} (uid: {item_data.uid})"
-            )
+            ) from None
 
         # 位置必須・値検証
         if not item_data.position:
@@ -581,7 +581,7 @@ class OrderService:
             valid_positions = [p.value for p in TshirtPosition]
             raise ValidationError(
                 f"Invalid position '{item_data.position}'. Valid: {valid_positions} (uid: {item_data.uid})"
-            )
+            ) from None
 
     def _validate_acrylic_keychain_attributes(self, item_data) -> None:
         """アクリルキーホルダー受注時の属性バリデーション."""
@@ -596,7 +596,7 @@ class OrderService:
             valid_sizes = [s.value for s in AcrylicKeychainSize]
             raise ValidationError(
                 f"Invalid size '{item_data.size}'. Valid: {valid_sizes} (uid: {item_data.uid})"
-            )
+            ) from None
 
     def _validate_acrylic_stand_attributes(self, item_data) -> None:
         """アクリルスタンド受注時の属性バリデーション."""
@@ -611,7 +611,7 @@ class OrderService:
             valid_sizes = [s.value for s in AcrylicStandSize]
             raise ValidationError(
                 f"Invalid size '{item_data.size}'. Valid: {valid_sizes} (uid: {item_data.uid})"
-            )
+            ) from None
 
     def _validate_sticker_attributes(self, item_data) -> None:
         """ステッカー受注時の属性バリデーション."""
@@ -626,7 +626,7 @@ class OrderService:
             valid_sizes = [s.value for s in StickerSize]
             raise ValidationError(
                 f"Invalid size '{item_data.size}'. Valid: {valid_sizes} (uid: {item_data.uid})"
-            )
+            ) from None
 
         # 色必須・値検証
         if not item_data.color:
@@ -639,7 +639,7 @@ class OrderService:
             valid_colors = [c.value for c in StickerColor]
             raise ValidationError(
                 f"Invalid color '{item_data.color}'. Valid: {valid_colors} (uid: {item_data.uid})"
-            )
+            ) from None
 
     def _validate_tote_bag_attributes(self, item_data) -> None:
         """トートバッグ受注時の属性バリデーション."""
@@ -654,7 +654,7 @@ class OrderService:
             valid_sizes = [s.value for s in ToteBagSize]
             raise ValidationError(
                 f"Invalid size '{item_data.size}'. Valid: {valid_sizes} (uid: {item_data.uid})"
-            )
+            ) from None
 
         # 色必須・値検証
         if not item_data.color:
@@ -667,7 +667,7 @@ class OrderService:
             valid_colors = [c.value for c in ToteBagColor]
             raise ValidationError(
                 f"Invalid color '{item_data.color}'. Valid: {valid_colors} (uid: {item_data.uid})"
-            )
+            ) from None
 
         # 位置必須・値検証
         if not item_data.position:
@@ -680,7 +680,7 @@ class OrderService:
             valid_positions = [p.value for p in ToteBagPosition]
             raise ValidationError(
                 f"Invalid position '{item_data.position}'. Valid: {valid_positions} (uid: {item_data.uid})"
-            )
+            ) from None
 
     async def bulk_update_status(
         self,

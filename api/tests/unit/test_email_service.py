@@ -4,7 +4,7 @@ Tests SendGrid email sending with mocked client,
 template rendering, and error handling.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 

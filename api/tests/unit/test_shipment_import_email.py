@@ -5,14 +5,13 @@ including status updates, duplicate prevention, and edge cases.
 """
 
 import io
-from unittest.mock import AsyncMock, MagicMock, PropertyMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.models.order import Order, OrderItem, OrderStatus
 from app.models.shipment import Shipment, ShipmentItem, ShipmentStatus
 from app.services.shipment_service import ShipmentService
-
 
 # ---- Helpers ----
 

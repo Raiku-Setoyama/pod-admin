@@ -75,6 +75,8 @@ packages = ["app"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
@@ -88,8 +90,22 @@ ignore = [
     "E501",  # line too long (handled by formatter)
 ]
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = ["app"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI は引数のデフォルト値に Depends() / Query() などを置く設計であり、
+# B008（引数デフォルトでの関数呼び出し）はこの用法に対しては偽陽性になる。
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+    "fastapi.Form",
+    "fastapi.File",
+    "fastapi.Security",
+]
 
 [tool.mypy]
 python_version = "3.12"

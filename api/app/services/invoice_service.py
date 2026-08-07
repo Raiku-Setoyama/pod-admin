@@ -6,7 +6,7 @@ from datetime import date
 from app.repositories.manufacturer_repository import ManufacturerRepository
 from app.repositories.order_repository import OrderRepository
 from app.utils.exceptions import NotFoundError, ValidationError
-from app.utils.pdf_generator import generate_invoice_pdf, generate_invoice_number
+from app.utils.pdf_generator import generate_invoice_number, generate_invoice_pdf
 
 
 class InvoiceService:
@@ -104,7 +104,7 @@ class InvoiceService:
 
         # Build items list for template
         items = []
-        for order_item, order_number, ordered_at, customer_name, cost, status in rows:
+        for order_item, order_number, _ordered_at, _customer_name, cost, _status in rows:
             # cost is the unit cost from manufacturer's unit_prices
             unit_price = cost if cost else 0
             amount = unit_price * order_item.quantity

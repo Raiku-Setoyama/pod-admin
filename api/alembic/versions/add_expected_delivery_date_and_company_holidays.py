@@ -9,10 +9,10 @@ OrderItem単位の納品予定日をDBに永続化するためのマイグレー
 - TOSYO独自休日管理用のcompany_holidaysテーブルを作成
 """
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "add_expected_delivery_date"

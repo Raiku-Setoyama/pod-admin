@@ -1,6 +1,7 @@
 """Order repository for database operations."""
 
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,10 @@ from app.models.order import (
     item_status_for_manufacturing_ready,
 )
 from app.models.product import ProductType
+
+if TYPE_CHECKING:
+    # 型注釈でのみ使う。リポジトリがスキーマを実行時に読み込まないようにする。
+    from app.schemas.shipment import PendingOrderStatus
 
 
 class OrderRepository:
@@ -217,8 +222,8 @@ class OrderRepository:
         self,
     ) -> list[dict]:
         """メーカー別のORDERED受注明細サマリーを取得（OrderItem.statusベース）"""
-        from app.models.product import Product
         from app.models.manufacturer import Manufacturer
+        from app.models.product import Product
 
         query = (
             select(
@@ -237,7 +242,7 @@ class OrderRepository:
             .join(OrderItem, OrderItem.product_id == Product.id)
             .join(Order, Order.id == OrderItem.order_id)
             .where(OrderItem.status == OrderItemStatus.ORDERED.value)  # OrderItem.statusでフィルタ
-            .where(Manufacturer.is_active == True)
+            .where(Manufacturer.is_active.is_(True))
             .group_by(Manufacturer.id)
             .having(func.count(OrderItem.id) > 0)
             .order_by(func.max(Order.ordered_at).desc())
@@ -312,8 +317,8 @@ class OrderRepository:
         Returns:
             受注明細のタプルリスト（OrderItem, order_number, ordered_at, customer_name, cost, item_status, order_status, lead_time_days）
         """
-        from app.models.product import Product
         from app.models.manufacturer import Manufacturer
+        from app.models.product import Product
 
         query = (
             select(
@@ -397,8 +402,8 @@ class OrderRepository:
         Returns:
             受注明細のタプルリスト（OrderItem, order_number, ordered_at, customer_name, cost, status, manufacturer_id, manufacturer_name, lead_time_days）
         """
-        from app.models.product import Product
         from app.models.manufacturer import Manufacturer
+        from app.models.product import Product
 
         query = (
             select(

@@ -1,6 +1,5 @@
 """Test security utilities."""
 
-import pytest
 from datetime import timedelta
 
 from app.utils.security import (

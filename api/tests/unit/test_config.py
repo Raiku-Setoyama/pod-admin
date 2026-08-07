@@ -2,8 +2,6 @@
 
 import os
 
-import pytest
-
 
 def test_settings_defaults():
     """Test default settings values."""

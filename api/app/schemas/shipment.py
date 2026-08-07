@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 from enum import Enum
-from typing import Literal, Union
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
@@ -142,7 +142,7 @@ class ShipmentListResponse(BaseModel):
 
 
 # Union type for mixed list items
-ShipmentOrPendingOrder = Union[ShipmentResponse, PendingOrderResponse]
+ShipmentOrPendingOrder = ShipmentResponse | PendingOrderResponse
 
 
 class ShipmentListWithPendingResponse(BaseModel):

@@ -4,12 +4,12 @@ FEAT-0023: POST /api/v1/external/orders/{order_number}/cancel
 Tests the full flow through API -> Service -> Repository -> Database.
 """
 
+from uuid import uuid4
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import uuid4
-
 
 # ============================================================
 # Fixtures

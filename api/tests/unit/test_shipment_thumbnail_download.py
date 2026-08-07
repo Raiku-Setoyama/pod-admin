@@ -24,13 +24,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from app.models.order import Order, OrderItem, OrderStatus
+from app.models.order import Order, OrderItem
 from app.models.shipment import Shipment, ShipmentItem, ShipmentStatus
 
 # Direct import - will cause ImportError (test failure) until implementation exists
 from app.schemas.shipment import ShipmentThumbnailDownloadRequest
 from app.services.shipment_service import ShipmentService
-
 
 # ======================================
 # Fixtures

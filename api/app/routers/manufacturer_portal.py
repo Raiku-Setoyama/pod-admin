@@ -16,11 +16,9 @@ from app.dependencies import (
     get_manufacturer_order_service,
     get_manufacturer_portal_service,
 )
-from app.repositories.chat_repository import ChatRepository
-from app.utils.exceptions import NotFoundError
-from app.utils.file_storage import FileStorage
 from app.models.chat_message import MessageSender
 from app.models.manufacturer import Manufacturer
+from app.repositories.chat_repository import ChatRepository
 from app.schemas.chat import (
     ChatMessageCreate,
     ChatMessageListResponse,
@@ -38,6 +36,8 @@ from app.services.chat_service import ChatService
 from app.services.invoice_service import InvoiceService
 from app.services.manufacturer_order_service import ManufacturerOrderService
 from app.services.manufacturer_portal_service import ManufacturerPortalService
+from app.utils.exceptions import NotFoundError
+from app.utils.file_storage import FileStorage
 from app.utils.security import decode_token
 
 router = APIRouter(prefix="/manufacturer-portal", tags=["manufacturer-portal"])

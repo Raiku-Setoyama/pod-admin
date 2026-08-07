@@ -13,14 +13,14 @@ NOTE: TDD Red phase - これらのテストはバックエンドAPIのフィル�
 既に実装済みであることの確認テストです。
 """
 
-import pytest
 from uuid import uuid4
+
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-
 
 # APIプレフィックス
 API_PREFIX = settings.API_V1_PREFIX

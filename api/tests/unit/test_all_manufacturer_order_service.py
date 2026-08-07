@@ -9,14 +9,13 @@ FEAT-0018: 全メーカー横断発注明細一覧
 - フィルター（status, search, manufacturer_id）が正しく渡される
 """
 
-import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-from app.services.manufacturer_order_service import ManufacturerOrderService
-from app.models.order import OrderStatus
+import pytest
 
+from app.services.manufacturer_order_service import ManufacturerOrderService
 
 # ---------------------------------------------------------------------------
 # Helper: mock order item factory for all-manufacturer queries

@@ -10,8 +10,9 @@ FEAT-0008: 商品マスタ（productsテーブル）に product_type / size / po
 - DuplicateProductError 例外
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.models.product import Product, ProductType
 from app.repositories.product_repository import ProductRepository

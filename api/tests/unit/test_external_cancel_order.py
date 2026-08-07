@@ -5,14 +5,13 @@ Tests cover OrderStatus.CANCELLED enum, OrderCancelResponse schema,
 and ExternalService.cancel_order service logic.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.models.order import Order, OrderStatus
 from app.utils.exceptions import AppException, NotFoundError
-
 
 # ============================================================
 # AC-001: OrderStatus enum に CANCELLED が存在し、値が "cancelled"
@@ -48,7 +47,7 @@ class TestOrderCancelResponseSchema:
         """AC-002: OrderCancelResponse が order_number, status, cancelled_at を持つ."""
         from app.schemas.external import OrderCancelResponse
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         response = OrderCancelResponse(
             order_number="ORD-001",
             status=OrderStatus.CANCELLED,
@@ -66,7 +65,7 @@ class TestOrderCancelResponseSchema:
         response = OrderCancelResponse(
             order_number="TEST-123",
             status=OrderStatus.CANCELLED,
-            cancelled_at=datetime.now(timezone.utc),
+            cancelled_at=datetime.now(UTC),
         )
         assert isinstance(response.order_number, str)
 
@@ -77,7 +76,7 @@ class TestOrderCancelResponseSchema:
         response = OrderCancelResponse(
             order_number="TEST-123",
             status=OrderStatus.CANCELLED,
-            cancelled_at=datetime.now(timezone.utc),
+            cancelled_at=datetime.now(UTC),
         )
         assert isinstance(response.status, OrderStatus)
 
@@ -85,7 +84,7 @@ class TestOrderCancelResponseSchema:
         """AC-002: cancelled_at は datetime 型."""
         from app.schemas.external import OrderCancelResponse
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         response = OrderCancelResponse(
             order_number="TEST-123",
             status=OrderStatus.CANCELLED,
@@ -109,7 +108,7 @@ def create_mock_order(
     order.id = order_id
     order.order_number = order_number
     order.status = status
-    order.updated_at = datetime.now(timezone.utc)
+    order.updated_at = datetime.now(UTC)
     return order
 
 
@@ -159,7 +158,7 @@ class TestCancelOrderSuccess:
         mock_order_repo.update_status.return_value = updated_order
 
         # Act
-        result = await external_service.cancel_order("ORD-001")
+        await external_service.cancel_order("ORD-001")
 
         # Assert
         mock_order_repo.find_by_order_number.assert_called_once_with("ORD-001")

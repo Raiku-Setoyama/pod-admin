@@ -83,7 +83,7 @@ async def get_or_create_test_order_source(session: AsyncSession) -> OrderSource:
 async def get_manufacturers(session: AsyncSession) -> list[Manufacturer]:
     """Get all manufacturers."""
     result = await session.execute(
-        select(Manufacturer).where(Manufacturer.is_active == True)
+        select(Manufacturer).where(Manufacturer.is_active.is_(True))
     )
     return list(result.scalars().all())
 
@@ -95,7 +95,7 @@ async def get_products_by_manufacturer(
     result = await session.execute(
         select(Product).where(
             Product.manufacturer_id == manufacturer_id,
-            Product.is_active == True,
+            Product.is_active.is_(True),
         )
     )
     return list(result.scalars().all())

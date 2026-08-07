@@ -32,7 +32,7 @@ def generate_uuid() -> str:
 async def get_first_product(session: AsyncSession) -> Product | None:
     """Get any active product."""
     result = await session.execute(
-        select(Product).where(Product.is_active == True).limit(1)
+        select(Product).where(Product.is_active.is_(True)).limit(1)
     )
     return result.scalar_one_or_none()
 

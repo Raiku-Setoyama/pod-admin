@@ -9,15 +9,15 @@ FEAT-0016: 商品マスター一覧で各商品のメーカー名が正しく表
 - AC-008: manufacturer リレーションが None の場合、manufacturer_name は null になる
 """
 
-import pytest
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, PropertyMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-from app.models.product import ProductType
-from app.schemas.product import ProductCreate, ProductResponse, ProductListResponse
-from app.services.product_service import ProductService
+import pytest
 
+from app.models.product import ProductType
+from app.schemas.product import ProductCreate, ProductListResponse, ProductResponse
+from app.services.product_service import ProductService
 
 # ---------------------------------------------------------------------------
 # Helper: mock Product model factory

@@ -7,18 +7,19 @@ NOTE: These tests are written in TDD Red phase - the implementation does not exi
 Tests will fail until the implementation is completed.
 """
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
-from datetime import datetime, timezone
+
 import pytest
 
 from app.models.order import Order, OrderStatus
 from app.models.shipment import Shipment, ShipmentItem, ShipmentStatus
 from app.services.order_service import OrderService
-from app.utils.exceptions import InvalidStatusTransitionError, ValidationError
+from app.utils.exceptions import ValidationError
 
 # Import schemas - these will be created during implementation
 try:
-    from app.schemas.order import OrderBulkStatusUpdate, OrderBulkStatusUpdateResponse
+    from app.schemas.order import OrderBulkStatusUpdateResponse
 except ImportError:
     # TDD Red phase: Schemas don't exist yet, create mock classes for testing structure
     from pydantic import BaseModel
@@ -77,7 +78,7 @@ def create_mock_order(
     order.customer_address_building = None
     order.customer_phone = "090-1234-5678"
     order.customer_email = "test@example.com"
-    order.ordered_at = datetime.now(timezone.utc)
+    order.ordered_at = datetime.now(UTC)
     order.total_price = 1000
     order.items = []
     order.order_source = None
@@ -89,8 +90,8 @@ def create_mock_order(
     order.manufacturing_data_path = None
     order.manufacturing_data_filename = None
     order.manufacturing_data_size = None
-    order.created_at = datetime.now(timezone.utc)
-    order.updated_at = datetime.now(timezone.utc)
+    order.created_at = datetime.now(UTC)
+    order.updated_at = datetime.now(UTC)
     return order
 
 

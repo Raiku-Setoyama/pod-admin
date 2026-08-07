@@ -6,7 +6,6 @@ FEAT-0002: 商品種別を5種類に限定（マグカップ削除）
 MUG が削除されていることを検証します。
 """
 
-import pytest
 
 from app.models.product import ProductType
 

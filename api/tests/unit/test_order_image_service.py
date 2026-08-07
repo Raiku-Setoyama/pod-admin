@@ -21,11 +21,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.models.order import Order, OrderItem, OrderStatus
+from app.schemas.order import OrderImageDownloadRequest
 
 # Direct import - will cause ImportError (test failure) until implementation exists
 from app.services.order_image_service import OrderImageService
-from app.schemas.order import OrderImageDownloadRequest
-
 
 # ======================================
 # Fixtures

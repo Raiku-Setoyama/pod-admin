@@ -7,18 +7,18 @@ FEAT-0008: 商品マスタ（productsテーブル）に product_type / size / po
 409 Conflict エラーが返されることを検証します。
 """
 
-import pytest
 from uuid import uuid4
+
+import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.main import app
 from app.config import settings
 from app.dependencies import get_current_admin
-from app.models.user import User, UserRole
+from app.main import app
 from app.models.manufacturer import Manufacturer, SharingMethod
 from app.models.product import Product
+from app.models.user import User, UserRole
 
 
 # 認証をバイパスするためのモックユーザー

@@ -17,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session_maker
 
-
 # 削除順序: FK依存関係に従って子テーブルから削除
 DELETE_TABLES = [
     "chat_attachments",

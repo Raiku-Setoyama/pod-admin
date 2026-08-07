@@ -6,14 +6,15 @@
 - 全OrderItemがdeliveredになった場合のShipment作成
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-from app.models.order import Order, OrderItem, OrderItemStatus, OrderStatus
+import pytest
+
+from app.models.order import Order, OrderItemStatus, OrderStatus
 from app.repositories.order_repository import OrderRepository
-from app.services.manufacturer_order_service import ManufacturerOrderService
 from app.schemas.manufacturer import ManufacturerOrderStatusUpdate
+from app.services.manufacturer_order_service import ManufacturerOrderService
 
 
 class TestDeriveOrderStatus:

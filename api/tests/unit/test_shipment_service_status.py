@@ -5,15 +5,15 @@ Tests cover all shipment status transition scenarios including
 bidirectional transitions and order status synchronization.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from app.models.order import Order, OrderStatus
 from app.models.shipment import Shipment, ShipmentItem, ShipmentStatus
 from app.schemas.shipment import ShipmentStatusUpdate
 from app.services.shipment_service import ShipmentService
-from app.utils.exceptions import InvalidStatusTransitionError
 
 
 @pytest.fixture
@@ -89,8 +89,8 @@ def create_mock_shipment(
     shipment.shipped_at = shipped_at
     shipment.delivered_at = None
     shipment.note = None
-    shipment.created_at = datetime.now(timezone.utc)
-    shipment.updated_at = datetime.now(timezone.utc)
+    shipment.created_at = datetime.now(UTC)
+    shipment.updated_at = datetime.now(UTC)
     shipment.items = []
 
     if order_ids:
@@ -130,7 +130,7 @@ class TestShipmentStatusTransition:
         update_data = ShipmentStatusUpdate(status=ShipmentStatus.READY)
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -152,7 +152,7 @@ class TestShipmentStatusTransition:
         update_data = ShipmentStatusUpdate(status=ShipmentStatus.PENDING)
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -178,7 +178,7 @@ class TestShipmentStatusTransition:
         update_data = ShipmentStatusUpdate(status=ShipmentStatus.SHIPPED)
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -206,7 +206,7 @@ class TestShipmentStatusTransition:
         update_data = ShipmentStatusUpdate(status=ShipmentStatus.SHIPPED)
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -232,7 +232,7 @@ class TestShipmentStatusTransition:
         shipment = create_mock_shipment(
             status=ShipmentStatus.SHIPPED.value,
             order_ids=order_ids,
-            shipped_at=datetime.now(timezone.utc),
+            shipped_at=datetime.now(UTC),
         )
         mock_shipment_repo.find_by_id.return_value = shipment
         mock_shipment_repo.update.return_value = shipment
@@ -240,7 +240,7 @@ class TestShipmentStatusTransition:
         update_data = ShipmentStatusUpdate(status=ShipmentStatus.PENDING)
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -262,7 +262,7 @@ class TestShipmentStatusTransition:
         shipment = create_mock_shipment(
             status=ShipmentStatus.SHIPPED.value,
             order_ids=order_ids,
-            shipped_at=datetime.now(timezone.utc),
+            shipped_at=datetime.now(UTC),
         )
         mock_shipment_repo.find_by_id.return_value = shipment
         mock_shipment_repo.update.return_value = shipment
@@ -270,7 +270,7 @@ class TestShipmentStatusTransition:
         update_data = ShipmentStatusUpdate(status=ShipmentStatus.READY)
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -297,7 +297,7 @@ class TestShipmentStatusTransition:
         shipment = create_mock_shipment(
             status=ShipmentStatus.SHIPPED.value,
             order_ids=order_ids,
-            shipped_at=datetime.now(timezone.utc),
+            shipped_at=datetime.now(UTC),
         )
         mock_shipment_repo.find_by_id.return_value = shipment
         mock_shipment_repo.update.return_value = shipment
@@ -305,7 +305,7 @@ class TestShipmentStatusTransition:
         update_data = ShipmentStatusUpdate(status=ShipmentStatus.PENDING)
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -339,7 +339,7 @@ class TestShipmentStatusTransition:
         )
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -364,7 +364,7 @@ class TestShipmentStatusTransition:
         )
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -396,7 +396,7 @@ class TestShipmentStatusTransition:
                 shipment_id=f"shipment-{from_status.value}-{to_status.value}",
                 status=from_status.value,
                 order_ids=["order-123"],
-                shipped_at=datetime.now(timezone.utc) if from_status == ShipmentStatus.SHIPPED else None,
+                shipped_at=datetime.now(UTC) if from_status == ShipmentStatus.SHIPPED else None,
             )
             mock_shipment_repo.find_by_id.return_value = shipment
             mock_shipment_repo.update.return_value = shipment
@@ -404,7 +404,7 @@ class TestShipmentStatusTransition:
             update_data = ShipmentStatusUpdate(status=to_status)
 
             # Act - should not raise
-            result = await shipment_service.update_status(
+            await shipment_service.update_status(
                 shipment_id=shipment.id,
                 data=update_data,
             )
@@ -429,7 +429,7 @@ class TestShipmentStatusTransition:
         update_data = ShipmentStatusUpdate(status=ShipmentStatus.READY)
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )

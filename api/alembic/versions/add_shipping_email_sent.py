@@ -8,9 +8,9 @@ Create Date: 2026-03-18
 重複送信防止のために使用する。
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "add_shipping_email_sent"

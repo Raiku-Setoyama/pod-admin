@@ -12,14 +12,14 @@ Test scenarios from Intent Spec acceptance criteria:
 - AC-04: After Shipment creation, orders show as normal shipments
 """
 
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 
-from app.models.order import Order, OrderItem, OrderItemStatus, OrderStatus
-from app.models.shipment import Shipment, ShipmentStatus
+from app.models.order import OrderItemStatus
+from app.models.shipment import ShipmentStatus
 
 
 class TestPendingOrderStatus:
@@ -33,13 +33,6 @@ class TestPendingOrderStatus:
         """AC-01: Order with items not all DELIVERED should have status 'preparing'."""
         from app.schemas.shipment import PendingOrderStatus
 
-        # Create mock order with mixed item statuses
-        order_items = [
-            MagicMock(status=OrderItemStatus.DELIVERED.value),
-            MagicMock(status=OrderItemStatus.MANUFACTURING.value),
-            MagicMock(status=OrderItemStatus.ORDERED.value),
-        ]
-
         # Status is always PREPARING for pending orders
         status = PendingOrderStatus.PREPARING
 
@@ -49,11 +42,6 @@ class TestPendingOrderStatus:
         """Order with some items still ORDERED should have status 'preparing'."""
         from app.schemas.shipment import PendingOrderStatus
 
-        order_items = [
-            MagicMock(status=OrderItemStatus.ORDERED.value),
-            MagicMock(status=OrderItemStatus.ORDERED.value),
-        ]
-
         # Status is always PREPARING for pending orders
         status = PendingOrderStatus.PREPARING
 
@@ -62,11 +50,6 @@ class TestPendingOrderStatus:
     def test_preparing_status_when_some_items_manufacturing(self):
         """Order with some items in MANUFACTURING should have status 'preparing'."""
         from app.schemas.shipment import PendingOrderStatus
-
-        order_items = [
-            MagicMock(status=OrderItemStatus.DELIVERED.value),
-            MagicMock(status=OrderItemStatus.MANUFACTURING.value),
-        ]
 
         # Status is always PREPARING for pending orders
         status = PendingOrderStatus.PREPARING
@@ -91,7 +74,7 @@ class TestPendingOrderResponseSchema:
             item_count=3,
             items_delivered=1,
             status=PendingOrderStatus.PREPARING,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             order_items=[],
         )
 
@@ -115,7 +98,7 @@ class TestPendingOrderResponseSchema:
             item_count=1,
             items_delivered=0,
             status=PendingOrderStatus.PREPARING,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             order_items=[],
         )
 
@@ -149,8 +132,8 @@ class TestShipmentResponseType:
             customer_address_building=None,
             customer_phone="090-0000-0000",
             items=[],
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
 
         assert response.type == "shipment"
@@ -162,15 +145,15 @@ class TestUnionListResponse:
     def test_union_list_response_structure(self):
         """ShipmentListResponse should contain both shipments and pending_orders."""
         from app.schemas.shipment import (
-            ShipmentListWithPendingResponse,
-            ShipmentResponse,
             PendingOrderResponse,
             PendingOrderStatus,
+            ShipmentListWithPendingResponse,
+            ShipmentResponse,
         )
 
         shipment_id = str(uuid4())
         order_id = str(uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         shipment = ShipmentResponse(
             id=shipment_id,
@@ -275,8 +258,8 @@ class TestShipmentServiceListWithPendingOrders:
     @pytest.mark.asyncio
     async def test_list_includes_both_shipments_and_pending_orders(self):
         """list() should return both shipments and pending orders."""
-        from app.services.shipment_service import ShipmentService
         from app.schemas.shipment import ShipmentListWithPendingResponse
+        from app.services.shipment_service import ShipmentService
 
         # Create mocks
         mock_shipment_repo = AsyncMock()
@@ -293,8 +276,8 @@ class TestShipmentServiceListWithPendingOrders:
         mock_shipment.shipped_at = None
         mock_shipment.delivered_at = None
         mock_shipment.note = None
-        mock_shipment.created_at = datetime.now(timezone.utc)
-        mock_shipment.updated_at = datetime.now(timezone.utc)
+        mock_shipment.created_at = datetime.now(UTC)
+        mock_shipment.updated_at = datetime.now(UTC)
         mock_shipment.items = []
 
         mock_first_order = MagicMock()
@@ -317,7 +300,7 @@ class TestShipmentServiceListWithPendingOrders:
         mock_order.customer_address_prefecture = "Osaka"
         mock_order.customer_address_city = "Namba"
         mock_order.customer_address_building = None
-        mock_order.ordered_at = datetime.now(timezone.utc)
+        mock_order.ordered_at = datetime.now(UTC)
 
         # Create proper mock item with all required attributes
         mock_item = MagicMock()
@@ -349,8 +332,8 @@ class TestShipmentServiceListWithPendingOrders:
     @pytest.mark.asyncio
     async def test_list_pending_order_status_preparing(self):
         """Pending orders with incomplete items should have 'preparing' status."""
-        from app.services.shipment_service import ShipmentService
         from app.schemas.shipment import PendingOrderStatus
+        from app.services.shipment_service import ShipmentService
 
         mock_shipment_repo = AsyncMock()
         mock_order_repo = AsyncMock()
@@ -367,7 +350,7 @@ class TestShipmentServiceListWithPendingOrders:
         mock_order.customer_address_prefecture = "Tokyo"
         mock_order.customer_address_city = "Shibuya"
         mock_order.customer_address_building = None
-        mock_order.ordered_at = datetime.now(timezone.utc)
+        mock_order.ordered_at = datetime.now(UTC)
 
         # Create proper mock items with all required attributes
         mock_item1 = MagicMock()
@@ -423,7 +406,7 @@ class TestPendingOrderItemsSummary:
             item_count=5,
             items_delivered=2,
             status=PendingOrderStatus.PREPARING,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             order_items=[],
         )
 
@@ -443,7 +426,7 @@ class TestPendingOrderItemsSummary:
             item_count=3,
             items_delivered=1,
             status=PendingOrderStatus.PREPARING,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             order_items=[],
         )
 

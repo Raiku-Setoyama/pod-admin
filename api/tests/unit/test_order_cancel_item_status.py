@@ -4,7 +4,7 @@
 メーカーポータルでキャンセルが分からなかった問題の修正。
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -115,7 +115,7 @@ def create_mock_order(
     order.customer_address_building = None
     order.customer_phone = "090-1234-5678"
     order.customer_email = "test@example.com"
-    order.ordered_at = datetime.now(timezone.utc)
+    order.ordered_at = datetime.now(UTC)
     order.total_price = 1000
     order.estimated_shipping_date = None
     order.product_id = None
@@ -125,8 +125,8 @@ def create_mock_order(
     order.manufacturing_data_path = None
     order.manufacturing_data_filename = None
     order.manufacturing_data_size = None
-    order.created_at = datetime.now(timezone.utc)
-    order.updated_at = datetime.now(timezone.utc)
+    order.created_at = datetime.now(UTC)
+    order.updated_at = datetime.now(UTC)
     return order
 
 
@@ -259,7 +259,7 @@ def create_row(item_id: str, status: str) -> tuple:
     order_item.manufacturing_data_id = None
     order_item.manufacturing_data = None
     order_item.is_manufacturing_ready = True
-    ordered_at = datetime.now(timezone.utc)
+    ordered_at = datetime.now(UTC)
     # (OrderItem, order_number, ordered_at, customer_name, cost, item_status,
     #  order_status, lead_time_days)
     return (order_item, "ORD-001", ordered_at, "顧客", 500, status, status, 7)

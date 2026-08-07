@@ -9,14 +9,14 @@ FEAT-0016: 商品マスター一覧で各商品のメーカー名が正しく表
 - AC-004: PATCH /products/{id} で更新した商品のレスポンスに manufacturer_name が含まれる
 """
 
-import pytest
 from uuid import uuid4
+
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-
 
 # APIプレフィックス
 API_PREFIX = settings.API_V1_PREFIX

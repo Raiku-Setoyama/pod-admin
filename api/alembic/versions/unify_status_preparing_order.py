@@ -12,9 +12,9 @@ ready でないもの（status = 'ordered'）を 'preparing_order' に更新し�
 Order.status を再導出する。v1 明細（manufacturing_data_id が NULL）は影響を受けない。
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "unify_status_preparing_order"

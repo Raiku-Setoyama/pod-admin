@@ -4,11 +4,12 @@ FEAT-0007: Order bulk status update functionality.
 Tests the full flow through API -> Service -> Repository -> Database.
 """
 
+from uuid import uuid4
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import uuid4
 
 
 @pytest.fixture
@@ -101,7 +102,7 @@ async def test_orders_delivered_with_shipments(
     order_ids = [str(uuid4()) for _ in range(3)]
     shipment_ids = [str(uuid4()) for _ in range(3)]
 
-    for i, (order_id, shipment_id) in enumerate(zip(order_ids, shipment_ids)):
+    for i, (order_id, shipment_id) in enumerate(zip(order_ids, shipment_ids, strict=True)):
         # Create order
         await db_session.execute(
             text("""
@@ -275,7 +276,7 @@ async def test_orders_delivered_with_shipped_shipment(
     order_ids = [str(uuid4()) for _ in range(2)]
     shipment_ids = [str(uuid4()) for _ in range(2)]
 
-    for i, (order_id, shipment_id) in enumerate(zip(order_ids, shipment_ids)):
+    for i, (order_id, shipment_id) in enumerate(zip(order_ids, shipment_ids, strict=True)):
         # Create order
         await db_session.execute(
             text("""

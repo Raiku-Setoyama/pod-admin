@@ -4,11 +4,12 @@ FEAT-0006: Order status manual switching functionality.
 Tests the full flow through API -> Service -> Repository -> Database.
 """
 
+from uuid import uuid4
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import uuid4
 
 
 @pytest.fixture
@@ -364,7 +365,6 @@ class TestOrderStatusTransitionAPI:
     ):
         """Test: delivered -> ordered deletes related shipment."""
         order_id = test_order_delivered_with_shipment["id"]
-        shipment_id = test_order_delivered_with_shipment["shipment_id"]
 
         response = await client.patch(
             f"/api/v1/orders/{order_id}/status",

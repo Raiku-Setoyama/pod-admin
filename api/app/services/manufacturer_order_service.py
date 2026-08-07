@@ -10,23 +10,22 @@ import httpx
 from app.models.order import (
     Order,
     OrderItemStatus,
-    OrderStatus,
     is_order_blocked_status,
 )
-from app.repositories.order_repository import OrderRepository
 from app.repositories.manufacturer_repository import ManufacturerRepository
+from app.repositories.order_repository import OrderRepository
 from app.repositories.shipment_repository import ShipmentRepository
-from app.utils.file_storage import FileStorage
 from app.schemas.manufacturer import (
+    AllManufacturerOrderItemListResponse,
+    AllManufacturerOrderItemResponse,
+    ManufacturerOrderItemListResponse,
+    ManufacturerOrderItemResponse,
+    ManufacturerOrderStatusUpdate,
     ManufacturerOrderSummary,
     ManufacturerOrderSummaryListResponse,
-    ManufacturerOrderItemResponse,
-    ManufacturerOrderItemListResponse,
-    ManufacturerOrderStatusUpdate,
-    AllManufacturerOrderItemResponse,
-    AllManufacturerOrderItemListResponse,
 )
-from app.utils.exceptions import NotFoundError, NoOrderedItemsError
+from app.utils.exceptions import NoOrderedItemsError, NotFoundError
+from app.utils.file_storage import FileStorage
 from app.utils.order_list_generator import (
     OrderListGenerator,
     format_product_detail,
@@ -130,7 +129,7 @@ class ManufacturerOrderService:
         total_quantity = 0
         total_amount = 0
 
-        for order_item, order_number, ordered_at, customer_name, cost, item_status, order_status, lead_time_days in rows:
+        for order_item, order_number, ordered_at, customer_name, _cost, item_status, _order_status, lead_time_days in rows:
             items.append(
                 ManufacturerOrderItemResponse(
                     id=order_item.id,
@@ -216,7 +215,7 @@ class ManufacturerOrderService:
         total_quantity = 0
         total_amount = 0
 
-        for order_item, order_number, ordered_at, customer_name, cost, order_status, mfr_id, mfr_name, lead_time_days in rows:
+        for order_item, order_number, ordered_at, customer_name, _cost, order_status, mfr_id, mfr_name, lead_time_days in rows:
             items.append(
                 AllManufacturerOrderItemResponse(
                     id=order_item.id,
@@ -428,7 +427,7 @@ class ManufacturerOrderService:
         # グループキー別にアイテムを整理
         # Tシャツは (product_type, position) でグループ、他は (product_type,) でグループ
         items_by_group: dict[tuple, list[dict]] = {}
-        for order_item, order_number, ordered_at, customer_name, cost, item_status, order_status, lead_time_days in rows:
+        for order_item, order_number, ordered_at, _customer_name, cost, _item_status, _order_status, _lead_time_days in rows:
             item_product_type = order_item.product_type
             if item_product_type == "tshirt":
                 group_key = (item_product_type, order_item.position or "")

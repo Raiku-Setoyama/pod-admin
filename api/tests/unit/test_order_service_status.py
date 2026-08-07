@@ -4,8 +4,9 @@ FEAT-0006: Order status manual switching functionality.
 Tests cover all order status transition scenarios.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from app.models.order import Order, OrderStatus
@@ -61,7 +62,7 @@ def create_mock_order(
     order.customer_address_building = None
     order.customer_phone = "090-1234-5678"
     order.customer_email = "test@example.com"
-    order.ordered_at = datetime.now(timezone.utc)
+    order.ordered_at = datetime.now(UTC)
     order.total_price = 1000
     order.items = []
     order.order_source = None
@@ -73,8 +74,8 @@ def create_mock_order(
     order.manufacturing_data_path = None
     order.manufacturing_data_filename = None
     order.manufacturing_data_size = None
-    order.created_at = datetime.now(timezone.utc)
-    order.updated_at = datetime.now(timezone.utc)
+    order.created_at = datetime.now(UTC)
+    order.updated_at = datetime.now(UTC)
     return order
 
 
@@ -120,7 +121,7 @@ class TestOrderStatusTransition:
         mock_shipment_repo.find_by_order_ids.return_value = {}
 
         # Act
-        result = await order_service.update_status(
+        await order_service.update_status(
             order_id="order-123",
             status=OrderStatus.MANUFACTURING,
         )
@@ -141,7 +142,7 @@ class TestOrderStatusTransition:
         mock_shipment_repo.find_by_order_ids.return_value = {}
 
         # Act
-        result = await order_service.update_status(
+        await order_service.update_status(
             order_id="order-123",
             status=OrderStatus.ORDERED,
         )
@@ -163,7 +164,7 @@ class TestOrderStatusTransition:
         mock_shipment_repo.find_by_order_ids.return_value = {}
 
         # Act
-        result = await order_service.update_status(
+        await order_service.update_status(
             order_id="order-123",
             status=OrderStatus.DELIVERED,
         )
@@ -185,7 +186,7 @@ class TestOrderStatusTransition:
         mock_shipment_repo.find_by_order_ids.return_value = {}
 
         # Act
-        result = await order_service.update_status(
+        await order_service.update_status(
             order_id="order-123",
             status=OrderStatus.DELIVERED,
         )
@@ -213,7 +214,7 @@ class TestOrderStatusTransition:
         mock_shipment_repo.delete_by_order_id.return_value = None
 
         # Act
-        result = await order_service.update_status(
+        await order_service.update_status(
             order_id="order-123",
             status=OrderStatus.ORDERED,
         )
@@ -237,7 +238,7 @@ class TestOrderStatusTransition:
         mock_shipment_repo.delete_by_order_id.return_value = None
 
         # Act
-        result = await order_service.update_status(
+        await order_service.update_status(
             order_id="order-123",
             status=OrderStatus.MANUFACTURING,
         )
@@ -319,7 +320,7 @@ class TestOrderStatusTransition:
         mock_shipment_repo.find_by_order_ids.return_value = {}  # No shipment
 
         # Act
-        result = await order_service.update_status(
+        await order_service.update_status(
             order_id="order-123",
             status=OrderStatus.ORDERED,
         )
@@ -340,7 +341,7 @@ class TestOrderStatusTransition:
         mock_shipment_repo.find_by_order_ids.return_value = {}
 
         # Act
-        result = await order_service.update_status(
+        await order_service.update_status(
             order_id="order-123",
             status=OrderStatus.MANUFACTURING,
         )
@@ -361,7 +362,7 @@ class TestOrderStatusTransition:
         mock_shipment_repo.find_by_order_ids.return_value = {}
 
         # Act
-        result = await order_service.update_status(
+        await order_service.update_status(
             order_id="order-123",
             status=OrderStatus.DELIVERED,
         )

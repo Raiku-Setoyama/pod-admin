@@ -12,12 +12,12 @@ AC-004: No OrderItems (old order) -> fallback with product_name, quantity=None
 AC-005: Composite ID format: {shipment_item_id}_{order_item_id}
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.models.order import Order, OrderItem, OrderStatus
+from app.models.order import Order, OrderItem
 from app.models.shipment import Shipment, ShipmentItem, ShipmentStatus
 from app.schemas.shipment import ShipmentItemResponse
 from app.services.shipment_service import ShipmentService
@@ -116,8 +116,8 @@ def create_mock_shipment(
     shipment.shipped_at = None
     shipment.delivered_at = None
     shipment.note = None
-    shipment.created_at = datetime.now(timezone.utc)
-    shipment.updated_at = datetime.now(timezone.utc)
+    shipment.created_at = datetime.now(UTC)
+    shipment.updated_at = datetime.now(UTC)
     shipment.items = []
 
     if shipment_items:
@@ -403,8 +403,8 @@ class TestShipmentDetailProductView:
         shipment.shipped_at = None
         shipment.delivered_at = None
         shipment.note = None
-        shipment.created_at = datetime.now(timezone.utc)
-        shipment.updated_at = datetime.now(timezone.utc)
+        shipment.created_at = datetime.now(UTC)
+        shipment.updated_at = datetime.now(UTC)
 
         si = MagicMock(spec=ShipmentItem)
         si.id = "item-001"

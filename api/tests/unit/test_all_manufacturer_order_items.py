@@ -12,14 +12,13 @@ FEAT-0018: 全メーカー分の発注明細を一覧で確認できる「すべ
   - AC-005: 全メーカー発注明細一覧のレスポンス組み立て
 """
 
-import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-from app.services.manufacturer_order_service import ManufacturerOrderService
-from app.models.order import OrderStatus
+import pytest
 
+from app.services.manufacturer_order_service import ManufacturerOrderService
 
 # ---------------------------------------------------------------------------
 # Helper: mock order item tuple factory (matching repository return format)

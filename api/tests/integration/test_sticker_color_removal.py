@@ -11,11 +11,12 @@ FEAT-0007: ステッカー商品タイプから「クリア」カラーを削除
 - POST /api/v1/external/price-calculation
 """
 
+from uuid import uuid4
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import uuid4
 
 
 class TestStickerColorRemovalAPI:

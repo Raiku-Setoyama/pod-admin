@@ -2,11 +2,10 @@
 
 from datetime import date
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
-
-from urllib.parse import quote
 
 from app.dependencies import (
     get_chat_service,

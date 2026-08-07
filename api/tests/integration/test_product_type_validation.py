@@ -9,9 +9,9 @@ FEAT-0002: 商品種別を5種類に限定（マグカップ削除）
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.main import app
 from app.config import settings
 from app.dependencies import get_current_admin
+from app.main import app
 from app.models.user import User, UserRole
 
 

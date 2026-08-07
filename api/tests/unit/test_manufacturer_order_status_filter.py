@@ -8,14 +8,14 @@ FEAT-0012: 発注詳細画面にステータスフィルター・キーワード
 - デフォルトで全ステータス（shipped除く）を返す
 """
 
-import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-from app.services.manufacturer_order_service import ManufacturerOrderService
+import pytest
+
 from app.models.order import OrderStatus
-from app.utils.exceptions import NotFoundError
+from app.services.manufacturer_order_service import ManufacturerOrderService
 
 
 class TestGetOrderItemsByManufacturerStatusFilter:
@@ -263,4 +263,4 @@ class TestManufacturerOrderItemResponseSchema:
         status_field = fields.get("status")
         assert status_field is not None
         # フィールドの annotation が str であることを確認
-        assert status_field.annotation == str or "str" in str(status_field.annotation)
+        assert status_field.annotation is str or "str" in str(status_field.annotation)

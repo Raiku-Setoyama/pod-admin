@@ -10,12 +10,12 @@ AC-003: Order is null -> product_name is null
 AC-004: Order has 0 OrderItems -> product_name is null
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.models.order import Order, OrderItem, OrderStatus
+from app.models.order import Order, OrderItem
 from app.models.shipment import Shipment, ShipmentItem, ShipmentStatus
 from app.services.shipment_service import ShipmentService
 
@@ -112,8 +112,8 @@ def create_mock_shipment(
     shipment.shipped_at = None
     shipment.delivered_at = None
     shipment.note = None
-    shipment.created_at = datetime.now(timezone.utc)
-    shipment.updated_at = datetime.now(timezone.utc)
+    shipment.created_at = datetime.now(UTC)
+    shipment.updated_at = datetime.now(UTC)
     shipment.items = []
 
     if shipment_items:
@@ -220,8 +220,8 @@ class TestShipmentProductName:
         shipment.shipped_at = None
         shipment.delivered_at = None
         shipment.note = None
-        shipment.created_at = datetime.now(timezone.utc)
-        shipment.updated_at = datetime.now(timezone.utc)
+        shipment.created_at = datetime.now(UTC)
+        shipment.updated_at = datetime.now(UTC)
 
         si = MagicMock(spec=ShipmentItem)
         si.id = "item-001"

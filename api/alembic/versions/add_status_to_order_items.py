@@ -8,9 +8,9 @@ Create Date: 2026-02-25
 既存データは紐づくOrderのstatusをコピーして移行する。
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "add_order_item_status"

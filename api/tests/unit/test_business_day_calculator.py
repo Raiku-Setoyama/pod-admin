@@ -2,8 +2,6 @@
 
 from datetime import date
 
-import pytest
-
 from app.utils.business_day_calculator import add_business_days, is_business_day
 
 

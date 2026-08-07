@@ -18,14 +18,13 @@ AC-017: 同一注文番号が複数行に存在する場合、最後の行の値
 
 import csv
 import io
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.models.order import Order
-from app.models.shipment import Shipment, ShipmentItem, ShipmentStatus
+from app.models.shipment import Shipment, ShipmentStatus
 from app.services.shipment_service import ShipmentService
-
 
 # ---- Fixtures ----
 

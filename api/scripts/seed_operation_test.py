@@ -409,7 +409,7 @@ async def seed_orders(
     order_index = 1
 
     for status, count in status_counts:
-        for i in range(count):
+        for _ in range(count):
             customer = random.choice(CUSTOMERS)
             order_source = random.choice(order_sources_list)
 
@@ -563,9 +563,6 @@ async def seed_chat_messages(
     """
     print("チャットメッセージを作成中...")
 
-    jst = timezone(timedelta(hours=9))
-    now = datetime.now(jst)
-
     admin_messages = [
         "お世話になっております。今月分の発注についてご確認いただけますでしょうか。",
         "納品予定日を教えていただけますか？",
@@ -581,9 +578,8 @@ async def seed_chat_messages(
 
     for mfr_name, manufacturer in manufacturers.items():
         # 管理者からのメッセージ
-        for i, content in enumerate(admin_messages):
+        for content in admin_messages:
             msg_id = generate_uuid()
-            created_at = now - timedelta(days=10 - i, hours=random.randint(9, 17))
 
             message = ChatMessage(
                 id=msg_id,
@@ -592,7 +588,7 @@ async def seed_chat_messages(
                 sender_name="管理者",
                 content=content,
             )
-            # created_atを手動で設定するため、後で更新
+            # created_at は DB のデフォルト（登録時刻）に任せる
             session.add(message)
             messages[msg_id] = message
 

@@ -10,7 +10,6 @@ from sqlalchemy import text
 
 from app.database import get_session_maker
 
-
 FIXES = [
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS estimated_shipping_date DATE",
     "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS expected_delivery_date DATE",

@@ -4,11 +4,12 @@ FEAT-0006: Shipment status manual switching functionality.
 Tests the full flow through API -> Service -> Repository -> Database.
 """
 
+from uuid import uuid4
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import uuid4
 
 
 @pytest.fixture

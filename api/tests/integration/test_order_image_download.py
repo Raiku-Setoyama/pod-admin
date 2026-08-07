@@ -13,7 +13,7 @@ Tests will fail until the implementation is completed.
 import io
 import json
 import zipfile
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest

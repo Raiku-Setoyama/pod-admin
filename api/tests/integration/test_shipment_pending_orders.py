@@ -14,7 +14,6 @@ Test scenarios from Intent Spec acceptance criteria:
 - AC-06: Thumbnail download works for pending orders
 """
 
-from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
