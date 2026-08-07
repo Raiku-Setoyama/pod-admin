@@ -17,7 +17,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 // Mock the API client
@@ -37,7 +37,7 @@ vi.mock('sonner', () => ({
 import { apiClient } from '@/lib/api/client'
 import { toast } from 'sonner'
 import { OrderBulkStatusUpdateDialog } from '@/features/orders/components/order-bulk-status-update-dialog'
-import type { Order, OrderStatus } from '@/types/api'
+import type {} from '@/types/api'
 
 const mockApiClient = vi.mocked(apiClient)
 const mockToast = vi.mocked(toast)

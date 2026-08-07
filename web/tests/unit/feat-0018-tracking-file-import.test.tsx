@@ -68,7 +68,10 @@ function createMockImportResult(
     total_count: 1,
     success_count: 1,
     error_count: 0,
+    email_sent_count: 0,
+    email_failed_count: 0,
     errors: [],
+    results: [],
     updated_shipments: [],
     ...overrides,
   }

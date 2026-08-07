@@ -163,7 +163,7 @@ vi.mock('@/constants/status', async (importOriginal) => {
 })
 
 import { toast } from 'sonner'
-import type { Shipment } from '@/types/api'
+import type {} from '@/types/api'
 
 const mockToast = vi.mocked(toast)
 

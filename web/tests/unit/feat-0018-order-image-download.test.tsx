@@ -16,8 +16,8 @@ import userEvent from '@testing-library/user-event'
 
 // Mock SWR - use vi.hoisted to create a spy function that can be referenced in vi.mock
 const { mockUseSWR } = vi.hoisted(() => ({
-  mockUseSWR: vi.fn(() => ({
-    data: undefined,
+  mockUseSWR: vi.fn((..._args: unknown[]) => ({
+    data: undefined as unknown,
     error: undefined,
     isLoading: false,
     mutate: vi.fn(),
@@ -92,6 +92,7 @@ const createMockOrder = (overrides: Partial<Order> = {}): Order => ({
   customer_phone: '090-1234-5678',
   customer_email: 'test@example.com',
   ordered_at: '2024-01-01T00:00:00Z',
+  estimated_shipping_date: null,
   total_price: 1000,
   items: [],
   shipment: null,

@@ -91,6 +91,7 @@ export interface Order {
   order_number: string;
   status: OrderStatus;
   source: string | null;
+  order_source_id?: string | null;  // v2 受注のみ。既存モック互換のため任意
   customer_name: string;
   customer_postal_code: string;
   customer_address_prefecture: string;

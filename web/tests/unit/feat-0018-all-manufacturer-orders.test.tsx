@@ -15,9 +15,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { renderHook } from '@testing-library/react'
 
 // Mock API client
 vi.mock('@/lib/api/client', () => ({
@@ -74,6 +73,10 @@ vi.mock('@/features/manufacturers/hooks/use-manufacturers', () => ({
 
 // Import mocked hooks for use in tests
 import { useAllManufacturerOrderItems } from '@/features/purchase-orders/hooks/use-manufacturer-orders'
+import type {
+  AllManufacturerOrderItem,
+  AllManufacturerOrderItemListResponse,
+} from '@/types/api'
 import { useManufacturers } from '@/features/manufacturers/hooks/use-manufacturers'
 
 // Mock next/navigation with controllable values
@@ -95,38 +98,6 @@ vi.mock('next/navigation', () => ({
 }))
 
 // ======================================
-// Types (for the new AllManufacturerOrderItem)
-// ======================================
-
-interface AllManufacturerOrderItem {
-  id: string
-  order_id: string
-  order_number: string
-  uid: string | null
-  product_id: string
-  product_name: string
-  product_type: string
-  price: number
-  quantity: number
-  size: string | null
-  position: string | null
-  color: string | null
-  design_image_url: string | null
-  thumbnail_image_url: string | null
-  ordered_at: string
-  status: string
-  manufacturer_id: string
-  manufacturer_name: string
-  lead_time_days: number
-  expected_delivery_date: string
-}
-
-interface AllManufacturerOrderItemListResponse {
-  items: AllManufacturerOrderItem[]
-  total: number
-  total_quantity: number
-  total_amount: number
-}
 
 // ======================================
 // Mock data factory
@@ -151,6 +122,7 @@ function createMockAllOrderItemsData(): AllManufacturerOrderItemListResponse {
         design_image_url: null,
         thumbnail_image_url: null,
         ordered_at: '2026-01-15T10:00:00Z',
+        customer_name: 'テスト顧客',
         status: 'ordered',
         manufacturer_id: 'mfr-001',
         manufacturer_name: 'メーカーA',
@@ -173,6 +145,7 @@ function createMockAllOrderItemsData(): AllManufacturerOrderItemListResponse {
         design_image_url: null,
         thumbnail_image_url: null,
         ordered_at: '2026-01-14T10:00:00Z',
+        customer_name: 'テスト顧客',
         status: 'manufacturing',
         manufacturer_id: 'mfr-001',
         manufacturer_name: 'メーカーA',
@@ -195,6 +168,7 @@ function createMockAllOrderItemsData(): AllManufacturerOrderItemListResponse {
         design_image_url: null,
         thumbnail_image_url: null,
         ordered_at: '2026-01-13T10:00:00Z',
+        customer_name: 'テスト顧客',
         status: 'ordered',
         manufacturer_id: 'mfr-002',
         manufacturer_name: 'メーカーB',
@@ -592,6 +566,9 @@ describe('AC-018: Summary cards display total count, total quantity (page-level)
     // Mock useManufacturers
     vi.mocked(useManufacturers).mockReturnValue({
       manufacturers: [],
+      total: 0,
+      page: 1,
+      limit: 20,
       isLoading: false,
       error: undefined,
       mutate: vi.fn(),
@@ -793,6 +770,9 @@ describe('明細数・合計数量の表示 (page-level)', () => {
     // Mock useManufacturers
     vi.mocked(useManufacturers).mockReturnValue({
       manufacturers: [],
+      total: 0,
+      page: 1,
+      limit: 20,
       isLoading: false,
       error: undefined,
       mutate: vi.fn(),

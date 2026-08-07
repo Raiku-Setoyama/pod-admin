@@ -26,7 +26,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { apiClient } from "@/lib/api/client";
-import type { Product, ProductType, Manufacturer, ManufacturerListResponse } from "@/types/api";
+import type { Product, ProductType, ManufacturerListResponse } from "@/types/api";
 
 const productTypes: { value: ProductType; label: string }[] = [
   { value: "acrylic_keychain", label: "アクリルキーホルダー" },
