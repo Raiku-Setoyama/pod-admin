@@ -13,11 +13,14 @@ FEAT-0004: 発注資料ダウンロード時のステータス自動切り替え
 - 発注中（ORDERED）の明細のみ製造中（MANUFACTURING）に更新
 """
 
-import json
-import pytest
-import zipfile
 import io
+import json
+import zipfile
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
+
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +30,7 @@ class TestOrderDocumentsDownloadStatusUpdate:
     """発注資料ダウンロード時のステータス自動更新の統合テスト"""
 
     @pytest.fixture
-    async def test_manufacturer(self, db_session: AsyncSession):
+    async def test_manufacturer(self, db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
         """テスト用メーカー"""
         manufacturer_id = str(uuid4())
         # ユニークな名前を生成（並列テスト対策）
@@ -56,7 +59,7 @@ class TestOrderDocumentsDownloadStatusUpdate:
         yield {"id": manufacturer_id, "name": manufacturer_name}
 
     @pytest.fixture
-    async def test_product(self, db_session: AsyncSession, test_manufacturer: dict):
+    async def test_product(self, db_session: AsyncSession, test_manufacturer: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
         """テスト用商品（メーカーに紐づく）"""
         product_id = str(uuid4())
         # ユニークなサイズを使用して既存データとの衝突を避ける
@@ -88,9 +91,9 @@ class TestOrderDocumentsDownloadStatusUpdate:
     async def ordered_items_3(
         self,
         db_session: AsyncSession,
-        test_order_source: dict,
-        test_product: dict,
-    ):
+        test_order_source: dict[str, Any],
+        test_product: dict[str, Any],
+    ) -> AsyncIterator[Any]:
         """発注中ステータスの受注明細3件"""
         items = []
         for i in range(3):
@@ -150,11 +153,11 @@ class TestOrderDocumentsDownloadStatusUpdate:
     async def mixed_status_items(
         self,
         db_session: AsyncSession,
-        test_order_source: dict,
-        test_product: dict,
-    ):
+        test_order_source: dict[str, Any],
+        test_product: dict[str, Any],
+    ) -> AsyncIterator[Any]:
         """発注中2件、製造中1件のミックス明細"""
-        items = {"ordered": [], "manufacturing": []}
+        items: dict[str, list[Any]] = {"ordered": [], "manufacturing": []}
         statuses = ["ordered", "ordered", "manufacturing"]
 
         for i, status in enumerate(statuses):
@@ -215,9 +218,9 @@ class TestOrderDocumentsDownloadStatusUpdate:
     async def manufacturing_only_items(
         self,
         db_session: AsyncSession,
-        test_order_source: dict,
-        test_product: dict,
-    ):
+        test_order_source: dict[str, Any],
+        test_product: dict[str, Any],
+    ) -> AsyncIterator[Any]:
         """製造中ステータスのみの受注明細（発注中が0件）"""
         items = []
         for i in range(2):
@@ -275,11 +278,11 @@ class TestOrderDocumentsDownloadStatusUpdate:
     async def test_admin_download_does_not_update_status(
         self,
         client: AsyncClient,
-        auth_headers: dict,
+        auth_headers: dict[str, Any],
         db_session: AsyncSession,
-        test_manufacturer: dict,
-        ordered_items_3: list[dict],
-    ):
+        test_manufacturer: dict[str, Any],
+        ordered_items_3: list[dict[str, Any]],
+    ) -> None:
         """管理者エンドポイントではステータス更新が行われない
 
         given: メーカーAに「発注中」ステータスの受注明細が3件ある
@@ -331,11 +334,11 @@ class TestOrderDocumentsDownloadStatusUpdate:
     async def test_admin_download_includes_all_statuses_without_update(
         self,
         client: AsyncClient,
-        auth_headers: dict,
+        auth_headers: dict[str, Any],
         db_session: AsyncSession,
-        test_manufacturer: dict,
-        mixed_status_items: dict,
-    ):
+        test_manufacturer: dict[str, Any],
+        mixed_status_items: dict[str, Any],
+    ) -> None:
         """管理者エンドポイントは全ステータスをダウンロード可能で、ステータス更新なし
 
         given: メーカーAに「発注中」2件、「製造中」1件の受注明細がある
@@ -386,10 +389,10 @@ class TestOrderDocumentsDownloadStatusUpdate:
     async def test_admin_download_succeeds_with_manufacturing_only(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_manufacturer: dict,
-        manufacturing_only_items: list[dict],
-    ):
+        auth_headers: dict[str, Any],
+        test_manufacturer: dict[str, Any],
+        manufacturing_only_items: list[dict[str, Any]],
+    ) -> None:
         """管理者エンドポイントは製造中のみでもダウンロード可能
 
         given: メーカーAに「製造中」の受注明細のみがある（発注中が0件）
@@ -415,8 +418,8 @@ class TestOrderDocumentsDownloadStatusUpdate:
     async def test_download_returns_401_without_auth(
         self,
         client: AsyncClient,
-        test_manufacturer: dict,
-    ):
+        test_manufacturer: dict[str, Any],
+    ) -> None:
         """認証なしでAPIを呼び出すと401エラー"""
         manufacturer_id = test_manufacturer["id"]
 
@@ -433,8 +436,8 @@ class TestOrderDocumentsDownloadStatusUpdate:
     async def test_download_returns_404_for_nonexistent_manufacturer(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-    ):
+        auth_headers: dict[str, Any],
+    ) -> None:
         """存在しないメーカーIDで呼び出すと404エラー"""
         nonexistent_id = str(uuid4())
 
@@ -452,7 +455,7 @@ class TestManufacturerPortalOrderDocumentsDownload:
     """メーカーポータルからの発注資料ダウンロードの統合テスト"""
 
     @pytest.fixture
-    async def test_manufacturer_with_password(self, db_session: AsyncSession):
+    async def test_manufacturer_with_password(self, db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
         """テスト用メーカー（パスワード設定済み）"""
         from app.utils.security import hash_password
 
@@ -483,7 +486,7 @@ class TestManufacturerPortalOrderDocumentsDownload:
         yield {"id": manufacturer_id, "name": manufacturer_name}
 
     @pytest.fixture
-    def manufacturer_auth_headers(self, test_manufacturer_with_password: dict):
+    def manufacturer_auth_headers(self, test_manufacturer_with_password: dict[str, Any]) -> dict[str, Any]:
         """メーカーポータル用の認証ヘッダー"""
         from app.utils.security import create_access_token
 
@@ -495,7 +498,7 @@ class TestManufacturerPortalOrderDocumentsDownload:
         return {"Authorization": f"Bearer {token}"}
 
     @pytest.fixture
-    async def test_product_for_portal(self, db_session: AsyncSession, test_manufacturer_with_password: dict):
+    async def test_product_for_portal(self, db_session: AsyncSession, test_manufacturer_with_password: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
         """テスト用商品（メーカーポータル用）"""
         product_id = str(uuid4())
         unique_size = f"PORT-{product_id[:8]}"
@@ -526,9 +529,9 @@ class TestManufacturerPortalOrderDocumentsDownload:
     async def ordered_items_for_portal(
         self,
         db_session: AsyncSession,
-        test_order_source: dict,
-        test_product_for_portal: dict,
-    ):
+        test_order_source: dict[str, Any],
+        test_product_for_portal: dict[str, Any],
+    ) -> AsyncIterator[Any]:
         """メーカーポータルテスト用の発注中ステータスの受注明細"""
         items = []
         for i in range(2):
@@ -586,10 +589,10 @@ class TestManufacturerPortalOrderDocumentsDownload:
     async def test_manufacturer_portal_download_updates_ordered_to_manufacturing(
         self,
         client: AsyncClient,
-        manufacturer_auth_headers: dict,
+        manufacturer_auth_headers: dict[str, Any],
         db_session: AsyncSession,
-        ordered_items_for_portal: list[dict],
-    ):
+        ordered_items_for_portal: list[dict[str, Any]],
+    ) -> None:
         """メーカーポータルからのダウンロードで発注中→製造中にステータス更新される
 
         given: メーカーに「発注中」ステータスの受注明細が2件ある
@@ -627,11 +630,11 @@ class TestManufacturerPortalOrderDocumentsDownload:
     async def mixed_status_items_for_portal(
         self,
         db_session: AsyncSession,
-        test_order_source: dict,
-        test_product_for_portal: dict,
-    ):
+        test_order_source: dict[str, Any],
+        test_product_for_portal: dict[str, Any],
+    ) -> AsyncIterator[Any]:
         """発注中1件、製造中1件のミックス明細（メーカーポータル用）"""
-        items = {"ordered": [], "manufacturing": []}
+        items: dict[str, list[Any]] = {"ordered": [], "manufacturing": []}
         statuses = ["ordered", "manufacturing"]
 
         for i, status in enumerate(statuses):
@@ -692,10 +695,10 @@ class TestManufacturerPortalOrderDocumentsDownload:
     async def test_manufacturer_portal_download_only_updates_ordered_status(
         self,
         client: AsyncClient,
-        manufacturer_auth_headers: dict,
+        manufacturer_auth_headers: dict[str, Any],
         db_session: AsyncSession,
-        mixed_status_items_for_portal: dict,
-    ):
+        mixed_status_items_for_portal: dict[str, Any],
+    ) -> None:
         """メーカーポータルからのダウンロードで発注中のみステータス更新される
 
         given: メーカーに「発注中」1件、「製造中」1件の受注明細がある

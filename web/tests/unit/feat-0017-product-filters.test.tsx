@@ -21,11 +21,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { renderHook, waitFor } from '@testing-library/react'
+import { renderHook } from '@testing-library/react'
 
 // Mock SWR - use vi.hoisted to create a spy function that can be referenced in vi.mock
 const { mockUseSWR } = vi.hoisted(() => ({
-  mockUseSWR: vi.fn(() => ({
+  mockUseSWR: vi.fn((..._args: unknown[]) => ({
     data: undefined,
     error: undefined,
     isLoading: false,

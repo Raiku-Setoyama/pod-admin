@@ -14,6 +14,7 @@ import asyncio
 import sys
 import uuid
 from pathlib import Path
+from typing import Any
 
 # Add the project root to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -96,7 +97,7 @@ async def seed_manufacturers(session: AsyncSession) -> dict[str, Manufacturer]:
     """Create manufacturers."""
     print("Creating manufacturers...")
 
-    manufacturers_data = [
+    manufacturers_data: list[dict[str, Any]] = [
         {
             "id": generate_uuid(),
             "name": "シードット",
@@ -148,7 +149,7 @@ async def seed_products(session: AsyncSession, manufacturers: dict[str, Manufact
     seedot_id = manufacturers["シードット"].id
     tote_manufacturer_id = manufacturers["サンプルメーカー1(トートバッグ)"].id
 
-    products_data = [
+    products_data: list[dict[str, Any]] = [
         # Tシャツ (4種類)
         {
             "id": generate_uuid(),

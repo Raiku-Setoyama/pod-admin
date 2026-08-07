@@ -9,14 +9,14 @@ FEAT-0018: 全メーカー横断発注明細一覧
 - フィルター（status, search, manufacturer_id）が正しく渡される
 """
 
-import pytest
 from datetime import datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-from app.services.manufacturer_order_service import ManufacturerOrderService
-from app.models.order import OrderStatus
+import pytest
 
+from app.services.manufacturer_order_service import ManufacturerOrderService
 
 # ---------------------------------------------------------------------------
 # Helper: mock order item factory for all-manufacturer queries
@@ -42,7 +42,7 @@ def _make_all_order_item(
     manufacturer_id: str | None = None,
     manufacturer_name: str = "テストメーカー",
     lead_time_days: int = 7,
-) -> tuple:
+) -> tuple[Any, ...]:
     """Create a mock order item tuple matching the repository return format
     for find_all_ordered_items_detail."""
     order_item = MagicMock()
@@ -83,19 +83,19 @@ class TestGetAllOrderItems:
     """get_all_order_items メソッドのユニットテスト"""
 
     @pytest.fixture
-    def mock_order_repo(self):
+    def mock_order_repo(self) -> Any:
         return AsyncMock()
 
     @pytest.fixture
-    def mock_manufacturer_repo(self):
+    def mock_manufacturer_repo(self) -> Any:
         return AsyncMock()
 
     @pytest.fixture
-    def mock_shipment_repo(self):
+    def mock_shipment_repo(self) -> Any:
         return AsyncMock()
 
     @pytest.fixture
-    def service(self, mock_order_repo, mock_manufacturer_repo, mock_shipment_repo):
+    def service(self, mock_order_repo: Any, mock_manufacturer_repo: Any, mock_shipment_repo: Any) -> Any:
         return ManufacturerOrderService(
             order_repo=mock_order_repo,
             manufacturer_repo=mock_manufacturer_repo,
@@ -107,7 +107,7 @@ class TestGetAllOrderItems:
         self,
         service: ManufacturerOrderService,
         mock_order_repo: AsyncMock,
-    ):
+    ) -> None:
         """AC-001/AC-005: 複数メーカーの発注明細が全て返される
 
         given: メーカーAとメーカーBに紐づく発注明細がある
@@ -161,7 +161,7 @@ class TestGetAllOrderItems:
         self,
         service: ManufacturerOrderService,
         mock_order_repo: AsyncMock,
-    ):
+    ) -> None:
         """AC-005: total, total_quantity, total_amount が正しく集計される
 
         given: 明細3件（数量2*1000, 1*2000, 5*500）
@@ -185,7 +185,7 @@ class TestGetAllOrderItems:
         self,
         service: ManufacturerOrderService,
         mock_order_repo: AsyncMock,
-    ):
+    ) -> None:
         """AC-011: 発注明細が0件の場合、空配列とtotal=0が返される
 
         given: 発注明細が存在しない
@@ -206,7 +206,7 @@ class TestGetAllOrderItems:
         self,
         service: ManufacturerOrderService,
         mock_order_repo: AsyncMock,
-    ):
+    ) -> None:
         """AC-002: ステータスフィルターが正しくリポジトリに渡される
 
         given: status="ordered" でフィルターする
@@ -233,7 +233,7 @@ class TestGetAllOrderItems:
         self,
         service: ManufacturerOrderService,
         mock_order_repo: AsyncMock,
-    ):
+    ) -> None:
         """AC-003: キーワード検索が正しくリポジトリに渡される
 
         given: search="ORD-001" で検索する
@@ -260,7 +260,7 @@ class TestGetAllOrderItems:
         self,
         service: ManufacturerOrderService,
         mock_order_repo: AsyncMock,
-    ):
+    ) -> None:
         """AC-004: メーカーIDフィルターが正しくリポジトリに渡される
 
         given: manufacturer_id="mfr-001" でフィルターする
@@ -287,7 +287,7 @@ class TestGetAllOrderItems:
         self,
         service: ManufacturerOrderService,
         mock_order_repo: AsyncMock,
-    ):
+    ) -> None:
         """レスポンスの各フィールドが正しくマッピングされる"""
         mfr_id = str(uuid4())
         mock_order_repo.find_all_ordered_items_detail.return_value = [

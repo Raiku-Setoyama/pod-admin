@@ -10,9 +10,9 @@ FEAT-0008: 商品マスタに4カラム複合ユニーク制約を追加
 NULLS NOT DISTINCT を使ったユニークインデックスを作成する。
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "add_product_uq_001"

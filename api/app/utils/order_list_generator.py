@@ -3,6 +3,7 @@
 import csv
 import io
 from datetime import datetime
+from typing import Any
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -55,7 +56,7 @@ class OrderListGenerator:
 
     def generate_order_list_csv(
         self,
-        items: list[dict],
+        items: list[dict[str, Any]],
         product_type: str | None = None,
     ) -> bytes:
         """Generate order list CSV for a manufacturer.
@@ -145,7 +146,7 @@ class OrderListGenerator:
 
     def generate_order_list_xlsx(
         self,
-        items: list[dict],
+        items: list[dict[str, Any]],
         product_type: str | None = None,
     ) -> bytes:
         """Generate order list Excel file for a manufacturer.

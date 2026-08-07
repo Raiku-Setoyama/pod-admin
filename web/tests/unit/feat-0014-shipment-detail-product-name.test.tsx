@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 
 // Mock API client
 vi.mock('@/lib/api/client', () => ({
@@ -105,6 +105,8 @@ describe('AC-006: Product name is displayed correctly (not "-")', () => {
           order_id: 'order-001',
           order_number: 'ORD-001',
           product_name: 'アクリルキーホルダーA',
+          quantity: null,
+          thumbnail_image_url: null,
         },
       ],
     })
@@ -125,6 +127,8 @@ describe('AC-006: Product name is displayed correctly (not "-")', () => {
           order_id: 'order-001',
           order_number: 'ORD-001',
           product_name: 'アクリルキーホルダーA',
+          quantity: null,
+          thumbnail_image_url: null,
         },
       ],
     })
@@ -152,6 +156,8 @@ describe('AC-006: Product name is displayed correctly (not "-")', () => {
           order_id: 'order-001',
           order_number: 'ORD-001',
           product_name: '商品A, 商品B',
+          quantity: null,
+          thumbnail_image_url: null,
         },
       ],
     })
@@ -172,12 +178,16 @@ describe('AC-006: Product name is displayed correctly (not "-")', () => {
           order_id: 'order-001',
           order_number: 'ORD-001',
           product_name: 'アクリルキーホルダーA',
+          quantity: null,
+          thumbnail_image_url: null,
         },
         {
           id: 'item-002',
           order_id: 'order-002',
           order_number: 'ORD-002',
           product_name: 'アクリルスタンドB',
+          quantity: null,
+          thumbnail_image_url: null,
         },
       ],
     })
@@ -209,6 +219,8 @@ describe('AC-007: Null product_name shows "-" as fallback', () => {
           order_id: 'order-001',
           order_number: 'ORD-001',
           product_name: null,
+          quantity: null,
+          thumbnail_image_url: null,
         },
       ],
     })
@@ -234,12 +246,16 @@ describe('AC-007: Null product_name shows "-" as fallback', () => {
           order_id: 'order-001',
           order_number: 'ORD-001',
           product_name: 'アクリルキーホルダーA',
+          quantity: null,
+          thumbnail_image_url: null,
         },
         {
           id: 'item-002',
           order_id: 'order-002',
           order_number: 'ORD-002',
           product_name: null,
+          quantity: null,
+          thumbnail_image_url: null,
         },
       ],
     })

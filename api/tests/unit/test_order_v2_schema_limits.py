@@ -1,5 +1,7 @@
 """Unit tests for v2 order schema DoS guards (list length caps)."""
 
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
 
@@ -14,11 +16,11 @@ _CUSTOMER = {
 }
 
 
-def _layer(i):
+def _layer(i: Any) -> dict[str, Any]:
     return {"layer_type": "color", "url": f"https://cdn.trusted/{i}.png"}
 
 
-def _item(uid="9000011", n_layers=2):
+def _item(uid: Any="9000011", n_layers: Any=2) -> dict[str, Any]:
     return {
         "uid": uid,
         "product_type": "acrylic_keychain",
@@ -32,16 +34,16 @@ def _item(uid="9000011", n_layers=2):
 
 
 class TestSourceImagesCap:
-    def test_accepts_reasonable_layer_count(self):
+    def test_accepts_reasonable_layer_count(self) -> None:
         OrderItemCreateV2.model_validate(_item(n_layers=4))
 
-    def test_rejects_too_many_source_images(self):
+    def test_rejects_too_many_source_images(self) -> None:
         with pytest.raises(ValidationError):
             OrderItemCreateV2.model_validate(_item(n_layers=50))
 
 
 class TestItemsCap:
-    def test_rejects_too_many_items(self):
+    def test_rejects_too_many_items(self) -> None:
         payload = {
             "order_number": "0000001",
             "customer": _CUSTOMER,

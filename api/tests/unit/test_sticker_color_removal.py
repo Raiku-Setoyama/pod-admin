@@ -10,20 +10,22 @@ FEAT-0007: ステッカー商品タイプから「クリア」カラーを削除
 - STICKER_PRICES 辞書
 """
 
-import pytest
+from typing import Any
 from unittest.mock import AsyncMock
+
+import pytest
 
 from app.models.order import StickerColor
 from app.models.product import ProductType
 from app.schemas.external import PriceCalculationRequest
-from app.services.external_service import ExternalService, STICKER_PRICES
+from app.services.external_service import STICKER_PRICES, ExternalService
 from app.utils.exceptions import ValidationError
 
 
 class TestStickerColorEnum:
     """StickerColor Enum のテスト"""
 
-    def test_ac001_sticker_color_has_no_clear(self):
+    def test_ac001_sticker_color_has_no_clear(self) -> None:
         """AC-001: StickerColor Enum に「クリア」が存在しないこと
 
         given: StickerColor Enum の定義
@@ -35,7 +37,7 @@ class TestStickerColorEnum:
             "StickerColor に CLEAR メンバーが存在します。削除が必要です。"
         )
 
-    def test_ac001_sticker_color_has_only_white(self):
+    def test_ac001_sticker_color_has_only_white(self) -> None:
         """AC-001: StickerColor Enum に WHITE のみが存在すること
 
         given: StickerColor Enum の定義
@@ -47,7 +49,7 @@ class TestStickerColorEnum:
             f"StickerColor のメンバーは WHITE のみであるべきですが、{member_names} が存在します。"
         )
 
-    def test_ac001_sticker_color_clear_value_is_not_valid(self):
+    def test_ac001_sticker_color_clear_value_is_not_valid(self) -> None:
         """AC-001: StickerColor Enum に「クリア」値が存在しないこと
 
         given: StickerColor Enum の定義
@@ -57,7 +59,7 @@ class TestStickerColorEnum:
         with pytest.raises(ValueError):
             StickerColor("クリア")
 
-    def test_ac001_sticker_color_white_value_is_valid(self):
+    def test_ac001_sticker_color_white_value_is_valid(self) -> None:
         """AC-001: StickerColor Enum に「ホワイト」値が有効であること
 
         given: StickerColor Enum の定義
@@ -73,13 +75,13 @@ class TestStickerOrderValidation:
     """ステッカー受注バリデーションのテスト"""
 
     @pytest.fixture
-    def service(self):
+    def service(self) -> Any:
         """ExternalService のインスタンス（モック依存）"""
         mock_product_repo = AsyncMock()
         mock_order_repo = AsyncMock()
         return ExternalService(mock_product_repo, mock_order_repo)
 
-    def test_ac002_sticker_validation_rejects_clear_color(self, service: ExternalService):
+    def test_ac002_sticker_validation_rejects_clear_color(self, service: ExternalService) -> None:
         """AC-002: ステッカーの受注バリデーションで「クリア」が拒否されること
 
         given: ステッカー商品の受注データ
@@ -107,7 +109,7 @@ class TestStickerOrderValidation:
             f"エラーメッセージが不適切です: {exc_info.value.message}"
         )
 
-    def test_ac003_sticker_validation_accepts_white_color(self, service: ExternalService):
+    def test_ac003_sticker_validation_accepts_white_color(self, service: ExternalService) -> None:
         """AC-003: ステッカーの受注バリデーションで「ホワイト」が受け付けられること
 
         given: ステッカー商品の受注データ
@@ -131,13 +133,13 @@ class TestStickerProductOptions:
     """ステッカー商品オプション取得のテスト"""
 
     @pytest.fixture
-    def service(self):
+    def service(self) -> Any:
         """ExternalService のインスタンス（モック依存）"""
         mock_product_repo = AsyncMock()
         mock_order_repo = AsyncMock()
         return ExternalService(mock_product_repo, mock_order_repo)
 
-    def test_ac004_sticker_options_returns_only_white(self, service: ExternalService):
+    def test_ac004_sticker_options_returns_only_white(self, service: ExternalService) -> None:
         """AC-004: ステッカーの商品オプション取得で「ホワイト」のみ返ること
 
         given: ExternalService の get_product_options
@@ -159,13 +161,13 @@ class TestStickerPriceCalculation:
     """ステッカー価格計算のテスト"""
 
     @pytest.fixture
-    def service(self):
+    def service(self) -> Any:
         """ExternalService のインスタンス（モック依存）"""
         mock_product_repo = AsyncMock()
         mock_order_repo = AsyncMock()
         return ExternalService(mock_product_repo, mock_order_repo)
 
-    def test_ac005_sticker_price_rejects_clear_color(self, service: ExternalService):
+    def test_ac005_sticker_price_rejects_clear_color(self, service: ExternalService) -> None:
         """AC-005: ステッカーの価格計算で「クリア」が拒否されること
 
         given: ExternalService の calculate_price
@@ -182,7 +184,7 @@ class TestStickerPriceCalculation:
         with pytest.raises(ValidationError):
             service._calculate_sticker_price(request)
 
-    def test_ac006_sticker_price_succeeds_with_white_at_79_yen(self, service: ExternalService):
+    def test_ac006_sticker_price_succeeds_with_white_at_79_yen(self, service: ExternalService) -> None:
         """AC-006: ステッカー100x100mmの価格計算で「ホワイト」が成功すること
 
         given: ExternalService の calculate_price
@@ -206,7 +208,7 @@ class TestStickerPriceCalculation:
         )
         assert result.quantity == 3
 
-    def test_ac006_sticker_price_50x50mm(self, service: ExternalService):
+    def test_ac006_sticker_price_50x50mm(self, service: ExternalService) -> None:
         """AC-006: ステッカー50x50mmの単品価格が50円であること
 
         given: ExternalService の calculate_price
@@ -229,7 +231,7 @@ class TestStickerPriceCalculation:
 class TestStickerPricesDictionary:
     """STICKER_PRICES 辞書のテスト"""
 
-    def test_ac007_sticker_prices_has_no_clear(self):
+    def test_ac007_sticker_prices_has_no_clear(self) -> None:
         """AC-007: STICKER_PRICES に「クリア」の価格が存在しないこと
 
         given: STICKER_PRICES 辞書
@@ -240,7 +242,7 @@ class TestStickerPricesDictionary:
             "STICKER_PRICES に「クリア」のエントリが存在します。削除が必要です。"
         )
 
-    def test_ac007_sticker_prices_keyed_by_size(self):
+    def test_ac007_sticker_prices_keyed_by_size(self) -> None:
         """AC-007: STICKER_PRICES がサイズベースであること
 
         given: STICKER_PRICES 辞書
@@ -252,7 +254,7 @@ class TestStickerPricesDictionary:
             f"{list(STICKER_PRICES.keys())} です。"
         )
 
-    def test_ac007_sticker_prices_100x100mm_is_79(self):
+    def test_ac007_sticker_prices_100x100mm_is_79(self) -> None:
         """AC-007: STICKER_PRICES の 100x100mm の価格が79円であること
 
         given: STICKER_PRICES 辞書

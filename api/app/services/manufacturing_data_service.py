@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 from fastapi import BackgroundTasks, UploadFile
@@ -175,6 +176,9 @@ class ManufacturingDataService:
         self, order_source_id: str | None, item: OrderItem
     ) -> tuple[ManufacturingData, bool]:
         """キャッシュを検索し、無ければ作成する。(row, 生成が必要か) を返す."""
+        # 呼び出し元（_generate_for_order）で両方の存在を確認済み
+        assert item.product_code is not None
+        assert item.source_images is not None
         layer_types = {img["layer_type"] for img in item.source_images}
         try:
             mapping = build_vm_mapping(item.product_type, item.size, layer_types)
@@ -222,7 +226,7 @@ class ManufacturingDataService:
         *,
         variant: str | None,
         status: MfgDataStatus,
-        source_images: list | None = None,
+        source_images: list[Any] | None = None,
         error_message: str | None = None,
     ) -> tuple[ManufacturingData, bool]:
         """製造データ行を作成する（キャッシュキー競合時は既存行を再取得）.
@@ -250,6 +254,8 @@ class ManufacturingDataService:
                     await self._session.flush()
                 return md, True
             except IntegrityError:
+                # 呼び出し元（_resolve_or_create）で product_code の存在を確認済み
+                assert item.product_code is not None
                 existing = await self._md_repo.find_by_cache_key(
                     order_source_id, item.product_code, item.size, variant
                 )
@@ -345,7 +351,7 @@ class ManufacturingDataService:
             logger.exception("manufacturing data generation failed for %s", md_id)
 
     async def _download_source_images(
-        self, source_images: list, wanted: set[str]
+        self, source_images: list[Any], wanted: set[str]
     ) -> dict[str, bytes]:
         """必要なレイヤーの PNG を並列取得する.
 
@@ -370,7 +376,7 @@ class ManufacturingDataService:
             timeout=_SOURCE_DOWNLOAD_TIMEOUT, follow_redirects=False
         ) as client:
 
-            async def fetch(img: dict) -> tuple[str, bytes] | None:
+            async def fetch(img: dict[str, Any]) -> tuple[str, bytes] | None:
                 async with semaphore:
                     try:
                         if img.get("file_path"):

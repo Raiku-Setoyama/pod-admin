@@ -1,10 +1,9 @@
 name: ci
 
 # プロジェクトの静的解析（ビルド・テストゲート）。
-# 現状のコードベースでは大量に失敗するため（ruff / eslint / mypy / tsc）、各チェックは
-# continue-on-error による「情報提供のみ・非ブロッキング」で導入している。
-# REQ-0041 で是正して緑化したら continue-on-error を外し、ブランチ保護の必須チェックに
-# 昇格させる。テスト（pytest / vitest / Playwright）は DB・インフラ準備後に追加する。
+# REQ-0041 で全件を緑化したため、4 つのチェックはすべてブロッキングで実行する。
+# マージ後にブランチ保護の必須チェックへ昇格させること。
+# テスト（pytest / vitest / Playwright）は DB・インフラ準備後に追加する。
 
 on:
   pull_request:
@@ -22,13 +21,11 @@ jobs:
       - name: 依存インストール
         working-directory: api
         run: uv sync --extra dev
-      - name: ruff（導入予定・非ブロッキング）
+      - name: ruff
         working-directory: api
-        continue-on-error: true
         run: uv run ruff check .
-      - name: mypy（導入予定・非ブロッキング）
+      - name: mypy
         working-directory: api
-        continue-on-error: true
         run: uv run mypy .
 
   web:
@@ -43,11 +40,9 @@ jobs:
       - name: 依存インストール
         working-directory: web
         run: npm ci
-      - name: eslint（導入予定・非ブロッキング）
+      - name: eslint
         working-directory: web
-        continue-on-error: true
         run: npm run lint
-      - name: tsc（導入予定・非ブロッキング）
+      - name: tsc
         working-directory: web
-        continue-on-error: true
         run: npx tsc --noEmit

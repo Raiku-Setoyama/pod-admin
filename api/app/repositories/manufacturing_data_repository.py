@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +13,7 @@ from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
 class ManufacturingDataRepository:
     """Repository for ManufacturingData model."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession) -> None:
         self._db = db
 
     async def find_by_id(self, mfg_data_id: str) -> ManufacturingData | None:
@@ -138,7 +140,7 @@ class ManufacturingDataRepository:
         return list(result.scalars().all()), total
 
 
-def _eq_or_null(column, value):
+def _eq_or_null(column: Any, value: Any) -> Any:
     """value が None なら IS NULL、そうでなければ等価比較を返す."""
     if value is None:
         return column.is_(None)

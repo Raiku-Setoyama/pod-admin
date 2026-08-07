@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import csv
 import io
 import logging
 import mimetypes
+from collections.abc import Callable
 from datetime import date, datetime
+from typing import Any
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
@@ -85,7 +88,7 @@ class OrderService:
         order_source_repo: OrderSourceRepository | None = None,
         company_holiday_repo: CompanyHolidayRepository | None = None,
         app_setting_repo: AppSettingRepository | None = None,
-    ):
+    ) -> None:
         self._order_repo = order_repo
         self._product_repo = product_repo
         self._shipment_repo = shipment_repo
@@ -150,9 +153,9 @@ class OrderService:
         *,
         order_number: str,
         customer: CustomerInfo,
-        items: list,
+        items: builtins.list[Any],
         order_source_id: str | None,
-        build_item,
+        build_item: Callable[[Any, Product, date], OrderItem],
     ) -> OrderResponse:
         """v1/v2 共通の注文作成ロジック（明細組み立てのみ build_item に委譲）."""
         # Check for duplicate order number
@@ -542,7 +545,7 @@ class OrderService:
             updated_at=order.updated_at,
         )
 
-    def _validate_tshirt_attributes(self, item_data) -> None:
+    def _validate_tshirt_attributes(self, item_data: Any) -> None:
         """Tシャツ受注時の属性バリデーション."""
         # サイズ必須・値検証
         if not item_data.size:
@@ -555,7 +558,7 @@ class OrderService:
             valid_sizes = [s.value for s in TshirtSize]
             raise ValidationError(
                 f"Invalid size '{item_data.size}'. Valid: {valid_sizes} (uid: {item_data.uid})"
-            )
+            ) from None
 
         # 色必須・値検証
         if not item_data.color:
@@ -568,7 +571,7 @@ class OrderService:
             valid_colors = [c.value for c in TshirtColor]
             raise ValidationError(
                 f"Invalid color '{item_data.color}'. Valid: {valid_colors} (uid: {item_data.uid})"
-            )
+            ) from None
 
         # 位置必須・値検証
         if not item_data.position:
@@ -581,9 +584,9 @@ class OrderService:
             valid_positions = [p.value for p in TshirtPosition]
             raise ValidationError(
                 f"Invalid position '{item_data.position}'. Valid: {valid_positions} (uid: {item_data.uid})"
-            )
+            ) from None
 
-    def _validate_acrylic_keychain_attributes(self, item_data) -> None:
+    def _validate_acrylic_keychain_attributes(self, item_data: Any) -> None:
         """アクリルキーホルダー受注時の属性バリデーション."""
         # サイズ必須・値検証
         if not item_data.size:
@@ -596,9 +599,9 @@ class OrderService:
             valid_sizes = [s.value for s in AcrylicKeychainSize]
             raise ValidationError(
                 f"Invalid size '{item_data.size}'. Valid: {valid_sizes} (uid: {item_data.uid})"
-            )
+            ) from None
 
-    def _validate_acrylic_stand_attributes(self, item_data) -> None:
+    def _validate_acrylic_stand_attributes(self, item_data: Any) -> None:
         """アクリルスタンド受注時の属性バリデーション."""
         # サイズ必須・値検証
         if not item_data.size:
@@ -611,9 +614,9 @@ class OrderService:
             valid_sizes = [s.value for s in AcrylicStandSize]
             raise ValidationError(
                 f"Invalid size '{item_data.size}'. Valid: {valid_sizes} (uid: {item_data.uid})"
-            )
+            ) from None
 
-    def _validate_sticker_attributes(self, item_data) -> None:
+    def _validate_sticker_attributes(self, item_data: Any) -> None:
         """ステッカー受注時の属性バリデーション."""
         # サイズ必須・値検証
         if not item_data.size:
@@ -626,7 +629,7 @@ class OrderService:
             valid_sizes = [s.value for s in StickerSize]
             raise ValidationError(
                 f"Invalid size '{item_data.size}'. Valid: {valid_sizes} (uid: {item_data.uid})"
-            )
+            ) from None
 
         # 色必須・値検証
         if not item_data.color:
@@ -639,9 +642,9 @@ class OrderService:
             valid_colors = [c.value for c in StickerColor]
             raise ValidationError(
                 f"Invalid color '{item_data.color}'. Valid: {valid_colors} (uid: {item_data.uid})"
-            )
+            ) from None
 
-    def _validate_tote_bag_attributes(self, item_data) -> None:
+    def _validate_tote_bag_attributes(self, item_data: Any) -> None:
         """トートバッグ受注時の属性バリデーション."""
         # サイズ必須・値検証
         if not item_data.size:
@@ -654,7 +657,7 @@ class OrderService:
             valid_sizes = [s.value for s in ToteBagSize]
             raise ValidationError(
                 f"Invalid size '{item_data.size}'. Valid: {valid_sizes} (uid: {item_data.uid})"
-            )
+            ) from None
 
         # 色必須・値検証
         if not item_data.color:
@@ -667,7 +670,7 @@ class OrderService:
             valid_colors = [c.value for c in ToteBagColor]
             raise ValidationError(
                 f"Invalid color '{item_data.color}'. Valid: {valid_colors} (uid: {item_data.uid})"
-            )
+            ) from None
 
         # 位置必須・値検証
         if not item_data.position:
@@ -680,11 +683,11 @@ class OrderService:
             valid_positions = [p.value for p in ToteBagPosition]
             raise ValidationError(
                 f"Invalid position '{item_data.position}'. Valid: {valid_positions} (uid: {item_data.uid})"
-            )
+            ) from None
 
     async def bulk_update_status(
         self,
-        order_ids: list[str],
+        order_ids: builtins.list[str],
         status: OrderStatus,
     ) -> OrderBulkStatusUpdateResponse:
         """Bulk update order status.
@@ -770,7 +773,7 @@ class OrderService:
             failed_ids=failed_ids,
         )
 
-    async def export_csv(self, order_ids: list[str]) -> tuple[bytes, str]:
+    async def export_csv(self, order_ids: builtins.list[str]) -> tuple[bytes, str]:
         """Export orders to CSV for delivery.
 
         Generates a CSV file with 18 columns for delivery company import.
@@ -868,7 +871,7 @@ class OrderService:
         return csv_bytes, filename
 
     async def download_thumbnails(
-        self, order_ids: list[str]
+        self, order_ids: builtins.list[str]
     ) -> tuple[bytes, str]:
         """Download thumbnail images from orders and build a ZIP file.
 
@@ -885,7 +888,7 @@ class OrderService:
             HTTPException: 404 if no thumbnail images could be collected.
         """
         # Collect image tasks from orders
-        image_tasks: list[dict] = []
+        image_tasks: list[dict[str, Any]] = []
 
         for order_id in order_ids:
             order = await self._order_repo.find_by_id(order_id)
@@ -913,7 +916,7 @@ class OrderService:
 
         async with httpx.AsyncClient() as client:
 
-            async def fetch_image(task: dict) -> dict | None:
+            async def fetch_image(task: dict[str, Any]) -> dict[str, Any] | None:
                 async with semaphore:
                     try:
                         response = await client.get(

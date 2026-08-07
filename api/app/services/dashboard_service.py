@@ -1,6 +1,7 @@
 """Dashboard service."""
 
 from datetime import date
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +14,7 @@ from app.schemas.dashboard import DashboardSummary, StatusCount
 class DashboardService:
     """Service for dashboard operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession) -> None:
         self._db = db
 
     async def get_summary(self) -> DashboardSummary:
@@ -43,7 +44,7 @@ class DashboardService:
             manufacturing_count=manufacturing_count,
         )
 
-    async def _count_today(self, model, date_column) -> int:
+    async def _count_today(self, model: Any, date_column: Any) -> int:
         """Count records created today."""
         today = date.today()
         result = await self._db.execute(
@@ -51,7 +52,7 @@ class DashboardService:
         )
         return result.scalar() or 0
 
-    async def _get_status_counts(self, model, status_column) -> list[StatusCount]:
+    async def _get_status_counts(self, model: Any, status_column: Any) -> list[StatusCount]:
         """Get counts grouped by status."""
         result = await self._db.execute(
             select(status_column, func.count(model.id))
@@ -59,7 +60,7 @@ class DashboardService:
         )
         return [StatusCount(status=row[0], count=row[1]) for row in result.all()]
 
-    async def _count_by_status(self, model, status: str) -> int:
+    async def _count_by_status(self, model: Any, status: str) -> int:
         """Count records with specific status."""
         result = await self._db.execute(
             select(func.count(model.id)).where(model.status == status)

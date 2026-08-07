@@ -16,6 +16,7 @@ import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 # Add the project root to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -24,7 +25,6 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session_maker
-from app.models.manufacturer import Manufacturer
 from app.models.order import Order, OrderItem, OrderItemStatus, OrderStatus
 from app.models.order_source import OrderSource
 from app.models.product import Product
@@ -39,7 +39,7 @@ def gen_id() -> str:
 
 
 # --- 顧客データ ---
-CUSTOMERS = [
+CUSTOMERS: list[dict[str, Any]] = [
     {
         "name": "山田 太郎",
         "postal_code": "150-0001",
@@ -115,7 +115,7 @@ CUSTOMERS = [
 ]
 
 # 商品名バリエーション
-PRODUCT_NAMES = {
+PRODUCT_NAMES: dict[str, list[str]] = {
     "tshirt": [
         "オリジナルTシャツ A柄",
         "限定デザインTシャツ",
@@ -162,7 +162,7 @@ async def reset_data(session: AsyncSession) -> None:
 
 async def get_or_create_order_sources(session: AsyncSession) -> list[OrderSource]:
     """受注元を取得または作成。"""
-    sources_data = [
+    sources_data: list[dict[str, Any]] = [
         {
             "code": "SUZURI",
             "name": "SUZURI",
@@ -203,7 +203,7 @@ async def get_or_create_order_sources(session: AsyncSession) -> list[OrderSource
 
 async def get_products_map(session: AsyncSession) -> dict[str, list[Product]]:
     """製造委託先ごとの製品マップを取得。"""
-    result = await session.execute(select(Product).where(Product.is_active == True))
+    result = await session.execute(select(Product).where(Product.is_active.is_(True)))
     products = list(result.scalars().all())
     if not products:
         raise RuntimeError("No products found. Run 'python scripts/seed.py' first.")
@@ -262,7 +262,7 @@ async def seed_demo_data(session: AsyncSession) -> None:
     # 1) 受注済み（未着手）: 8件
     # ========================================
     print("Creating 受注済み orders (8)...")
-    for i in range(8):
+    for _ in range(8):
         customer = random.choice(CUSTOMERS)
         source = random.choice(sources)
         mfr_id = random.choice(mfr_ids)
@@ -303,7 +303,7 @@ async def seed_demo_data(session: AsyncSession) -> None:
     # 2) 製造中: 6件
     # ========================================
     print("Creating 製造中 orders (6)...")
-    for i in range(6):
+    for _ in range(6):
         customer = random.choice(CUSTOMERS)
         source = random.choice(sources)
         mfr_id = random.choice(mfr_ids)
@@ -345,7 +345,7 @@ async def seed_demo_data(session: AsyncSession) -> None:
     # ========================================
     print("Creating 納入済み orders (10)...")
     delivered_orders: list[Order] = []
-    for i in range(10):
+    for _ in range(10):
         customer = random.choice(CUSTOMERS)
         source = random.choice(sources)
         mfr_id = random.choice(mfr_ids)
@@ -388,7 +388,7 @@ async def seed_demo_data(session: AsyncSession) -> None:
     # ========================================
     print("Creating 発送完了 orders (8)...")
     shipped_orders: list[Order] = []
-    for i in range(8):
+    for _ in range(8):
         customer = random.choice(CUSTOMERS)
         source = random.choice(sources)
         mfr_id = random.choice(mfr_ids)
@@ -430,7 +430,7 @@ async def seed_demo_data(session: AsyncSession) -> None:
     # 5) キャンセル: 3件
     # ========================================
     print("Creating キャンセル orders (3)...")
-    for i in range(3):
+    for _ in range(3):
         customer = random.choice(CUSTOMERS)
         source = random.choice(sources)
         mfr_id = random.choice(mfr_ids)

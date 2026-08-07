@@ -8,36 +8,37 @@ FEAT-0012: 発注詳細画面にステータスフィルター・キーワード
 - デフォルトで全ステータス（shipped除く）を返す
 """
 
-import pytest
 from datetime import datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-from app.services.manufacturer_order_service import ManufacturerOrderService
+import pytest
+
 from app.models.order import OrderStatus
-from app.utils.exceptions import NotFoundError
+from app.services.manufacturer_order_service import ManufacturerOrderService
 
 
 class TestGetOrderItemsByManufacturerStatusFilter:
     """ステータスフィルター機能のユニットテスト"""
 
     @pytest.fixture
-    def mock_order_repo(self):
+    def mock_order_repo(self) -> Any:
         """モック OrderRepository"""
         return AsyncMock()
 
     @pytest.fixture
-    def mock_manufacturer_repo(self):
+    def mock_manufacturer_repo(self) -> Any:
         """モック ManufacturerRepository"""
         return AsyncMock()
 
     @pytest.fixture
-    def mock_shipment_repo(self):
+    def mock_shipment_repo(self) -> Any:
         """モック ShipmentRepository"""
         return AsyncMock()
 
     @pytest.fixture
-    def service(self, mock_order_repo, mock_manufacturer_repo, mock_shipment_repo):
+    def service(self, mock_order_repo: Any, mock_manufacturer_repo: Any, mock_shipment_repo: Any) -> Any:
         """テスト対象のサービスインスタンス"""
         return ManufacturerOrderService(
             order_repo=mock_order_repo,
@@ -46,7 +47,7 @@ class TestGetOrderItemsByManufacturerStatusFilter:
         )
 
     @pytest.fixture
-    def mock_manufacturer(self):
+    def mock_manufacturer(self) -> Any:
         """モックメーカー"""
         manufacturer = MagicMock()
         manufacturer.id = str(uuid4())
@@ -54,7 +55,7 @@ class TestGetOrderItemsByManufacturerStatusFilter:
         return manufacturer
 
     @pytest.fixture
-    def mock_order_items_multi_status(self):
+    def mock_order_items_multi_status(self) -> Any:
         """複数ステータスの受注明細
 
         タプル構造: (OrderItem, order_number, ordered_at, customer_name, cost, item_status, order_status, lead_time_days)
@@ -100,8 +101,8 @@ class TestGetOrderItemsByManufacturerStatusFilter:
         service: ManufacturerOrderService,
         mock_manufacturer_repo: AsyncMock,
         mock_order_repo: AsyncMock,
-        mock_manufacturer,
-    ):
+        mock_manufacturer: Any,
+    ) -> None:
         """AC-006/AC-014: statusパラメータがリポジトリに渡される
 
         given: メーカーが存在する
@@ -128,8 +129,8 @@ class TestGetOrderItemsByManufacturerStatusFilter:
         service: ManufacturerOrderService,
         mock_manufacturer_repo: AsyncMock,
         mock_order_repo: AsyncMock,
-        mock_manufacturer,
-    ):
+        mock_manufacturer: Any,
+    ) -> None:
         """AC-002/AC-003/AC-004/AC-013: searchパラメータがリポジトリに渡される
 
         given: メーカーが存在する
@@ -156,8 +157,8 @@ class TestGetOrderItemsByManufacturerStatusFilter:
         service: ManufacturerOrderService,
         mock_manufacturer_repo: AsyncMock,
         mock_order_repo: AsyncMock,
-        mock_manufacturer,
-    ):
+        mock_manufacturer: Any,
+    ) -> None:
         """AC-007/AC-015: デフォルトでは全ステータス（shipped除く）のアイテムが返される
 
         given: メーカーが存在する
@@ -182,8 +183,8 @@ class TestGetOrderItemsByManufacturerStatusFilter:
         service: ManufacturerOrderService,
         mock_manufacturer_repo: AsyncMock,
         mock_order_repo: AsyncMock,
-        mock_manufacturer,
-    ):
+        mock_manufacturer: Any,
+    ) -> None:
         """AC-011: 検索とステータスフィルターを組み合わせて使用できる
 
         given: メーカーが存在する
@@ -212,9 +213,9 @@ class TestGetOrderItemsByManufacturerStatusFilter:
         service: ManufacturerOrderService,
         mock_manufacturer_repo: AsyncMock,
         mock_order_repo: AsyncMock,
-        mock_manufacturer,
-        mock_order_items_multi_status,
-    ):
+        mock_manufacturer: Any,
+        mock_order_items_multi_status: Any,
+    ) -> None:
         """AC-008/AC-016: レスポンスの各アイテムにステータスフィールドが含まれる
 
         given: 複数ステータスの明細が存在する
@@ -237,7 +238,7 @@ class TestGetOrderItemsByManufacturerStatusFilter:
 class TestManufacturerOrderItemResponseSchema:
     """ManufacturerOrderItemResponse スキーマのテスト"""
 
-    def test_schema_has_status_field(self):
+    def test_schema_has_status_field(self) -> None:
         """AC-016: ManufacturerOrderItemResponse に status フィールドがある
 
         given: ManufacturerOrderItemResponse スキーマ
@@ -250,7 +251,7 @@ class TestManufacturerOrderItemResponseSchema:
         fields = ManufacturerOrderItemResponse.model_fields
         assert "status" in fields, "ManufacturerOrderItemResponse should have 'status' field"
 
-    def test_schema_status_field_type(self):
+    def test_schema_status_field_type(self) -> None:
         """AC-016: status フィールドの型が文字列である
 
         given: ManufacturerOrderItemResponse スキーマ
@@ -263,4 +264,4 @@ class TestManufacturerOrderItemResponseSchema:
         status_field = fields.get("status")
         assert status_field is not None
         # フィールドの annotation が str であることを確認
-        assert status_field.annotation == str or "str" in str(status_field.annotation)
+        assert status_field.annotation is str or "str" in str(status_field.annotation)

@@ -4,7 +4,9 @@ Tests SendGrid email sending with mocked client,
 template rendering, and error handling.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from collections.abc import Iterator
+from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -12,7 +14,7 @@ from app.services.email_service import EmailService
 
 
 @pytest.fixture
-def email_service():
+def email_service() -> Iterator[tuple[Any, ...]]:
     """Create EmailService with test config."""
     with patch("app.services.email_service.SendGridAPIClient") as mock_client_cls:
         mock_client = MagicMock()
@@ -26,7 +28,7 @@ def email_service():
 
 
 @pytest.fixture
-def sample_order_items():
+def sample_order_items() -> list[Any]:
     """Sample order items for testing."""
     return [
         {
@@ -46,7 +48,7 @@ class TestEmailServiceSendShippingNotification:
     """Test EmailService.send_shipping_notification()."""
 
     @pytest.mark.asyncio
-    async def test_successful_send(self, email_service, sample_order_items):
+    async def test_successful_send(self, email_service: tuple[Any, ...], sample_order_items: list[Any]) -> None:
         """SendGrid returns 202 -> returns True."""
         service, mock_client = email_service
 
@@ -67,7 +69,7 @@ class TestEmailServiceSendShippingNotification:
         mock_client.send.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_sendgrid_error_status_returns_false(self, email_service, sample_order_items):
+    async def test_sendgrid_error_status_returns_false(self, email_service: tuple[Any, ...], sample_order_items: list[Any]) -> None:
         """SendGrid returns non-success status -> returns False."""
         service, mock_client = email_service
 
@@ -87,7 +89,7 @@ class TestEmailServiceSendShippingNotification:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_sendgrid_exception_returns_false(self, email_service, sample_order_items):
+    async def test_sendgrid_exception_returns_false(self, email_service: tuple[Any, ...], sample_order_items: list[Any]) -> None:
         """SendGrid raises exception -> returns False (never propagates)."""
         service, mock_client = email_service
 
@@ -105,7 +107,7 @@ class TestEmailServiceSendShippingNotification:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_mail_message_has_correct_subject(self, email_service, sample_order_items):
+    async def test_mail_message_has_correct_subject(self, email_service: tuple[Any, ...], sample_order_items: list[Any]) -> None:
         """Mail message has correct Japanese subject line."""
         service, mock_client = email_service
 
@@ -127,7 +129,7 @@ class TestEmailServiceSendShippingNotification:
         assert mail_message.subject.get() == "【Center River】ご注文商品を発送いたしました"
 
     @pytest.mark.asyncio
-    async def test_status_200_returns_true(self, email_service, sample_order_items):
+    async def test_status_200_returns_true(self, email_service: tuple[Any, ...], sample_order_items: list[Any]) -> None:
         """SendGrid returns 200 -> returns True."""
         service, mock_client = email_service
 
@@ -150,7 +152,7 @@ class TestEmailServiceSendShippingNotification:
 class TestEmailServiceBuildTextContent:
     """Test EmailService._build_text_content()."""
 
-    def test_text_content_contains_order_info(self):
+    def test_text_content_contains_order_info(self) -> None:
         """Plain text content includes all key information."""
         with patch("app.services.email_service.SendGridAPIClient"):
             service = EmailService(

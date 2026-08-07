@@ -5,7 +5,7 @@ from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_health_check(client: AsyncClient):
+async def test_health_check(client: AsyncClient) -> None:
     """Test health check endpoint returns 200 OK."""
     response = await client.get("/health")
     assert response.status_code == 200
@@ -14,7 +14,7 @@ async def test_health_check(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_cors_headers(client: AsyncClient):
+async def test_cors_headers(client: AsyncClient) -> None:
     """Test CORS headers are properly set."""
     response = await client.options(
         "/health",
@@ -28,7 +28,7 @@ async def test_cors_headers(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_root_endpoint(client: AsyncClient):
+async def test_root_endpoint(client: AsyncClient) -> None:
     """Test root endpoint returns API info."""
     response = await client.get("/")
     assert response.status_code == 200

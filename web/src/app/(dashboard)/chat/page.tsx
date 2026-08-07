@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { PageContainer } from "@/components/layout/page-container";
 import { PageLoading } from "@/components/common/loading-spinner";
@@ -12,21 +12,23 @@ import { cn } from "@/lib/utils";
 
 function ChatContent() {
   const searchParams = useSearchParams();
+  const manufacturerParam = searchParams.get("manufacturer");
   const [selectedManufacturerId, setSelectedManufacturerId] = useState<string | null>(
-    searchParams.get("manufacturer")
+    manufacturerParam
   );
+  // URL のパラメータが変わったときだけ選択を追従させる。
+  // effect で setState するとレンダリングが 1 往復増えるため、
+  // React の「レンダリング中に state を調整する」手法を使う。
+  const [syncedManufacturerParam, setSyncedManufacturerParam] = useState(manufacturerParam);
+  if (manufacturerParam && manufacturerParam !== syncedManufacturerParam) {
+    setSyncedManufacturerParam(manufacturerParam);
+    setSelectedManufacturerId(manufacturerParam);
+  }
 
   const { manufacturers, isLoading: isLoadingManufacturers } = useManufacturerList();
   const { messages, mutate } = useChat({
     manufacturerId: selectedManufacturerId || "",
   });
-
-  useEffect(() => {
-    const manufacturerParam = searchParams.get("manufacturer");
-    if (manufacturerParam) {
-      setSelectedManufacturerId(manufacturerParam);
-    }
-  }, [searchParams]);
 
   const selectedManufacturer = manufacturers.find(
     (m) => m.id === selectedManufacturerId

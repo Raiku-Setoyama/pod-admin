@@ -1,8 +1,10 @@
 """Order repository for database operations."""
 
+from collections.abc import Sequence
 from datetime import date, datetime
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import ColumnElement, Row, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,6 +16,10 @@ from app.models.order import (
     item_status_for_manufacturing_ready,
 )
 from app.models.product import ProductType
+
+if TYPE_CHECKING:
+    # 型注釈でのみ使う。リポジトリがスキーマを実行時に読み込まないようにする。
+    from app.schemas.shipment import PendingOrderStatus
 
 
 class OrderRepository:
@@ -129,14 +135,20 @@ class OrderRepository:
         await self._db.flush()
         await self._db.refresh(order)
         # Reload order with items to avoid lazy loading issues
-        return await self.find_by_id(order.id)
+        reloaded = await self.find_by_id(order.id)
+        # 直前に flush / refresh しているので必ず見つかる
+        assert reloaded is not None
+        return reloaded
 
     async def update(self, order: Order) -> Order:
         """Update an existing order."""
         await self._db.flush()
         await self._db.refresh(order)
         # Reload order with items to avoid lazy loading issues
-        return await self.find_by_id(order.id)
+        reloaded = await self.find_by_id(order.id)
+        # 直前に flush / refresh しているので必ず見つかる
+        assert reloaded is not None
+        return reloaded
 
     async def update_status(self, order_id: str, status: OrderStatus) -> Order | None:
         """Update order status."""
@@ -153,7 +165,7 @@ class OrderRepository:
         ordered_from: date | None = None,
         ordered_to: date | None = None,
         status: OrderStatus | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Find order items for a specific manufacturer.
 
         Joins: OrderItem -> Product -> Manufacturer
@@ -215,10 +227,10 @@ class OrderRepository:
 
     async def get_ordered_items_summary_by_manufacturer(
         self,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """メーカー別のORDERED受注明細サマリーを取得（OrderItem.statusベース）"""
-        from app.models.product import Product
         from app.models.manufacturer import Manufacturer
+        from app.models.product import Product
 
         query = (
             select(
@@ -237,7 +249,7 @@ class OrderRepository:
             .join(OrderItem, OrderItem.product_id == Product.id)
             .join(Order, Order.id == OrderItem.order_id)
             .where(OrderItem.status == OrderItemStatus.ORDERED.value)  # OrderItem.statusでフィルタ
-            .where(Manufacturer.is_active == True)
+            .where(Manufacturer.is_active.is_(True))
             .group_by(Manufacturer.id)
             .having(func.count(OrderItem.id) > 0)
             .order_by(func.max(Order.ordered_at).desc())
@@ -296,7 +308,7 @@ class OrderRepository:
         search: str | None = None,
         expected_delivery_from: date | None = None,
         expected_delivery_to: date | None = None,
-    ) -> list[tuple]:
+    ) -> Sequence[Row[Any]]:
         """メーカー別の受注明細を詳細情報付きで取得
 
         Args:
@@ -312,8 +324,8 @@ class OrderRepository:
         Returns:
             受注明細のタプルリスト（OrderItem, order_number, ordered_at, customer_name, cost, item_status, order_status, lead_time_days）
         """
-        from app.models.product import Product
         from app.models.manufacturer import Manufacturer
+        from app.models.product import Product
 
         query = (
             select(
@@ -381,7 +393,7 @@ class OrderRepository:
         manufacturer_id: str | None = None,
         expected_delivery_from: date | None = None,
         expected_delivery_to: date | None = None,
-    ) -> list[tuple]:
+    ) -> Sequence[Row[Any]]:
         """全メーカー横断の受注明細を詳細情報付きで取得
 
         Args:
@@ -397,8 +409,8 @@ class OrderRepository:
         Returns:
             受注明細のタプルリスト（OrderItem, order_number, ordered_at, customer_name, cost, status, manufacturer_id, manufacturer_name, lead_time_days）
         """
-        from app.models.product import Product
         from app.models.manufacturer import Manufacturer
+        from app.models.product import Product
 
         query = (
             select(
@@ -720,7 +732,7 @@ class OrderRepository:
         orders_with_shipment = select(ShipmentItem.order_id).distinct()
 
         # Base query for orders without shipments
-        base_conditions = [
+        base_conditions: list[ColumnElement[bool]] = [
             Order.id.notin_(orders_with_shipment),
             Order.status.notin_([OrderStatus.SHIPPED.value, OrderStatus.CANCELLED.value]),
         ]

@@ -1,7 +1,9 @@
 """Unit tests for ManufacturingDataService and the manufacturing readiness gate."""
 
 import asyncio
+from collections.abc import AsyncIterator
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -17,11 +19,11 @@ from app.utils.exceptions import ConflictError, NotFoundError
 
 def _v2_item(
     *,
-    product_code="RKSYO-1",
-    product_type="acrylic_keychain",
-    size="50x50mm",
-    layers=("color", "cutline"),
-):
+    product_code: str="RKSYO-1",
+    product_type: str="acrylic_keychain",
+    size: str="50x50mm",
+    layers: Any=("color", "cutline"),
+) -> Any:
     """v2 明細（product_code + source_images あり）の簡易モック."""
     return SimpleNamespace(
         id="item-1",
@@ -34,7 +36,7 @@ def _v2_item(
     )
 
 
-def _service(md_repo, order_repo=None, **kwargs):
+def _service(md_repo: Any, order_repo: Any=None, **kwargs: Any) -> Any:
     return ManufacturingDataService(
         md_repo=md_repo,
         order_repo=order_repo or AsyncMock(),
@@ -50,7 +52,7 @@ def _assign_id(md: ManufacturingData, new_id: str = "md-new") -> ManufacturingDa
 
 class TestCacheResolution:
     @pytest.mark.asyncio
-    async def test_creates_new_row_and_requests_generation(self):
+    async def test_creates_new_row_and_requests_generation(self) -> None:
         item = _v2_item()
         order = SimpleNamespace(order_source_id="src-1", items=[item])
         order_repo = AsyncMock()
@@ -73,7 +75,7 @@ class TestCacheResolution:
         assert called.args == ("src-1", "RKSYO-1", "50x50mm", "clear")
 
     @pytest.mark.asyncio
-    async def test_reuses_ready_cache_without_generation(self):
+    async def test_reuses_ready_cache_without_generation(self) -> None:
         item = _v2_item()
         order = SimpleNamespace(order_source_id="src-1", items=[item])
         order_repo = AsyncMock()
@@ -97,7 +99,7 @@ class TestCacheResolution:
         md_repo.create.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_failed_cache_is_reset_and_regenerated(self):
+    async def test_failed_cache_is_reset_and_regenerated(self) -> None:
         item = _v2_item()
         order = SimpleNamespace(order_source_id="src-1", items=[item])
         order_repo = AsyncMock()
@@ -118,7 +120,7 @@ class TestCacheResolution:
         assert item.manufacturing_data_id == "md-failed"
 
     @pytest.mark.asyncio
-    async def test_unmappable_product_creates_failed_row_no_generation(self):
+    async def test_unmappable_product_creates_failed_row_no_generation(self) -> None:
         # mug_cup は pod-admin ProductType 外 → マッピング不能 → failed 行（発注ゲートで保留）
         item = _v2_item(product_type="mug_cup", size="normal", layers=("design",))
         order = SimpleNamespace(order_source_id="src-1", items=[item])
@@ -137,7 +139,7 @@ class TestCacheResolution:
         assert created.status == MfgDataStatus.FAILED.value
 
     @pytest.mark.asyncio
-    async def test_v1_items_are_ignored(self):
+    async def test_v1_items_are_ignored(self) -> None:
         v1 = SimpleNamespace(
             id="i", product_code=None, source_images=None, manufacturing_data_id=None
         )
@@ -151,7 +153,7 @@ class TestCacheResolution:
         md_repo.find_by_cache_key.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_insert_row_recovers_existing_on_conflict_marks_not_created(self):
+    async def test_insert_row_recovers_existing_on_conflict_marks_not_created(self) -> None:
         # 同時受注でキャッシュキーが競合したら、既存行を回収し created=False を返す
         # （作成した側だけが生成を起動し、二重生成しないようにする）。
         from sqlalchemy.exc import IntegrityError
@@ -167,10 +169,10 @@ class TestCacheResolution:
         md_repo.find_by_cache_key.return_value = existing
 
         class _Nested:
-            async def __aenter__(self):
+            async def __aenter__(self) -> Any:
                 return self
 
-            async def __aexit__(self, *exc):
+            async def __aexit__(self, *exc: Any) -> bool:
                 return False
 
         session = MagicMock()
@@ -195,7 +197,7 @@ class TestCacheResolution:
 
 
 class TestGenerateDriver:
-    def _pending_md(self):
+    def _pending_md(self) -> Any:
         md = ManufacturingData(product_code="RKSYO-1", product_type="sticker", size="50x50mm")
         md.id = "md-1"
         md.status = MfgDataStatus.PENDING.value
@@ -207,7 +209,7 @@ class TestGenerateDriver:
         return md
 
     @pytest.mark.asyncio
-    async def test_successful_generation_marks_ready(self):
+    async def test_successful_generation_marks_ready(self) -> None:
         md = self._pending_md()
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
@@ -243,7 +245,7 @@ class TestGenerateDriver:
         )
 
     @pytest.mark.asyncio
-    async def test_vm_failure_marks_failed_with_message(self):
+    async def test_vm_failure_marks_failed_with_message(self) -> None:
         md = self._pending_md()
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
@@ -260,7 +262,7 @@ class TestGenerateDriver:
         assert "VM 503" in md.error_message
 
     @pytest.mark.asyncio
-    async def test_not_configured_vm_marks_failed(self):
+    async def test_not_configured_vm_marks_failed(self) -> None:
         md = self._pending_md()
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
@@ -272,7 +274,7 @@ class TestGenerateDriver:
         assert "not configured" in md.error_message
 
     @pytest.mark.asyncio
-    async def test_ready_row_is_skipped(self):
+    async def test_ready_row_is_skipped(self) -> None:
         md = self._pending_md()
         md.status = MfgDataStatus.READY.value
         md_repo = AsyncMock()
@@ -286,7 +288,7 @@ class TestGenerateDriver:
         vm_client.submit.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_generate_skips_when_claim_not_acquired(self):
+    async def test_generate_skips_when_claim_not_acquired(self) -> None:
         # 別ワーカーが既に生成中（claim 失敗）なら VM を叩かず抜ける（二重生成防止）。
         md = self._pending_md()
         md_repo = AsyncMock()
@@ -302,7 +304,7 @@ class TestGenerateDriver:
         assert md.attempts == 0  # claim できていないので attempts も加算されない
 
     @pytest.mark.asyncio
-    async def test_download_skips_failed_optional_layer(self):
+    async def test_download_skips_failed_optional_layer(self) -> None:
         # optional(white) の取得が失敗しても例外を投げず、成功したレイヤーのみ返す。
         source_images = [
             {"layer_type": "color", "url": "https://x/color.png"},
@@ -311,44 +313,44 @@ class TestGenerateDriver:
         ]
 
         class _StreamResp:
-            def __init__(self, chunks):
+            def __init__(self, chunks: Any) -> None:
                 self._chunks = chunks
 
             def raise_for_status(self) -> None:
                 return None
 
-            async def aiter_bytes(self):
+            async def aiter_bytes(self) -> AsyncIterator[Any]:
                 for c in self._chunks:
                     yield c
 
         class _StreamCtx:
-            def __init__(self, resp):
+            def __init__(self, resp: Any) -> None:
                 self._resp = resp
 
-            async def __aenter__(self):
+            async def __aenter__(self) -> Any:
                 return self._resp
 
-            async def __aexit__(self, *exc):
+            async def __aexit__(self, *exc: Any) -> bool:
                 return False
 
         class _FakeClient:
-            def __init__(self, *args, **kwargs):
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
                 pass
 
-            async def __aenter__(self):
+            async def __aenter__(self) -> Any:
                 return self
 
-            async def __aexit__(self, *exc):
+            async def __aexit__(self, *exc: Any) -> bool:
                 return False
 
-            def stream(self, method, url):
+            def stream(self, method: Any, url: Any) -> Any:
                 if "white" in url:
                     raise httpx.ConnectError("refused")
                 return _StreamCtx(_StreamResp([b"OK"]))
 
         # host "x" は許可リストで素通し（このテストの主眼はレイヤー欠落の耐性）。
         svc = _service(AsyncMock(), allowed_source_hosts=frozenset({"x"}))
-        with patch.object(mds.httpx, "AsyncClient", _FakeClient):
+        with patch("app.services.manufacturing_data_service.httpx.AsyncClient", _FakeClient):
             images = await svc._download_source_images(
                 source_images, {"color", "cutline", "white"}
             )
@@ -358,7 +360,7 @@ class TestGenerateDriver:
 
 class TestRetry:
     @pytest.mark.asyncio
-    async def test_retry_resets_to_pending_and_enqueues(self):
+    async def test_retry_resets_to_pending_and_enqueues(self) -> None:
         from datetime import UTC, datetime
 
         md = ManufacturingData(product_code="p", product_type="sticker")
@@ -382,14 +384,14 @@ class TestRetry:
         bg.add_task.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_retry_missing_raises(self):
+    async def test_retry_missing_raises(self) -> None:
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = None
         with pytest.raises(NotFoundError):
             await _service(md_repo).retry("missing", MagicMock())
 
     @pytest.mark.asyncio
-    async def test_retry_rejects_non_failed_row(self):
+    async def test_retry_rejects_non_failed_row(self) -> None:
         # ready 行を retry で巻き戻さない（共有キャッシュ行なので他注文を劣化させる）。
         md = ManufacturingData(product_code="p", product_type="sticker")
         md.id = "md-1"
@@ -408,7 +410,7 @@ class TestRetry:
 class TestRegenerate:
     """製造データ GUI 再作成（regenerate）の前提条件・波及のテスト."""
 
-    def _md(self, status=MfgDataStatus.READY.value):
+    def _md(self, status: Any=MfgDataStatus.READY.value) -> Any:
         from datetime import UTC, datetime
 
         md = ManufacturingData(product_code="p", product_type="sticker")
@@ -420,7 +422,7 @@ class TestRegenerate:
         return md
 
     @pytest.mark.asyncio
-    async def test_regenerate_demotes_and_enqueues_when_pre_manufacturing(self):
+    async def test_regenerate_demotes_and_enqueues_when_pre_manufacturing(self) -> None:
         # 参照明細が全て発注準備中/発注済みなら再作成可。ready 行を pending に戻し、
         # 発注済み明細を発注準備中へ戻して（demote）バックグラウンド生成を起動する。
         md = self._md(MfgDataStatus.READY.value)
@@ -442,7 +444,7 @@ class TestRegenerate:
         assert resp.status == MfgDataStatus.PENDING.value
 
     @pytest.mark.asyncio
-    async def test_regenerate_allows_failed_row(self):
+    async def test_regenerate_allows_failed_row(self) -> None:
         md = self._md(MfgDataStatus.FAILED.value)
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
@@ -457,7 +459,7 @@ class TestRegenerate:
         bg.add_task.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_regenerate_blocked_when_shared_with_manufacturing(self):
+    async def test_regenerate_blocked_when_shared_with_manufacturing(self) -> None:
         # 共有明細に製造中があれば、その注文の完成データ保護のため再作成不可。
         md = self._md(MfgDataStatus.READY.value)
         md_repo = AsyncMock()
@@ -475,7 +477,7 @@ class TestRegenerate:
         bg.add_task.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_regenerate_blocked_when_shared_with_delivered(self):
+    async def test_regenerate_blocked_when_shared_with_delivered(self) -> None:
         md = self._md(MfgDataStatus.READY.value)
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
@@ -488,7 +490,7 @@ class TestRegenerate:
         bg.add_task.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_regenerate_rejects_generating(self):
+    async def test_regenerate_rejects_generating(self) -> None:
         # 生成中は進行中ジョブと競合させないため、ゲート判定前に即拒否する。
         md = self._md(MfgDataStatus.GENERATING.value)
         md_repo = AsyncMock()
@@ -504,7 +506,7 @@ class TestRegenerate:
         bg.add_task.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_regenerate_missing_raises(self):
+    async def test_regenerate_missing_raises(self) -> None:
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = None
         with pytest.raises(NotFoundError):
@@ -513,7 +515,7 @@ class TestRegenerate:
 
 class TestRecovery:
     @pytest.mark.asyncio
-    async def test_recover_reenqueues_reclaimed_ids(self):
+    async def test_recover_reenqueues_reclaimed_ids(self) -> None:
         # 起動時復旧: 宙吊り行を reclaim（pending へ戻す）して得た id を再駆動する。
         session = AsyncMock()
         session_cm = MagicMock()
@@ -542,23 +544,23 @@ class TestRecovery:
 
 
 class TestManufacturingReadinessGate:
-    def test_v1_item_is_always_ready(self):
+    def test_v1_item_is_always_ready(self) -> None:
         item = OrderItem(manufacturing_data_id=None)
         assert item.is_manufacturing_ready is True
 
-    def test_required_but_missing_data_not_ready(self):
+    def test_required_but_missing_data_not_ready(self) -> None:
         item = OrderItem(manufacturing_data_id="md-1")
         item.manufacturing_data = None
         assert item.is_manufacturing_ready is False
 
-    def test_required_and_ready(self):
+    def test_required_and_ready(self) -> None:
         item = OrderItem(manufacturing_data_id="md-1")
         md = ManufacturingData(product_code="p", product_type="sticker")
         md.status = MfgDataStatus.READY.value
         item.manufacturing_data = md
         assert item.is_manufacturing_ready is True
 
-    def test_required_but_pending_not_ready(self):
+    def test_required_but_pending_not_ready(self) -> None:
         item = OrderItem(manufacturing_data_id="md-1")
         md = ManufacturingData(product_code="p", product_type="sticker")
         md.status = MfgDataStatus.PENDING.value

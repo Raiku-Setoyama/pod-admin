@@ -3,6 +3,7 @@
 import io
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -24,7 +25,7 @@ def _upload(filename: str = "new_color.png", content: bytes = PNG) -> UploadFile
 def _md(
     *,
     status: str = MfgDataStatus.READY.value,
-    source_images: list | None = None,
+    source_images: list[Any] | None = None,
 ) -> ManufacturingData:
     md = ManufacturingData(product_code="RKSYO-1", product_type="acrylic_keychain")
     md.id = "md-1"
@@ -45,7 +46,7 @@ def _md(
     return md
 
 
-def _service(md: ManufacturingData | None, *, storage=None, order_repo=None, **kwargs):
+def _service(md: ManufacturingData | None, *, storage: Any=None, order_repo: Any=None, **kwargs: Any) -> Any:
     md_repo = AsyncMock()
     md_repo.find_by_id.return_value = md
     md_repo.find_by_cache_key.return_value = md
@@ -62,7 +63,7 @@ def _service(md: ManufacturingData | None, *, storage=None, order_repo=None, **k
     return svc
 
 
-def _storage(save_path: str = "source_images/20260726_abcd1234.png"):
+def _storage(save_path: str = "source_images/20260726_abcd1234.png") -> Any:
     storage = MagicMock()
     storage.save = AsyncMock(return_value=save_path)
     storage.get = AsyncMock(return_value=PNG)
@@ -71,7 +72,7 @@ def _storage(save_path: str = "source_images/20260726_abcd1234.png"):
 
 class TestReplaceSourceImages:
     @pytest.mark.asyncio
-    async def test_replaces_layer_and_restarts_generation(self):
+    async def test_replaces_layer_and_restarts_generation(self) -> None:
         md = _md()
         storage = _storage()
         svc = _service(md, storage=storage)
@@ -112,7 +113,7 @@ class TestReplaceSourceImages:
         assert resp.source_images[1].url == "https://x/cutline.png"
 
     @pytest.mark.asyncio
-    async def test_replaces_multiple_layers_with_single_generation(self):
+    async def test_replaces_multiple_layers_with_single_generation(self) -> None:
         md = _md()
         svc = _service(md)
         bg = MagicMock()
@@ -124,11 +125,12 @@ class TestReplaceSourceImages:
             background_tasks=bg,
         )
 
+        assert md.source_images is not None
         assert [img["filename"] for img in md.source_images] == ["c.png", "k.png"]
         bg.add_task.assert_called_once()  # 再生成は1回だけ
 
     @pytest.mark.asyncio
-    async def test_missing_row_raises_not_found(self):
+    async def test_missing_row_raises_not_found(self) -> None:
         with pytest.raises(NotFoundError):
             await _service(None).replace_source_images(
                 "missing",
@@ -138,7 +140,7 @@ class TestReplaceSourceImages:
             )
 
     @pytest.mark.asyncio
-    async def test_rejects_while_generating(self):
+    async def test_rejects_while_generating(self) -> None:
         md = _md(status=MfgDataStatus.GENERATING.value)
         svc = _service(md)
         bg = MagicMock()
@@ -152,7 +154,7 @@ class TestReplaceSourceImages:
         bg.add_task.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_rejects_when_shared_with_manufacturing_order(self):
+    async def test_rejects_when_shared_with_manufacturing_order(self) -> None:
         md = _md()
         order_repo = AsyncMock()
         order_repo.has_manufacturing_or_delivered_items.return_value = True
@@ -168,7 +170,7 @@ class TestReplaceSourceImages:
         bg.add_task.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_rejects_row_without_source_images(self):
+    async def test_rejects_row_without_source_images(self) -> None:
         # マッピング不能で作られた failed 行など、元データを持たない行は差し替え対象外。
         md = _md(status=MfgDataStatus.FAILED.value, source_images=[])
         with pytest.raises(ConflictError):
@@ -188,7 +190,7 @@ class TestReplaceSourceImages:
             pytest.param({"white": _upload()}, id="layer-not-on-row"),
         ],
     )
-    async def test_rejects_invalid_layer_specification(self, uploads):
+    async def test_rejects_invalid_layer_specification(self, uploads: Any) -> None:
         md = _md()
         storage = _storage()
         svc = _service(md, storage=storage)
@@ -204,7 +206,7 @@ class TestReplaceSourceImages:
         storage.save.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_rejects_non_png_upload(self):
+    async def test_rejects_non_png_upload(self) -> None:
         md = _md()
         storage = _storage()
         svc = _service(md, storage=storage)
@@ -220,7 +222,7 @@ class TestReplaceSourceImages:
         storage.save.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_rejects_upload_over_size_limit(self):
+    async def test_rejects_upload_over_size_limit(self) -> None:
         md = _md()
         storage = _storage()
         svc = _service(md, storage=storage, max_source_bytes=4)
@@ -236,7 +238,7 @@ class TestReplaceSourceImages:
         storage.save.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_partial_failure_saves_nothing(self):
+    async def test_partial_failure_saves_nothing(self) -> None:
         # 2件目が不正なら1件目も保存しない（中途半端な差し替えを作らない）。
         md = _md()
         storage = _storage()
@@ -251,12 +253,13 @@ class TestReplaceSourceImages:
             )
 
         storage.save.assert_not_called()
+        assert md.source_images is not None
         assert md.source_images[0] == {"layer_type": "color", "url": "https://x/color.png"}
 
 
 class TestSourceImageAccess:
     @pytest.mark.asyncio
-    async def test_get_detail_reports_layer_origin(self):
+    async def test_get_detail_reports_layer_origin(self) -> None:
         md = _md(
             source_images=[
                 {"layer_type": "color", "file_path": "source_images/a.png", "filename": "a.png"},
@@ -270,7 +273,7 @@ class TestSourceImageAccess:
         ]
 
     @pytest.mark.asyncio
-    async def test_get_source_image_returns_uploaded_file(self):
+    async def test_get_source_image_returns_uploaded_file(self) -> None:
         md = _md(
             source_images=[
                 {"layer_type": "color", "file_path": "source_images/a.png", "filename": "a.png"}
@@ -282,14 +285,14 @@ class TestSourceImageAccess:
         storage.get.assert_awaited_once_with("source_images/a.png")
 
     @pytest.mark.asyncio
-    async def test_get_source_image_404_for_external_layer(self):
+    async def test_get_source_image_404_for_external_layer(self) -> None:
         # 外部受注由来（URL のみ）は pod-admin 側に実体がないため 404。
         md = _md()
         with pytest.raises(NotFoundError):
             await _service(md).get_source_image("md-1", "color")
 
     @pytest.mark.asyncio
-    async def test_get_source_image_404_when_file_missing(self):
+    async def test_get_source_image_404_when_file_missing(self) -> None:
         md = _md(
             source_images=[{"layer_type": "color", "file_path": "source_images/gone.png"}]
         )
@@ -301,7 +304,7 @@ class TestSourceImageAccess:
 
 class TestGenerationUsesReplacedSource:
     @pytest.mark.asyncio
-    async def test_download_reads_stored_file_instead_of_url(self):
+    async def test_download_reads_stored_file_instead_of_url(self) -> None:
         source_images = [
             {"layer_type": "color", "file_path": "source_images/a.png", "filename": "a.png"},
             {"layer_type": "cutline", "url": "https://x/cutline.png"},
@@ -318,7 +321,7 @@ class TestGenerationUsesReplacedSource:
         storage.get.assert_awaited_once_with("source_images/a.png")
 
     @pytest.mark.asyncio
-    async def test_missing_stored_file_skips_layer_only(self):
+    async def test_missing_stored_file_skips_layer_only(self) -> None:
         # 保存済みファイルが失われても、他レイヤーの取得は継続する（必須不足は呼び出し側が判定）。
         source_images = [
             {"layer_type": "color", "file_path": "source_images/gone.png"},
@@ -334,7 +337,7 @@ class TestGenerationUsesReplacedSource:
         assert images == {"cutline": b"CUTLINE"}
 
     @pytest.mark.asyncio
-    async def test_generate_sends_replaced_layer_to_vm(self):
+    async def test_generate_sends_replaced_layer_to_vm(self) -> None:
         md = _md(
             status=MfgDataStatus.PENDING.value,
             source_images=[
@@ -366,7 +369,7 @@ class TestGenerationUsesReplacedSource:
 class TestIntakeKeepsReplacedSource:
     """再受注で元データを更新するとき、差し替え済みレイヤーを維持することのテスト."""
 
-    def _intake_item(self, color_url: str = "https://x/new-color.png"):
+    def _intake_item(self, color_url: str = "https://x/new-color.png") -> Any:
         return SimpleNamespace(
             id="item-1",
             product_code="RKSYO-1",
@@ -381,7 +384,7 @@ class TestIntakeKeepsReplacedSource:
             status=None,
         )
 
-    async def _reintake(self, existing, item):
+    async def _reintake(self, existing: Any, item: Any) -> Any:
         order_repo = AsyncMock()
         order_repo.find_by_id.return_value = SimpleNamespace(
             order_source_id="src-1", items=[item]
@@ -390,7 +393,7 @@ class TestIntakeKeepsReplacedSource:
         return await svc.prepare_for_order("order-1")
 
     @pytest.mark.asyncio
-    async def test_replaced_layer_survives_and_others_are_refreshed(self):
+    async def test_replaced_layer_survives_and_others_are_refreshed(self) -> None:
         # 差し替え後に生成が失敗した行を新規受注が拾っても、差し替えた色版は残す。
         uploaded_color = {"layer_type": "color", "file_path": "source_images/a.png"}
         existing = _md(
@@ -409,7 +412,7 @@ class TestIntakeKeepsReplacedSource:
         ]
 
     @pytest.mark.asyncio
-    async def test_row_without_replacement_is_fully_refreshed_from_intake(self):
+    async def test_row_without_replacement_is_fully_refreshed_from_intake(self) -> None:
         existing = _md(status=MfgDataStatus.FAILED.value, source_images=[])
         item = self._intake_item()
 
@@ -419,12 +422,12 @@ class TestIntakeKeepsReplacedSource:
 
 
 @pytest.mark.asyncio
-async def test_replace_then_generate_end_to_end_in_memory():
+async def test_replace_then_generate_end_to_end_in_memory() -> None:
     """差し替え → 生成 が同じ FileStorage 上で噛み合うことを確認する."""
     md = _md()
     saved: dict[str, bytes] = {}
 
-    async def fake_save(upload, prefix=""):
+    async def fake_save(upload: Any, prefix: Any="") -> Any:
         path = f"{prefix}/{upload.filename}"
         saved[path] = upload.read()
         return path

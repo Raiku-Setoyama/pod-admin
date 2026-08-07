@@ -5,14 +5,14 @@ Tests cover OrderStatus.CANCELLED enum, OrderCancelResponse schema,
 and ExternalService.cancel_order service logic.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.models.order import Order, OrderStatus
 from app.utils.exceptions import AppException, NotFoundError
-
 
 # ============================================================
 # AC-001: OrderStatus enum に CANCELLED が存在し、値が "cancelled"
@@ -22,18 +22,18 @@ from app.utils.exceptions import AppException, NotFoundError
 class TestOrderStatusCancelled:
     """Tests for OrderStatus.CANCELLED enum value."""
 
-    def test_cancelled_enum_exists(self):
+    def test_cancelled_enum_exists(self) -> None:
         """AC-001: OrderStatus.CANCELLED が存在する."""
         assert hasattr(OrderStatus, "CANCELLED")
 
-    def test_cancelled_enum_value(self):
+    def test_cancelled_enum_value(self) -> None:
         """AC-001: OrderStatus.CANCELLED の値が 'cancelled' である."""
         assert OrderStatus.CANCELLED.value == "cancelled"
 
-    def test_cancelled_is_str_enum(self):
+    def test_cancelled_is_str_enum(self) -> None:
         """AC-001: OrderStatus.CANCELLED は str として使える."""
         assert isinstance(OrderStatus.CANCELLED, str)
-        assert OrderStatus.CANCELLED == "cancelled"
+        assert OrderStatus.CANCELLED.value == "cancelled"
 
 
 # ============================================================
@@ -44,11 +44,11 @@ class TestOrderStatusCancelled:
 class TestOrderCancelResponseSchema:
     """Tests for OrderCancelResponse schema."""
 
-    def test_schema_has_required_fields(self):
+    def test_schema_has_required_fields(self) -> None:
         """AC-002: OrderCancelResponse が order_number, status, cancelled_at を持つ."""
         from app.schemas.external import OrderCancelResponse
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         response = OrderCancelResponse(
             order_number="ORD-001",
             status=OrderStatus.CANCELLED,
@@ -59,33 +59,33 @@ class TestOrderCancelResponseSchema:
         assert response.status == OrderStatus.CANCELLED
         assert response.cancelled_at == now
 
-    def test_schema_order_number_is_str(self):
+    def test_schema_order_number_is_str(self) -> None:
         """AC-002: order_number は str 型."""
         from app.schemas.external import OrderCancelResponse
 
         response = OrderCancelResponse(
             order_number="TEST-123",
             status=OrderStatus.CANCELLED,
-            cancelled_at=datetime.now(timezone.utc),
+            cancelled_at=datetime.now(UTC),
         )
         assert isinstance(response.order_number, str)
 
-    def test_schema_status_is_order_status(self):
+    def test_schema_status_is_order_status(self) -> None:
         """AC-002: status は OrderStatus 型."""
         from app.schemas.external import OrderCancelResponse
 
         response = OrderCancelResponse(
             order_number="TEST-123",
             status=OrderStatus.CANCELLED,
-            cancelled_at=datetime.now(timezone.utc),
+            cancelled_at=datetime.now(UTC),
         )
         assert isinstance(response.status, OrderStatus)
 
-    def test_schema_cancelled_at_is_datetime(self):
+    def test_schema_cancelled_at_is_datetime(self) -> None:
         """AC-002: cancelled_at は datetime 型."""
         from app.schemas.external import OrderCancelResponse
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         response = OrderCancelResponse(
             order_number="TEST-123",
             status=OrderStatus.CANCELLED,
@@ -109,7 +109,7 @@ def create_mock_order(
     order.id = order_id
     order.order_number = order_number
     order.status = status
-    order.updated_at = datetime.now(timezone.utc)
+    order.updated_at = datetime.now(UTC)
     return order
 
 
@@ -119,19 +119,19 @@ def create_mock_order(
 
 
 @pytest.fixture
-def mock_order_repo():
+def mock_order_repo() -> Any:
     """Mock order repository."""
     return AsyncMock()
 
 
 @pytest.fixture
-def mock_product_repo():
+def mock_product_repo() -> Any:
     """Mock product repository."""
     return AsyncMock()
 
 
 @pytest.fixture
-def external_service(mock_product_repo, mock_order_repo):
+def external_service(mock_product_repo: Any, mock_order_repo: Any) -> Any:
     """Create ExternalService with mocked dependencies."""
     from app.services.external_service import ExternalService
 
@@ -148,8 +148,8 @@ class TestCancelOrderSuccess:
 
     @pytest.mark.asyncio
     async def test_cancel_ordered_order_success(
-        self, external_service, mock_order_repo
-    ):
+        self, external_service: Any, mock_order_repo: Any
+    ) -> None:
         """AC-003: ordered ステータスの注文を cancelled に更新できる."""
         # Arrange
         order = create_mock_order(status=OrderStatus.ORDERED.value)
@@ -159,7 +159,7 @@ class TestCancelOrderSuccess:
         mock_order_repo.update_status.return_value = updated_order
 
         # Act
-        result = await external_service.cancel_order("ORD-001")
+        await external_service.cancel_order("ORD-001")
 
         # Assert
         mock_order_repo.find_by_order_number.assert_called_once_with("ORD-001")
@@ -169,8 +169,8 @@ class TestCancelOrderSuccess:
 
     @pytest.mark.asyncio
     async def test_cancel_order_returns_cancel_response(
-        self, external_service, mock_order_repo
-    ):
+        self, external_service: Any, mock_order_repo: Any
+    ) -> None:
         """AC-003: キャンセル成功時に OrderCancelResponse が返される."""
         from app.schemas.external import OrderCancelResponse
 
@@ -200,8 +200,8 @@ class TestCancelOrderNotFound:
 
     @pytest.mark.asyncio
     async def test_cancel_nonexistent_order_raises_not_found(
-        self, external_service, mock_order_repo
-    ):
+        self, external_service: Any, mock_order_repo: Any
+    ) -> None:
         """AC-004: 存在しない order_number を指定すると NotFoundError が発生."""
         # Arrange
         mock_order_repo.find_by_order_number.return_value = None
@@ -223,8 +223,8 @@ class TestCancelManufacturingOrder:
 
     @pytest.mark.asyncio
     async def test_cancel_manufacturing_order_raises_conflict(
-        self, external_service, mock_order_repo
-    ):
+        self, external_service: Any, mock_order_repo: Any
+    ) -> None:
         """AC-005: manufacturing ステータスの注文を取り消すと 409 エラー."""
         # Arrange
         order = create_mock_order(status=OrderStatus.MANUFACTURING.value)
@@ -247,8 +247,8 @@ class TestCancelShippedOrder:
 
     @pytest.mark.asyncio
     async def test_cancel_shipped_order_raises_conflict(
-        self, external_service, mock_order_repo
-    ):
+        self, external_service: Any, mock_order_repo: Any
+    ) -> None:
         """AC-006: shipped ステータスの注文を取り消すと 409 エラー."""
         # Arrange
         order = create_mock_order(status=OrderStatus.SHIPPED.value)
@@ -271,8 +271,8 @@ class TestCancelDeliveredOrder:
 
     @pytest.mark.asyncio
     async def test_cancel_delivered_order_raises_conflict(
-        self, external_service, mock_order_repo
-    ):
+        self, external_service: Any, mock_order_repo: Any
+    ) -> None:
         """AC-007: delivered ステータスの注文を取り消すと 409 エラー."""
         # Arrange
         order = create_mock_order(status=OrderStatus.DELIVERED.value)
@@ -295,8 +295,8 @@ class TestCancelAlreadyCancelledOrder:
 
     @pytest.mark.asyncio
     async def test_cancel_already_cancelled_order_raises_conflict(
-        self, external_service, mock_order_repo
-    ):
+        self, external_service: Any, mock_order_repo: Any
+    ) -> None:
         """既にキャンセル済みの注文を再度キャンセルすると 409 エラー."""
         # Arrange
         order = create_mock_order(status=OrderStatus.CANCELLED.value)

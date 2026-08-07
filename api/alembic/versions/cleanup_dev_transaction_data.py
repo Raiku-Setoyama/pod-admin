@@ -18,7 +18,6 @@ Create Date: 2026-03-23
 
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
 revision = "cleanup_dev_transaction_data"
 down_revision = "add_shipping_email_sent"

@@ -14,6 +14,7 @@ import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 # Add the project root to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -47,7 +48,7 @@ SAMPLE_THUMBNAIL_IMAGE_URL = "https://jmgzsiogrviyrppxtaqs.supabase.co/storage/v
 # =============================================================================
 # 顧客データ（5パターン）
 # =============================================================================
-CUSTOMERS = [
+CUSTOMERS: list[dict[str, Any]] = [
     {
         "name": "山田 太郎",
         "postal_code": "150-0001",
@@ -98,7 +99,7 @@ CUSTOMERS = [
 # =============================================================================
 # 商品名パターン
 # =============================================================================
-PRODUCT_NAMES = {
+PRODUCT_NAMES: dict[str, list[str]] = {
     "tshirt": [
         "オリジナルTシャツ A柄",
         "限定デザインTシャツ",
@@ -162,7 +163,7 @@ async def seed_users(session: AsyncSession) -> dict[str, User]:
     """管理者アカウントを作成."""
     print("ユーザーを作成中...")
 
-    users_data = [
+    users_data: list[dict[str, Any]] = [
         {
             "id": generate_uuid(),
             "email": "admin@example.com",
@@ -196,7 +197,7 @@ async def seed_manufacturers(session: AsyncSession) -> dict[str, Manufacturer]:
     """メーカーを作成."""
     print("メーカーを作成中...")
 
-    manufacturers_data = [
+    manufacturers_data: list[dict[str, Any]] = [
         {
             "id": generate_uuid(),
             "name": "シードット",
@@ -270,7 +271,7 @@ async def seed_products(
     seedot_id = manufacturers["シードット"].id
     sample1_id = manufacturers["サンプルメーカー1"].id
 
-    products_data = [
+    products_data: list[dict[str, Any]] = [
         # シードット - Tシャツ (4サイズ)
         {"product_type": ProductType.TSHIRT.value, "size": "S", "position": "正面", "color": "白", "manufacturer_id": seedot_id, "cost": 870, "lead_time_days": 10},
         {"product_type": ProductType.TSHIRT.value, "size": "M", "position": "正面", "color": "白", "manufacturer_id": seedot_id, "cost": 870, "lead_time_days": 10},
@@ -313,7 +314,7 @@ async def seed_order_sources(session: AsyncSession) -> dict[str, OrderSource]:
     """受注元を作成."""
     print("受注元を作成中...")
 
-    order_sources_data = [
+    order_sources_data: list[dict[str, Any]] = [
         {
             "id": generate_uuid(),
             "code": "TEST",
@@ -409,7 +410,7 @@ async def seed_orders(
     order_index = 1
 
     for status, count in status_counts:
-        for i in range(count):
+        for _ in range(count):
             customer = random.choice(CUSTOMERS)
             order_source = random.choice(order_sources_list)
 
@@ -563,9 +564,6 @@ async def seed_chat_messages(
     """
     print("チャットメッセージを作成中...")
 
-    jst = timezone(timedelta(hours=9))
-    now = datetime.now(jst)
-
     admin_messages = [
         "お世話になっております。今月分の発注についてご確認いただけますでしょうか。",
         "納品予定日を教えていただけますか？",
@@ -581,9 +579,8 @@ async def seed_chat_messages(
 
     for mfr_name, manufacturer in manufacturers.items():
         # 管理者からのメッセージ
-        for i, content in enumerate(admin_messages):
+        for content in admin_messages:
             msg_id = generate_uuid()
-            created_at = now - timedelta(days=10 - i, hours=random.randint(9, 17))
 
             message = ChatMessage(
                 id=msg_id,
@@ -592,7 +589,7 @@ async def seed_chat_messages(
                 sender_name="管理者",
                 content=content,
             )
-            # created_atを手動で設定するため、後で更新
+            # created_at は DB のデフォルト（登録時刻）に任せる
             session.add(message)
             messages[msg_id] = message
 

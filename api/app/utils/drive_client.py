@@ -2,7 +2,6 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Protocol
 
 logger = logging.getLogger(__name__)
 

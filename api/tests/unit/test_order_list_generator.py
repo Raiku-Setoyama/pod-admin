@@ -2,6 +2,7 @@
 
 import io
 from datetime import datetime
+from typing import Any
 
 import pytest
 from openpyxl import load_workbook
@@ -13,11 +14,11 @@ class TestOrderListGenerator:
     """Tests for OrderListGenerator class."""
 
     @pytest.fixture
-    def generator(self):
+    def generator(self) -> Any:
         """Create generator instance."""
         return OrderListGenerator()
 
-    def test_generate_order_list_csv_with_items(self, generator):
+    def test_generate_order_list_csv_with_items(self, generator: Any) -> None:
         """Test CSV generation with items."""
         items = [
             {
@@ -73,7 +74,7 @@ class TestOrderListGenerator:
         assert "2624714" in lines[2]
         assert "【個数】2個" in lines[2]
 
-    def test_generate_order_list_csv_empty_items(self, generator):
+    def test_generate_order_list_csv_empty_items(self, generator: Any) -> None:
         """Test CSV generation with no items."""
         result = generator.generate_order_list_csv([])
 
@@ -84,7 +85,7 @@ class TestOrderListGenerator:
         assert len(lines) == 1
         assert lines[0] == "注文日,注文番号,製品番号,商品名,商品種類,原価,個数,シール用テキスト情報"
 
-    def test_generate_order_list_csv_seal_text_format(self, generator):
+    def test_generate_order_list_csv_seal_text_format(self, generator: Any) -> None:
         """Test seal text format is correct with MMDD and product_detail."""
         items = [
             {
@@ -109,7 +110,7 @@ class TestOrderListGenerator:
         expected_seal = "Tシャツ - M - 正面 - 白【個数】5個_ORD123_PROD456_1215"
         assert expected_seal in content
 
-    def test_generate_order_list_csv_date_format(self, generator):
+    def test_generate_order_list_csv_date_format(self, generator: Any) -> None:
         """Test date format is MM月DD日 and seal text uses MMDD."""
         items = [
             {
@@ -134,7 +135,7 @@ class TestOrderListGenerator:
         # Check seal text uses MMDD format (1月5日 -> 0105)
         assert "_0105" in content
 
-    def test_generate_order_list_csv_utf8_bom(self, generator):
+    def test_generate_order_list_csv_utf8_bom(self, generator: Any) -> None:
         """Test CSV has UTF-8 BOM for Excel compatibility."""
         items = [
             {
@@ -156,7 +157,7 @@ class TestOrderListGenerator:
         # UTF-8 BOM is 0xEF, 0xBB, 0xBF
         assert result[:3] == b"\xef\xbb\xbf"
 
-    def test_generate_order_list_csv_missing_optional_fields(self, generator):
+    def test_generate_order_list_csv_missing_optional_fields(self, generator: Any) -> None:
         """Test CSV generation with missing optional fields."""
         items = [
             {
@@ -185,11 +186,11 @@ class TestSealTextWithProductDetail:
     """AC-001: シール用テキスト情報が商品種類を使用し、MMDD形式で生成されるテスト"""
 
     @pytest.fixture
-    def generator(self):
+    def generator(self) -> Any:
         """Create generator instance."""
         return OrderListGenerator()
 
-    def test_seal_text_uses_product_detail_and_mmdd_csv(self, generator):
+    def test_seal_text_uses_product_detail_and_mmdd_csv(self, generator: Any) -> None:
         """AC-001: シール用テキスト情報が商品種類を使用し、MMDD形式で生成される (CSV)
 
         given: 注文日が2026年2月15日、商品種類が「アクリルキーホルダー - 50x50 (mm) - アクリル」、
@@ -219,7 +220,7 @@ class TestSealTextWithProductDetail:
         expected_seal = "アクリルキーホルダー - 50x50 (mm) - アクリル【個数】3個_ORD-001_UID-123_0215"
         assert expected_seal in content
 
-    def test_seal_text_uses_product_detail_and_mmdd_xlsx(self, generator):
+    def test_seal_text_uses_product_detail_and_mmdd_xlsx(self, generator: Any) -> None:
         """AC-001: シール用テキスト情報が商品種類を使用し、MMDD形式で生成される (XLSX)
 
         given: 注文日が2026年2月15日、商品種類が「アクリルキーホルダー - 50x50 (mm) - アクリル」、
@@ -250,7 +251,7 @@ class TestSealTextWithProductDetail:
         expected_seal = "アクリルキーホルダー - 50x50 (mm) - アクリル【個数】3個_ORD-001_UID-123_0215"
         assert ws.cell(row=2, column=6).value == expected_seal
 
-    def test_mmdd_format_december(self, generator):
+    def test_mmdd_format_december(self, generator: Any) -> None:
         """AC-003: MMDDは月の2桁と日の2桁で構成される（12月のケース）
 
         given: 注文日が2026年12月1日
@@ -279,7 +280,7 @@ class TestSealTextWithProductDetail:
         seal_text = ws.cell(row=2, column=6).value
         assert "_1201" in seal_text
 
-    def test_mmdd_format_january_with_padding(self, generator):
+    def test_mmdd_format_january_with_padding(self, generator: Any) -> None:
         """AC-004: 1月の場合でもMMDDが正しく2桁で出力される
 
         given: 注文日が2027年1月5日
@@ -308,7 +309,7 @@ class TestSealTextWithProductDetail:
         seal_text = ws.cell(row=2, column=6).value
         assert "_0105" in seal_text
 
-    def test_seal_text_with_tshirt_full_product_detail(self, generator):
+    def test_seal_text_with_tshirt_full_product_detail(self, generator: Any) -> None:
         """Tシャツのシール用テキスト情報が正しく生成される
 
         given: Tシャツの注文
@@ -341,31 +342,31 @@ class TestSealTextWithProductDetail:
 class TestGetProductTypeName:
     """Tests for get_product_type_name function."""
 
-    def test_get_product_type_name_tshirt(self):
+    def test_get_product_type_name_tshirt(self) -> None:
         """Test tshirt product type name."""
         assert get_product_type_name("tshirt") == "Tシャツ"
 
-    def test_get_product_type_name_mug(self):
+    def test_get_product_type_name_mug(self) -> None:
         """Test mug product type name."""
         assert get_product_type_name("mug") == "マグカップ"
 
-    def test_get_product_type_name_acrylic_keychain(self):
+    def test_get_product_type_name_acrylic_keychain(self) -> None:
         """Test acrylic_keychain product type name."""
         assert get_product_type_name("acrylic_keychain") == "アクリルキーホルダー"
 
-    def test_get_product_type_name_acrylic_stand(self):
+    def test_get_product_type_name_acrylic_stand(self) -> None:
         """Test acrylic_stand product type name."""
         assert get_product_type_name("acrylic_stand") == "アクリルフィギュア"
 
-    def test_get_product_type_name_sticker(self):
+    def test_get_product_type_name_sticker(self) -> None:
         """Test sticker product type name."""
         assert get_product_type_name("sticker") == "ステッカー"
 
-    def test_get_product_type_name_tote_bag(self):
+    def test_get_product_type_name_tote_bag(self) -> None:
         """Test tote_bag product type name."""
         assert get_product_type_name("tote_bag") == "トートバッグ"
 
-    def test_get_product_type_name_unknown(self):
+    def test_get_product_type_name_unknown(self) -> None:
         """Test unknown product type returns original value."""
         assert get_product_type_name("unknown_type") == "unknown_type"
 
@@ -374,11 +375,11 @@ class TestOrderListGeneratorXlsx:
     """Tests for OrderListGenerator XLSX generation."""
 
     @pytest.fixture
-    def generator(self):
+    def generator(self) -> Any:
         """Create generator instance."""
         return OrderListGenerator()
 
-    def test_generate_order_list_xlsx_with_items(self, generator):
+    def test_generate_order_list_xlsx_with_items(self, generator: Any) -> None:
         """Test XLSX generation with items."""
         items = [
             {
@@ -443,7 +444,7 @@ class TestOrderListGeneratorXlsx:
         assert ws.cell(row=3, column=2).value == "2624714"
         assert ws.cell(row=3, column=5).value == 2
 
-    def test_generate_order_list_xlsx_empty_items(self, generator):
+    def test_generate_order_list_xlsx_empty_items(self, generator: Any) -> None:
         """Test XLSX generation with no items."""
         result = generator.generate_order_list_xlsx([])
 
@@ -454,7 +455,7 @@ class TestOrderListGeneratorXlsx:
         assert ws.cell(row=1, column=1).value == "注文日"
         assert ws.cell(row=2, column=1).value is None
 
-    def test_generate_order_list_xlsx_date_format_no_zero_padding(self, generator):
+    def test_generate_order_list_xlsx_date_format_no_zero_padding(self, generator: Any) -> None:
         """Test date format is M月D日 (no zero-padding)."""
         items = [
             {
@@ -478,7 +479,7 @@ class TestOrderListGeneratorXlsx:
         # Check date format without zero padding
         assert ws.cell(row=2, column=1).value == "1月5日"
 
-    def test_generate_order_list_xlsx_date_cell_is_text_format(self, generator):
+    def test_generate_order_list_xlsx_date_cell_is_text_format(self, generator: Any) -> None:
         """Test date cell is formatted as text."""
         items = [
             {
@@ -502,7 +503,7 @@ class TestOrderListGeneratorXlsx:
         # Check date cell number format is text (@)
         assert ws.cell(row=2, column=1).number_format == "@"
 
-    def test_generate_order_list_xlsx_seal_text_format(self, generator):
+    def test_generate_order_list_xlsx_seal_text_format(self, generator: Any) -> None:
         """Test seal text format is correct with MMDD and product_detail."""
         items = [
             {
@@ -528,7 +529,7 @@ class TestOrderListGeneratorXlsx:
         expected_seal = "Tシャツ - M - 正面 - 白【個数】5個_ORD123_PROD456_1215"
         assert ws.cell(row=2, column=6).value == expected_seal
 
-    def test_generate_order_list_xlsx_excludes_product_name_and_cost(self, generator):
+    def test_generate_order_list_xlsx_excludes_product_name_and_cost(self, generator: Any) -> None:
         """Test XLSX excludes 商品名 and 原価 columns."""
         items = [
             {

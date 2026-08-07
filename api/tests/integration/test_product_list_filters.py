@@ -13,14 +13,16 @@ NOTE: TDD Red phase - これらのテストはバックエンドAPIのフィル�
 既に実装済みであることの確認テストです。
 """
 
-import pytest
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
+
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-
 
 # APIプレフィックス
 API_PREFIX = settings.API_V1_PREFIX
@@ -31,7 +33,7 @@ API_PREFIX = settings.API_V1_PREFIX
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-async def manufacturer_a(db_session: AsyncSession):
+async def manufacturer_a(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """テスト用のメーカーA"""
     manufacturer_id = str(uuid4())
 
@@ -70,7 +72,7 @@ async def manufacturer_a(db_session: AsyncSession):
 
 
 @pytest.fixture
-async def manufacturer_b(db_session: AsyncSession):
+async def manufacturer_b(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """テスト用のメーカーB"""
     manufacturer_id = str(uuid4())
 
@@ -109,7 +111,7 @@ async def manufacturer_b(db_session: AsyncSession):
 
 
 @pytest.fixture
-async def product_sticker_active(db_session: AsyncSession, manufacturer_a: dict):
+async def product_sticker_active(db_session: AsyncSession, manufacturer_a: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """テスト用商品: ステッカー、有効、メーカーA"""
     product_id = str(uuid4())
     unique_suffix = product_id[:8]
@@ -151,7 +153,7 @@ async def product_sticker_active(db_session: AsyncSession, manufacturer_a: dict)
 
 
 @pytest.fixture
-async def product_tshirt_active(db_session: AsyncSession, manufacturer_b: dict):
+async def product_tshirt_active(db_session: AsyncSession, manufacturer_b: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """テスト用商品: Tシャツ、有効、メーカーB"""
     product_id = str(uuid4())
     unique_suffix = product_id[:8]
@@ -193,7 +195,7 @@ async def product_tshirt_active(db_session: AsyncSession, manufacturer_b: dict):
 
 
 @pytest.fixture
-async def product_sticker_inactive(db_session: AsyncSession, manufacturer_a: dict):
+async def product_sticker_inactive(db_session: AsyncSession, manufacturer_a: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """テスト用商品: ステッカー、無効、メーカーA"""
     product_id = str(uuid4())
     unique_suffix = product_id[:8]
@@ -245,10 +247,10 @@ class TestProductTypeFilter:
     async def test_ac013_filter_by_product_type_sticker(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        product_sticker_active: dict,
-        product_tshirt_active: dict,
-    ):
+        auth_headers: dict[str, Any],
+        product_sticker_active: dict[str, Any],
+        product_tshirt_active: dict[str, Any],
+    ) -> None:
         """AC-013: GET /products?product_type=sticker でステッカー商品のみが返される
 
         given: product_type=sticker の商品と product_type=tshirt の商品がそれぞれ登録されている
@@ -294,11 +296,11 @@ class TestManufacturerIdFilter:
     async def test_ac014_filter_by_manufacturer_id(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        manufacturer_a: dict,
-        product_sticker_active: dict,
-        product_tshirt_active: dict,
-    ):
+        auth_headers: dict[str, Any],
+        manufacturer_a: dict[str, Any],
+        product_sticker_active: dict[str, Any],
+        product_tshirt_active: dict[str, Any],
+    ) -> None:
         """AC-014: GET /products?manufacturer_id=xxx でそのメーカーの商品のみが返される
 
         given: メーカーA の商品とメーカーB の商品がそれぞれ登録されている
@@ -346,10 +348,10 @@ class TestIsActiveFilter:
     async def test_ac015_filter_by_is_active_true(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        product_sticker_active: dict,
-        product_sticker_inactive: dict,
-    ):
+        auth_headers: dict[str, Any],
+        product_sticker_active: dict[str, Any],
+        product_sticker_inactive: dict[str, Any],
+    ) -> None:
         """AC-015: GET /products?is_active=true で有効な商品のみが返される
 
         given: is_active=true の商品と is_active=false の商品がそれぞれ登録されている
@@ -387,10 +389,10 @@ class TestIsActiveFilter:
     async def test_ac015_filter_by_is_active_false(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        product_sticker_active: dict,
-        product_sticker_inactive: dict,
-    ):
+        auth_headers: dict[str, Any],
+        product_sticker_active: dict[str, Any],
+        product_sticker_inactive: dict[str, Any],
+    ) -> None:
         """is_active=false で無効な商品のみが返されることを確認
 
         given: is_active=true の商品と is_active=false の商品がそれぞれ登録されている
@@ -436,11 +438,11 @@ class TestCombinedFilters:
     async def test_ac016_filter_by_product_type_and_is_active(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        product_sticker_active: dict,
-        product_sticker_inactive: dict,
-        product_tshirt_active: dict,
-    ):
+        auth_headers: dict[str, Any],
+        product_sticker_active: dict[str, Any],
+        product_sticker_inactive: dict[str, Any],
+        product_tshirt_active: dict[str, Any],
+    ) -> None:
         """AC-016: GET /products?product_type=sticker&is_active=true で正しく絞り込みできる
 
         given: 複数の種類・メーカー・ステータスの商品が登録されている
@@ -486,12 +488,12 @@ class TestCombinedFilters:
     async def test_ac016_filter_by_manufacturer_and_is_active(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        manufacturer_a: dict,
-        product_sticker_active: dict,
-        product_sticker_inactive: dict,
-        product_tshirt_active: dict,
-    ):
+        auth_headers: dict[str, Any],
+        manufacturer_a: dict[str, Any],
+        product_sticker_active: dict[str, Any],
+        product_sticker_inactive: dict[str, Any],
+        product_tshirt_active: dict[str, Any],
+    ) -> None:
         """manufacturer_id と is_active の組み合わせフィルター
 
         given: メーカーAの有効・無効商品、メーカーBの有効商品が登録されている
@@ -540,9 +542,9 @@ class TestEmptyFilterResults:
     async def test_ac017_no_matching_products_returns_empty(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        product_sticker_active: dict,
-    ):
+        auth_headers: dict[str, Any],
+        product_sticker_active: dict[str, Any],
+    ) -> None:
         """AC-017: フィルター条件に一致する商品がない場合、空配列が返される
 
         given: product_type=tote_bag の商品は登録されていない（sticker のみ）
@@ -577,11 +579,11 @@ class TestEmptyFilterResults:
     async def test_ac017_no_matching_combined_filter_returns_empty(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        manufacturer_b: dict,
-        product_sticker_active: dict,
-        product_tshirt_active: dict,
-    ):
+        auth_headers: dict[str, Any],
+        manufacturer_b: dict[str, Any],
+        product_sticker_active: dict[str, Any],
+        product_tshirt_active: dict[str, Any],
+    ) -> None:
         """product_type と manufacturer_id の組み合わせで一致なしの場合
 
         given: メーカーB には tshirt の商品しかない

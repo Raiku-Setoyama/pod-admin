@@ -46,6 +46,8 @@ class AuthService:
             raise UnauthorizedError("Invalid refresh token")
 
         user_id = payload.get("sub")
+        if not isinstance(user_id, str):
+            raise UnauthorizedError("Invalid refresh token")
         user = await self._user_repo.find_by_id(user_id)
 
         if not user or not user.is_active:
@@ -68,6 +70,8 @@ class AuthService:
             raise UnauthorizedError("Invalid access token")
 
         user_id = payload.get("sub")
+        if not isinstance(user_id, str):
+            raise UnauthorizedError("Invalid access token")
         user = await self._user_repo.find_by_id(user_id)
 
         if not user or not user.is_active:

@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
 import useSWR from "swr";
 import { apiClient } from "@/lib/api/client";
+import { useLocalStorageValue } from "@/lib/use-local-storage-value";
 import type { OrderItemStatus } from "@/types/api";
 
 // 発注アイテム（受注明細）
@@ -54,14 +54,8 @@ const fetcher = async (url: string) => {
 };
 
 export function useManufacturerOrderItems(filters?: ManufacturerOrderFilters) {
-  // useStateでトークンを管理し、変更時にSWRキーを更新させる
-  const [token, setToken] = useState<string | null>(null);
-
-  useEffect(() => {
-    // クライアントサイドでのみlocalStorageにアクセス
-    const storedToken = localStorage.getItem("manufacturer_token");
-    setToken(storedToken);
-  }, []);
+  // localStorage は React の外側の store。購読して SWR キーを更新させる。
+  const token = useLocalStorageValue("manufacturer_token");
 
   // クエリパラメータ構築
   const queryParams = new URLSearchParams();

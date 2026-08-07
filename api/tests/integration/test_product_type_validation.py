@@ -6,17 +6,20 @@ FEAT-0002: 商品種別を5種類に限定（マグカップ削除）
 バリデーションエラーが返されることを検証します。
 """
 
+from collections.abc import AsyncIterator
+from typing import Any
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.main import app
 from app.config import settings
 from app.dependencies import get_current_admin
+from app.main import app
 from app.models.user import User, UserRole
 
 
 # 認証をバイパスするためのモックユーザー
-def get_mock_admin():
+def get_mock_admin() -> Any:
     """テスト用のモック管理者ユーザーを返す"""
     return User(
         id="test-admin-id",
@@ -33,7 +36,7 @@ API_PREFIX = settings.API_V1_PREFIX
 
 
 @pytest.fixture
-def valid_product_data():
+def valid_product_data() -> dict[str, Any]:
     """有効な商品データ"""
     return {
         "product_type": "acrylic_keychain",
@@ -48,7 +51,7 @@ def valid_product_data():
 
 
 @pytest.fixture
-async def auth_client():
+async def auth_client() -> AsyncIterator[Any]:
     """認証をバイパスしたHTTPクライアント"""
     # 認証依存関係をオーバーライド
     app.dependency_overrides[get_current_admin] = get_mock_admin
@@ -68,8 +71,8 @@ class TestProductTypeValidation:
 
     @pytest.mark.asyncio
     async def test_create_product_with_mug_returns_validation_error(
-        self, auth_client: AsyncClient, valid_product_data: dict
-    ):
+        self, auth_client: AsyncClient, valid_product_data: dict[str, Any]
+    ) -> None:
         """product_type に "mug" を指定するとバリデーションエラーが返される"""
         # "mug" を指定
         valid_product_data["product_type"] = "mug"
@@ -100,7 +103,7 @@ class TestProductTypeValidation:
     @pytest.mark.asyncio
     async def test_update_product_with_mug_returns_validation_error(
         self, auth_client: AsyncClient
-    ):
+    ) -> None:
         """product_type に "mug" を指定して更新するとバリデーションエラーが返される"""
         # 存在するかどうかに関わらず、バリデーションエラーが先に返される
         update_data = {"product_type": "mug"}
@@ -118,8 +121,8 @@ class TestProductTypeValidation:
 
     @pytest.mark.asyncio
     async def test_create_product_with_valid_types_passes_validation(
-        self, auth_client: AsyncClient, valid_product_data: dict
-    ):
+        self, auth_client: AsyncClient, valid_product_data: dict[str, Any]
+    ) -> None:
         """許可された商品種別ではバリデーションエラーにならない"""
         valid_types = [
             "acrylic_keychain",
@@ -152,7 +155,7 @@ class TestProductTypeValidation:
     @pytest.mark.asyncio
     async def test_list_products_with_mug_filter_returns_validation_error(
         self, auth_client: AsyncClient
-    ):
+    ) -> None:
         """product_type クエリパラメータに "mug" を指定するとバリデーションエラーが返される"""
         response = await auth_client.get(
             f"{API_PREFIX}/products", params={"product_type": "mug"}

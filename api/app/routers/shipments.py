@@ -2,6 +2,7 @@
 
 from datetime import date
 from typing import Annotated, Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
@@ -9,14 +10,11 @@ from fastapi.responses import StreamingResponse
 from app.dependencies import get_current_admin, get_shipment_service
 from app.models.shipment import ShipmentStatus
 from app.models.user import User
-from urllib.parse import quote
-
 from app.schemas.shipment import (
     PendingOrderStatus,
     ShipmentBulkStatusUpdate,
     ShipmentBulkStatusUpdateResponse,
     ShipmentExportRequest,
-    ShipmentListResponse,
     ShipmentListWithPendingResponse,
     ShipmentResponse,
     ShipmentStatusUpdate,
@@ -305,7 +303,7 @@ async def download_shipment_documents(
     else:  # packing_list
         items = [{"product_name": item.product_name, "size": "", "quantity": 1} for item in shipment.items]
         content = csv_gen.generate_packing_list_csv(
-            order_number=shipment.items[0].order_number if shipment.items else "",
+            order_number=(shipment.items[0].order_number or "") if shipment.items else "",
             items=items,
         )
         filename = f"同梱リスト_{shipment_id[:8]}.csv"

@@ -4,18 +4,28 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
+
+# Python のビルド成果物。
+# パスを固定しないと、モノレポの別階層にある同名ディレクトリまで巻き込む。
+# 実際に `lib/` が web/src/lib/ に一致し、新規ファイルが黙って追跡対象外になった。
+# 追加するときも必ず / か api/ で位置を固定すること。
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
+api/build/
+api/dist/
+api/.eggs/
+api/sdist/
+api/wheels/
 *.egg-info/
 .installed.cfg
 *.egg

@@ -53,7 +53,11 @@ Slack で流れた話も、合意した要件も、見送ったものも、す�
 | [REQ-0038](REQ-0038.md) | order | 受注・発注のステータス変更履歴を記録し追跡できる | undecided | not-started | |
 | [REQ-0039](REQ-0039.md) | chat | チャットの未読/既読管理と新着通知ができる | undecided | not-started | |
 | [REQ-0040](REQ-0040.md) | auth | 本番のデバッグ資産（debug-token・トークンログ）を除去する | undecided | not-started | |
-| [REQ-0041](REQ-0041.md) | common | 静的解析（ruff/eslint/mypy/tsc）を是正し品質ゲート・CIの必須チェックに組み込む | undecided | not-started | |
+| [REQ-0041](REQ-0041.md) | common | 静的解析（ruff/eslint/mypy/tsc）を是正し品質ゲート・CIの必須チェックに組み込む | must | done | |
+| [REQ-0042](REQ-0042.md) | common | 既存のテスト失敗（pytest 46件・vitest 9件）を解消しテストをCIの必須チェックにする | undecided | not-started | |
+| [REQ-0043](REQ-0043.md) | common | openapi/schema.yaml を正本として復旧しフロントのAPI型を自動生成に戻す | undecided | not-started | |
+| [REQ-0044](REQ-0044.md) | shipment | 何も検証していないテスト（同語反復のアサーション）を実装の検証に置き換える | undecided | not-started | |
+| [REQ-0045](REQ-0045.md) | purchase-order | 全メーカー受注明細一覧で商品タイプ・発注日フィルタを操作するUIが無い | undecided | not-started | |
 
 ## priority — 採否・約束の度合い
 

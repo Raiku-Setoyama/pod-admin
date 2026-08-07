@@ -13,6 +13,8 @@ Tests will fail until the implementation is completed.
 import io
 import json
 import zipfile
+from collections.abc import AsyncIterator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -26,7 +28,7 @@ class TestShipmentThumbnailDownloadAPI:
     """配送サムネイル画像ZIPダウンロードAPIの統合テスト."""
 
     @pytest.fixture
-    async def test_product(self, db_session: AsyncSession, test_order_source: dict):
+    async def test_product(self, db_session: AsyncSession, test_order_source: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
         """テスト用商品（メーカーに紐づく）."""
         manufacturer_id = str(uuid4())
         manufacturer_name = f"テストメーカー_{manufacturer_id[:8]}"
@@ -79,9 +81,9 @@ class TestShipmentThumbnailDownloadAPI:
     async def shipment_with_thumbnails(
         self,
         db_session: AsyncSession,
-        test_order_source: dict,
-        test_product: dict,
-    ):
+        test_order_source: dict[str, Any],
+        test_product: dict[str, Any],
+    ) -> AsyncIterator[dict[str, Any]]:
         """thumbnail_image_url を持つ OrderItem が紐づく配送を作成."""
         shipment_id = str(uuid4())
         orders = []
@@ -175,9 +177,9 @@ class TestShipmentThumbnailDownloadAPI:
     async def test_download_thumbnails_returns_zip(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        shipment_with_thumbnails: dict,
-    ):
+        auth_headers: dict[str, Any],
+        shipment_with_thumbnails: dict[str, Any],
+    ) -> None:
         """AC-010: POST /api/v1/shipments/download-thumbnails が対象サムネイル画像を含むZIPファイルを返す.
 
         given: thumbnail_image_url を持つ OrderItem が紐づく配送が存在する
@@ -230,9 +232,9 @@ class TestShipmentThumbnailDownloadAPI:
     async def test_download_thumbnails_zip_filename_header(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        shipment_with_thumbnails: dict,
-    ):
+        auth_headers: dict[str, Any],
+        shipment_with_thumbnails: dict[str, Any],
+    ) -> None:
         """ZIPファイル名が「配送サムネイル_{YYYYMMDD_HHMMSS}.zip」形式であること."""
         shipment_ids = [shipment_with_thumbnails["shipment_id"]]
 
@@ -270,8 +272,8 @@ class TestShipmentThumbnailDownloadAPI:
     async def test_download_thumbnails_returns_401_without_auth(
         self,
         client: AsyncClient,
-        shipment_with_thumbnails: dict,
-    ):
+        shipment_with_thumbnails: dict[str, Any],
+    ) -> None:
         """AC-011: 認証されていないユーザーは 401 エラーが返される.
 
         given: 認証されていないユーザー
@@ -294,8 +296,8 @@ class TestShipmentThumbnailDownloadAPI:
     async def test_download_thumbnails_empty_shipment_ids_returns_422(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-    ):
+        auth_headers: dict[str, Any],
+    ) -> None:
         """空の shipment_ids リストで 422 バリデーションエラーが返される."""
         response = await client.post(
             "/api/v1/shipments/download-thumbnails",

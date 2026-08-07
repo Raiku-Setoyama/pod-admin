@@ -4,17 +4,20 @@ FEAT-0006: Shipment status manual switching functionality.
 Tests the full flow through API -> Service -> Repository -> Database.
 """
 
+from collections.abc import AsyncIterator
+from typing import Any
+from uuid import uuid4
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import uuid4
 
 
 @pytest.fixture
 async def test_shipment_pending(
-    db_session: AsyncSession, test_order_source: dict
-):
+    db_session: AsyncSession, test_order_source: dict[str, Any]
+) -> AsyncIterator[dict[str, Any]]:
     """Create a test shipment in 'pending' status with one order."""
     order_id = str(uuid4())
     shipment_id = str(uuid4())
@@ -81,8 +84,8 @@ async def test_shipment_pending(
 
 @pytest.fixture
 async def test_shipment_ready(
-    db_session: AsyncSession, test_order_source: dict
-):
+    db_session: AsyncSession, test_order_source: dict[str, Any]
+) -> AsyncIterator[dict[str, Any]]:
     """Create a test shipment in 'ready' status with one order."""
     order_id = str(uuid4())
     shipment_id = str(uuid4())
@@ -149,8 +152,8 @@ async def test_shipment_ready(
 
 @pytest.fixture
 async def test_shipment_shipped(
-    db_session: AsyncSession, test_order_source: dict
-):
+    db_session: AsyncSession, test_order_source: dict[str, Any]
+) -> AsyncIterator[dict[str, Any]]:
     """Create a test shipment in 'shipped' status with one order."""
     order_id = str(uuid4())
     shipment_id = str(uuid4())
@@ -217,8 +220,8 @@ async def test_shipment_shipped(
 
 @pytest.fixture
 async def test_shipment_with_multiple_orders(
-    db_session: AsyncSession, test_order_source: dict
-):
+    db_session: AsyncSession, test_order_source: dict[str, Any]
+) -> AsyncIterator[dict[str, Any]]:
     """Create a test shipment with multiple orders."""
     order_ids = [str(uuid4()) for _ in range(3)]
     shipment_id = str(uuid4())
@@ -296,10 +299,10 @@ class TestShipmentStatusTransitionAPI:
     async def test_pending_to_ready(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_shipment_pending: dict,
+        auth_headers: dict[str, Any],
+        test_shipment_pending: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """Test: pending -> ready via API."""
         shipment_id = test_shipment_pending["id"]
 
@@ -319,16 +322,17 @@ class TestShipmentStatusTransitionAPI:
             {"id": shipment_id},
         )
         row = result.fetchone()
+        assert row is not None
         assert row[0] == "ready"
 
     @pytest.mark.asyncio
     async def test_ready_to_pending(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_shipment_ready: dict,
+        auth_headers: dict[str, Any],
+        test_shipment_ready: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """Test: ready -> pending via API (reverse transition)."""
         shipment_id = test_shipment_ready["id"]
 
@@ -346,10 +350,10 @@ class TestShipmentStatusTransitionAPI:
     async def test_pending_to_shipped_updates_order(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_shipment_pending: dict,
+        auth_headers: dict[str, Any],
+        test_shipment_pending: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """Test: pending -> shipped sets shipped_at and updates order to shipped."""
         shipment_id = test_shipment_pending["id"]
         order_id = test_shipment_pending["order_id"]
@@ -371,16 +375,17 @@ class TestShipmentStatusTransitionAPI:
             {"id": order_id},
         )
         row = result.fetchone()
+        assert row is not None
         assert row[0] == "shipped"
 
     @pytest.mark.asyncio
     async def test_ready_to_shipped_updates_order(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_shipment_ready: dict,
+        auth_headers: dict[str, Any],
+        test_shipment_ready: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """Test: ready -> shipped sets shipped_at and updates order to shipped."""
         shipment_id = test_shipment_ready["id"]
         order_id = test_shipment_ready["order_id"]
@@ -402,6 +407,7 @@ class TestShipmentStatusTransitionAPI:
             {"id": order_id},
         )
         row = result.fetchone()
+        assert row is not None
         assert row[0] == "shipped"
 
     # ===========================================
@@ -412,10 +418,10 @@ class TestShipmentStatusTransitionAPI:
     async def test_shipped_to_pending_reverts_order(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_shipment_shipped: dict,
+        auth_headers: dict[str, Any],
+        test_shipment_shipped: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """Test: shipped -> pending clears shipped_at and reverts order to delivered."""
         shipment_id = test_shipment_shipped["id"]
         order_id = test_shipment_shipped["order_id"]
@@ -437,16 +443,17 @@ class TestShipmentStatusTransitionAPI:
             {"id": order_id},
         )
         row = result.fetchone()
+        assert row is not None
         assert row[0] == "delivered"
 
     @pytest.mark.asyncio
     async def test_shipped_to_ready_reverts_order(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_shipment_shipped: dict,
+        auth_headers: dict[str, Any],
+        test_shipment_shipped: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """Test: shipped -> ready clears shipped_at and reverts order to delivered."""
         shipment_id = test_shipment_shipped["id"]
         order_id = test_shipment_shipped["order_id"]
@@ -468,6 +475,7 @@ class TestShipmentStatusTransitionAPI:
             {"id": order_id},
         )
         row = result.fetchone()
+        assert row is not None
         assert row[0] == "delivered"
 
     # ===========================================
@@ -478,10 +486,10 @@ class TestShipmentStatusTransitionAPI:
     async def test_shipped_updates_all_orders(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_shipment_with_multiple_orders: dict,
+        auth_headers: dict[str, Any],
+        test_shipment_with_multiple_orders: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """Test: shipping a shipment with multiple orders updates all orders."""
         shipment_id = test_shipment_with_multiple_orders["id"]
         order_ids = test_shipment_with_multiple_orders["order_ids"]
@@ -503,16 +511,17 @@ class TestShipmentStatusTransitionAPI:
                 {"id": order_id},
             )
             row = result.fetchone()
+            assert row is not None
             assert row[0] == "shipped"
 
     @pytest.mark.asyncio
     async def test_revert_from_shipped_reverts_all_orders(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_shipment_with_multiple_orders: dict,
+        auth_headers: dict[str, Any],
+        test_shipment_with_multiple_orders: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """Test: reverting from shipped reverts all orders to delivered."""
         shipment_id = test_shipment_with_multiple_orders["id"]
         order_ids = test_shipment_with_multiple_orders["order_ids"]
@@ -542,6 +551,7 @@ class TestShipmentStatusTransitionAPI:
                 {"id": order_id},
             )
             row = result.fetchone()
+            assert row is not None
             assert row[0] == "delivered"
 
     # ===========================================
@@ -552,10 +562,10 @@ class TestShipmentStatusTransitionAPI:
     async def test_tracking_number_set_on_ship(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_shipment_ready: dict,
+        auth_headers: dict[str, Any],
+        test_shipment_ready: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """Test: tracking number can be set when shipping."""
         shipment_id = test_shipment_ready["id"]
 
@@ -580,6 +590,7 @@ class TestShipmentStatusTransitionAPI:
             {"id": shipment_id},
         )
         row = result.fetchone()
+        assert row is not None
         assert row[0] == "1234567890"
         assert row[1] == "Yamato"
 
@@ -591,8 +602,8 @@ class TestShipmentStatusTransitionAPI:
     async def test_shipment_not_found(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-    ):
+        auth_headers: dict[str, Any],
+    ) -> None:
         """Test: Returns 404 when shipment not found."""
         non_existent_id = str(uuid4())
 
@@ -608,9 +619,9 @@ class TestShipmentStatusTransitionAPI:
     async def test_invalid_status_value(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        test_shipment_pending: dict,
-    ):
+        auth_headers: dict[str, Any],
+        test_shipment_pending: dict[str, Any],
+    ) -> None:
         """Test: Returns 422 when invalid status value provided."""
         shipment_id = test_shipment_pending["id"]
 

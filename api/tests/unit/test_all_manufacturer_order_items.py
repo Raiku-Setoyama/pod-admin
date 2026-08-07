@@ -12,14 +12,14 @@ FEAT-0018: 全メーカー分の発注明細を一覧で確認できる「すべ
   - AC-005: 全メーカー発注明細一覧のレスポンス組み立て
 """
 
-import pytest
 from datetime import datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-from app.services.manufacturer_order_service import ManufacturerOrderService
-from app.models.order import OrderStatus
+import pytest
 
+from app.services.manufacturer_order_service import ManufacturerOrderService
 
 # ---------------------------------------------------------------------------
 # Helper: mock order item tuple factory (matching repository return format)
@@ -48,7 +48,7 @@ def _make_order_item_tuple(
     manufacturer_id: str | None = None,
     manufacturer_name: str = "テストメーカー",
     lead_time_days: int = 7,
-) -> tuple:
+) -> tuple[Any, ...]:
     """リポジトリの find_all_ordered_items_detail の戻り値形式に合わせたタプルを生成"""
     order_item = MagicMock()
     order_item.id = item_id or str(uuid4())
@@ -86,7 +86,7 @@ class TestFindAllOrderedItemsDetail:
     """OrderRepository.find_all_ordered_items_detail メソッドのテスト"""
 
     @pytest.fixture
-    def mock_db(self):
+    def mock_db(self) -> Any:
         """モック AsyncSession（execute().all() チェーンを正しくセットアップ）"""
         db = AsyncMock()
         # execute() が返す結果オブジェクトのモック
@@ -96,15 +96,15 @@ class TestFindAllOrderedItemsDetail:
         return db
 
     @pytest.fixture
-    def repo(self, mock_db):
+    def repo(self, mock_db: Any) -> Any:
         """テスト対象のリポジトリインスタンス"""
         from app.repositories.order_repository import OrderRepository
         return OrderRepository(mock_db)
 
     @pytest.mark.asyncio
     async def test_find_all_ordered_items_detail_returns_all_manufacturers(
-        self, repo, mock_db,
-    ):
+        self, repo: Any, mock_db: Any,
+    ) -> None:
         """AC-001: フィルターなしで全メーカーの発注明細が返される
 
         given: 複数メーカーに紐づく発注明細がDBに存在する
@@ -123,8 +123,8 @@ class TestFindAllOrderedItemsDetail:
 
     @pytest.mark.asyncio
     async def test_find_all_ordered_items_detail_filters_by_status(
-        self, repo, mock_db,
-    ):
+        self, repo: Any, mock_db: Any,
+    ) -> None:
         """AC-002: ステータスでフィルターできる
 
         given: ordered, manufacturing, delivered の各ステータスの発注明細が存在する
@@ -139,8 +139,8 @@ class TestFindAllOrderedItemsDetail:
 
     @pytest.mark.asyncio
     async def test_find_all_ordered_items_detail_filters_by_search(
-        self, repo, mock_db,
-    ):
+        self, repo: Any, mock_db: Any,
+    ) -> None:
         """AC-003: キーワードで検索できる
 
         given: 注文番号 "ORD-001" の発注明細が存在する
@@ -155,8 +155,8 @@ class TestFindAllOrderedItemsDetail:
 
     @pytest.mark.asyncio
     async def test_find_all_ordered_items_detail_filters_by_manufacturer_id(
-        self, repo, mock_db,
-    ):
+        self, repo: Any, mock_db: Any,
+    ) -> None:
         """AC-004: メーカーIDでフィルターできる
 
         given: メーカーAとメーカーBの発注明細が存在する
@@ -181,22 +181,22 @@ class TestGetAllOrderItems:
     """ManufacturerOrderService.get_all_order_items メソッドのテスト"""
 
     @pytest.fixture
-    def mock_order_repo(self):
+    def mock_order_repo(self) -> Any:
         """モック OrderRepository"""
         return AsyncMock()
 
     @pytest.fixture
-    def mock_manufacturer_repo(self):
+    def mock_manufacturer_repo(self) -> Any:
         """モック ManufacturerRepository"""
         return AsyncMock()
 
     @pytest.fixture
-    def mock_shipment_repo(self):
+    def mock_shipment_repo(self) -> Any:
         """モック ShipmentRepository"""
         return AsyncMock()
 
     @pytest.fixture
-    def service(self, mock_order_repo, mock_manufacturer_repo, mock_shipment_repo):
+    def service(self, mock_order_repo: Any, mock_manufacturer_repo: Any, mock_shipment_repo: Any) -> Any:
         """テスト対象のサービスインスタンス"""
         return ManufacturerOrderService(
             order_repo=mock_order_repo,
@@ -205,7 +205,7 @@ class TestGetAllOrderItems:
         )
 
     @pytest.fixture
-    def mock_all_order_items_data(self):
+    def mock_all_order_items_data(self) -> list[Any]:
         """複数メーカーの発注明細データ"""
         manufacturer_a_id = str(uuid4())
         manufacturer_b_id = str(uuid4())
@@ -250,7 +250,7 @@ class TestGetAllOrderItems:
     async def test_get_all_order_items_method_exists(
         self,
         service: ManufacturerOrderService,
-    ):
+    ) -> None:
         """AC-005: get_all_order_items メソッドが存在する
 
         given: ManufacturerOrderService インスタンス
@@ -265,8 +265,8 @@ class TestGetAllOrderItems:
         self,
         service: ManufacturerOrderService,
         mock_order_repo: AsyncMock,
-        mock_all_order_items_data,
-    ):
+        mock_all_order_items_data: list[Any],
+    ) -> None:
         """AC-005: 各明細に manufacturer_name が付与されたレスポンスが返される
 
         given: 複数メーカーの発注明細が存在する
@@ -303,8 +303,8 @@ class TestGetAllOrderItems:
         self,
         service: ManufacturerOrderService,
         mock_order_repo: AsyncMock,
-        mock_all_order_items_data,
-    ):
+        mock_all_order_items_data: list[Any],
+    ) -> None:
         """AC-005: total_quantity が正しく集計される
 
         given: quantity=2, quantity=1, quantity=5 の3件
@@ -323,8 +323,8 @@ class TestGetAllOrderItems:
         self,
         service: ManufacturerOrderService,
         mock_order_repo: AsyncMock,
-        mock_all_order_items_data,
-    ):
+        mock_all_order_items_data: list[Any],
+    ) -> None:
         """AC-005: total_amount が正しく集計される
 
         given: price*quantity = 1000*2, 2000*1, 500*5 の3件
@@ -343,7 +343,7 @@ class TestGetAllOrderItems:
         self,
         service: ManufacturerOrderService,
         mock_order_repo: AsyncMock,
-    ):
+    ) -> None:
         """AC-005: フィルターパラメータがリポジトリに正しく渡される
 
         given: フィルター条件を指定する
@@ -373,7 +373,7 @@ class TestGetAllOrderItems:
         self,
         service: ManufacturerOrderService,
         mock_order_repo: AsyncMock,
-    ):
+    ) -> None:
         """AC-005: 明細が0件の場合は空レスポンスが返される
 
         given: 発注明細が0件
@@ -397,31 +397,31 @@ class TestGetAllOrderItems:
 class TestAllManufacturerOrderItemResponseSchema:
     """AllManufacturerOrderItemResponse スキーマのテスト"""
 
-    def test_schema_exists(self):
+    def test_schema_exists(self) -> None:
         """AllManufacturerOrderItemResponse スキーマが存在する"""
         from app.schemas.manufacturer import AllManufacturerOrderItemResponse
         assert AllManufacturerOrderItemResponse is not None
 
-    def test_schema_has_manufacturer_id_field(self):
+    def test_schema_has_manufacturer_id_field(self) -> None:
         """AllManufacturerOrderItemResponse に manufacturer_id フィールドがある"""
         from app.schemas.manufacturer import AllManufacturerOrderItemResponse
         fields = AllManufacturerOrderItemResponse.model_fields
         assert "manufacturer_id" in fields, \
             "AllManufacturerOrderItemResponse should have 'manufacturer_id' field"
 
-    def test_schema_has_manufacturer_name_field(self):
+    def test_schema_has_manufacturer_name_field(self) -> None:
         """AllManufacturerOrderItemResponse に manufacturer_name フィールドがある"""
         from app.schemas.manufacturer import AllManufacturerOrderItemResponse
         fields = AllManufacturerOrderItemResponse.model_fields
         assert "manufacturer_name" in fields, \
             "AllManufacturerOrderItemResponse should have 'manufacturer_name' field"
 
-    def test_list_response_schema_exists(self):
+    def test_list_response_schema_exists(self) -> None:
         """AllManufacturerOrderItemListResponse スキーマが存在する"""
         from app.schemas.manufacturer import AllManufacturerOrderItemListResponse
         assert AllManufacturerOrderItemListResponse is not None
 
-    def test_list_response_has_required_fields(self):
+    def test_list_response_has_required_fields(self) -> None:
         """AllManufacturerOrderItemListResponse に必要なフィールドがある"""
         from app.schemas.manufacturer import AllManufacturerOrderItemListResponse
         fields = AllManufacturerOrderItemListResponse.model_fields

@@ -5,6 +5,8 @@
 """
 
 import uuid
+from collections.abc import AsyncIterator, Iterator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -17,13 +19,13 @@ from app.main import app
 
 
 @pytest.fixture
-def internal_headers(monkeypatch):
+def internal_headers(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(app_settings, "INTERNAL_API_SECRET", "test-internal-secret")
     return {"X-Internal-Secret": "test-internal-secret"}
 
 
 @pytest.fixture
-def mock_email():
+def mock_email() -> Iterator[Any]:
     email = MagicMock()
     email.send_manufacturer_daily_digest = AsyncMock(return_value=True)
     app.dependency_overrides[get_email_service] = lambda: email
@@ -32,7 +34,7 @@ def mock_email():
 
 
 @pytest.fixture
-async def seeded_manufacturer(db_session: AsyncSession):
+async def seeded_manufacturer(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     mid = str(uuid.uuid4())
     pid = str(uuid.uuid4())
     oid = str(uuid.uuid4())
@@ -100,8 +102,8 @@ async def seeded_manufacturer(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_force_run_sends_then_idempotent(
-    client, internal_headers, mock_email, seeded_manufacturer
-):
+    client: Any, internal_headers: dict[str, Any], mock_email: Any, seeded_manufacturer: dict[str, Any]
+) -> None:
     mid = seeded_manufacturer["manufacturer_id"]
 
     # 1回目（force）: 新規発注済み 3件 → 送信される
@@ -132,7 +134,7 @@ async def test_force_run_sends_then_idempotent(
 
 
 @pytest.mark.asyncio
-async def test_requires_internal_secret(client, mock_email):
+async def test_requires_internal_secret(client: Any, mock_email: Any) -> None:
     # INTERNAL_API_SECRET 未設定（既定 ""）→ 403
     resp = await client.post(
         "/api/v1/internal/manufacturer-daily-digest",
@@ -143,8 +145,8 @@ async def test_requires_internal_secret(client, mock_email):
 
 @pytest.mark.asyncio
 async def test_notification_settings_crud_roundtrip(
-    client, auth_headers, seeded_manufacturer
-):
+    client: Any, auth_headers: dict[str, Any], seeded_manufacturer: dict[str, Any]
+) -> None:
     mid = seeded_manufacturer["manufacturer_id"]
 
     # GET: seed 済みの設定が返る

@@ -9,15 +9,18 @@ separate ShipmentItemResponse rows.
 AC-006: GET /shipments/{id} API が quantity と thumbnail_image_url を含むレスポンスを返す
 """
 
+from collections.abc import AsyncIterator
+from typing import Any
+from uuid import uuid4
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import uuid4
 
 
 @pytest.fixture
-async def test_product_for_feat21(db_session: AsyncSession):
+async def test_product_for_feat21(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """テスト用の商品マスタ (order_items FK のため必要).
 
     既存の商品がある場合はそれを使い、なければ新規作成する。
@@ -95,9 +98,9 @@ async def test_product_for_feat21(db_session: AsyncSession):
 @pytest.fixture
 async def shipment_with_order_items_feat21(
     db_session: AsyncSession,
-    test_order_source: dict,
-    test_product_for_feat21: dict,
-):
+    test_order_source: dict[str, Any],
+    test_product_for_feat21: dict[str, Any],
+) -> AsyncIterator[dict[str, Any]]:
     """配送データ: OrderItem に quantity=5, thumbnail_image_url が設定されたケース.
 
     AC-006 の Given 条件:
@@ -214,9 +217,9 @@ async def shipment_with_order_items_feat21(
 @pytest.fixture
 async def shipment_with_multiple_order_items_feat21(
     db_session: AsyncSession,
-    test_order_source: dict,
-    test_product_for_feat21: dict,
-):
+    test_order_source: dict[str, Any],
+    test_product_for_feat21: dict[str, Any],
+) -> AsyncIterator[dict[str, Any]]:
     """配送データ: 1つの注文に複数の OrderItem が紐づくケース.
 
     OrderItem 単位で ShipmentItemResponse が展開されることを検証する。
@@ -368,9 +371,9 @@ class TestShipmentDetailProductViewAPI:
     async def test_ac006_get_shipment_returns_quantity_and_thumbnail(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        shipment_with_order_items_feat21: dict,
-    ):
+        auth_headers: dict[str, Any],
+        shipment_with_order_items_feat21: dict[str, Any],
+    ) -> None:
         """AC-006: GET /shipments/{id} が quantity と thumbnail_image_url を返す.
 
         Given: OrderItem（quantity=5, thumbnail_image_url="https://example.com/thumb.jpg"）
@@ -421,9 +424,9 @@ class TestShipmentDetailProductViewAPI:
     async def test_ac006_multiple_order_items_expanded_in_response(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        shipment_with_multiple_order_items_feat21: dict,
-    ):
+        auth_headers: dict[str, Any],
+        shipment_with_multiple_order_items_feat21: dict[str, Any],
+    ) -> None:
         """AC-006 (補足): 複数 OrderItem が各行に展開され、quantity/thumbnail が正しい.
 
         Given: 1つの注文に 3つの OrderItem が紐づく配送がある
@@ -471,9 +474,9 @@ class TestShipmentDetailProductViewAPI:
     async def test_ac006_composite_id_format_in_response(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        shipment_with_order_items_feat21: dict,
-    ):
+        auth_headers: dict[str, Any],
+        shipment_with_order_items_feat21: dict[str, Any],
+    ) -> None:
         """AC-006 (補足): レスポンスの items[].id が複合ID形式.
 
         Given: ShipmentItem と OrderItem が紐づく配送がある
@@ -504,9 +507,9 @@ class TestShipmentDetailProductViewAPI:
     async def test_ac006_null_thumbnail_image_url_in_response(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        shipment_with_multiple_order_items_feat21: dict,
-    ):
+        auth_headers: dict[str, Any],
+        shipment_with_multiple_order_items_feat21: dict[str, Any],
+    ) -> None:
         """AC-006 (補足): thumbnail_image_url が null の場合、null が返る.
 
         Given: thumbnail_image_url=null の OrderItem を含む配送がある

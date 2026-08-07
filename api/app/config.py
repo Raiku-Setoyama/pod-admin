@@ -1,13 +1,14 @@
 """Application configuration settings."""
 
-from pydantic import ConfigDict
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-    model_config = ConfigDict(
+    # BaseSettings の設定は SettingsConfigDict を使う。
+    # pydantic の ConfigDict には env_file / case_sensitive のキーがない。
+    model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,
         extra="ignore",

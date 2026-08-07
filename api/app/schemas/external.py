@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.models.order import OrderStatus, TshirtColor, TshirtPosition, TshirtSize
+from app.models.order import OrderStatus
 from app.models.product import ProductType
 
 

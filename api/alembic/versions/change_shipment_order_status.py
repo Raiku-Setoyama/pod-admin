@@ -8,16 +8,15 @@ Changes:
 - SHIPPING -> SHIPPED
 - COMPLETED -> SHIPPED (merge into final status)
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
-import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'change_status_001'
-down_revision: Union[str, None] = 'add_order_items_001'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = 'add_order_items_001'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

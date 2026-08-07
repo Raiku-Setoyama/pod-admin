@@ -135,7 +135,7 @@ class ExternalService:
             valid_sizes = [s.value for s in TshirtSize]
             raise ValidationError(
                 f"Invalid size '{data.size}'. Valid sizes: {valid_sizes}"
-            )
+            ) from None
 
         # Validate color (required for tshirt)
         if not data.color:
@@ -146,7 +146,7 @@ class ExternalService:
             valid_colors = [c.value for c in TshirtColor]
             raise ValidationError(
                 f"Invalid color '{data.color}'. Valid colors: {valid_colors}"
-            )
+            ) from None
 
         # Validate position (required for tshirt)
         if not data.position:
@@ -157,7 +157,7 @@ class ExternalService:
             valid_positions = [p.value for p in TshirtPosition]
             raise ValidationError(
                 f"Invalid position '{data.position}'. Valid positions: {valid_positions}"
-            )
+            ) from None
 
         # Calculate price
         unit_price = 870
@@ -185,7 +185,7 @@ class ExternalService:
             valid_sizes = [s.value for s in AcrylicKeychainSize]
             raise ValidationError(
                 f"Invalid size '{data.size}'. Valid sizes: {valid_sizes}"
-            )
+            ) from None
 
         # Calculate price based on size
         unit_price = ACRYLIC_KEYCHAIN_PRICES.get(data.size, 285)
@@ -212,7 +212,7 @@ class ExternalService:
             valid_sizes = [s.value for s in AcrylicStandSize]
             raise ValidationError(
                 f"Invalid size '{data.size}'. Valid sizes: {valid_sizes}"
-            )
+            ) from None
 
         # Calculate price based on size
         unit_price = ACRYLIC_STAND_PRICES.get(data.size, 310)
@@ -239,7 +239,7 @@ class ExternalService:
             valid_sizes = [s.value for s in StickerSize]
             raise ValidationError(
                 f"Invalid size '{data.size}'. Valid sizes: {valid_sizes}"
-            )
+            ) from None
 
         # Validate color (required for sticker)
         if not data.color:
@@ -250,7 +250,7 @@ class ExternalService:
             valid_colors = [c.value for c in StickerColor]
             raise ValidationError(
                 f"Invalid color '{data.color}'. Valid colors: {valid_colors}"
-            )
+            ) from None
 
         # Calculate price based on size
         unit_price = STICKER_PRICES.get(data.size, 79)
@@ -277,7 +277,7 @@ class ExternalService:
             valid_sizes = [s.value for s in ToteBagSize]
             raise ValidationError(
                 f"Invalid size '{data.size}'. Valid sizes: {valid_sizes}"
-            )
+            ) from None
 
         # Validate color (required for tote bag)
         if not data.color:
@@ -288,7 +288,7 @@ class ExternalService:
             valid_colors = [c.value for c in ToteBagColor]
             raise ValidationError(
                 f"Invalid color '{data.color}'. Valid colors: {valid_colors}"
-            )
+            ) from None
 
         # Validate position (required for tote bag)
         if not data.position:
@@ -299,7 +299,7 @@ class ExternalService:
             valid_positions = [p.value for p in ToteBagPosition]
             raise ValidationError(
                 f"Invalid position '{data.position}'. Valid positions: {valid_positions}"
-            )
+            ) from None
 
         # Calculate price (fixed price for tote bag)
         unit_price = 780
@@ -358,6 +358,8 @@ class ExternalService:
         updated_order = await self._order_repo.update_status(
             order.id, OrderStatus.CANCELLED
         )
+        # 直前に取得した order を更新しているので必ず見つかる
+        assert updated_order is not None
 
         return OrderCancelResponse(
             order_number=updated_order.order_number,

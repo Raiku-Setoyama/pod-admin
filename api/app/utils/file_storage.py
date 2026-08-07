@@ -21,7 +21,7 @@ import posixpath
 from abc import ABC, abstractmethod
 from datetime import datetime
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 from uuid import uuid4
 
 import aiofiles
@@ -32,12 +32,17 @@ if TYPE_CHECKING:
 
 
 class UploadFile(Protocol):
-    """Protocol for uploaded file objects."""
+    """Protocol for uploaded file objects.
+
+    FastAPI の ``UploadFile`` は ``read`` / ``seek`` がコルーチンを返すのに対し、
+    テストが渡すファイルライクオブジェクトは同期のことがある。``_read_upload`` が
+    両方を扱うため、戻り値には awaitable も含める。
+    """
 
     filename: str | None
 
-    def read(self) -> bytes: ...
-    def seek(self, offset: int) -> None: ...
+    def read(self) -> Any: ...
+    def seek(self, offset: int) -> Any: ...
 
 
 def generate_stored_filename(original_filename: str | None) -> str:
@@ -67,10 +72,10 @@ def guess_content_type(filename: str | None) -> str:
 
 async def _read_upload(file: UploadFile) -> bytes:
     """UploadFile から内容を読む（同期/非同期の read 両対応）."""
-    content = file.read()
+    content: Any = file.read()
     if hasattr(content, "__await__"):
         content = await content
-    return content
+    return cast("bytes", content)
 
 
 class FileStorage(ABC):

@@ -12,11 +12,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sqlalchemy import text
+from typing import Any, cast
+
+from sqlalchemy import CursorResult, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session_maker
-
 
 # 削除順序: FK依存関係に従って子テーブルから削除
 DELETE_TABLES = [
@@ -32,7 +33,7 @@ DELETE_TABLES = [
 async def reset_transactions(session: AsyncSession) -> None:
     """トランザクションデータを全削除。"""
     for table in DELETE_TABLES:
-        result = await session.execute(text(f"DELETE FROM {table}"))
+        result = cast("CursorResult[Any]", await session.execute(text(f"DELETE FROM {table}")))
         print(f"  {table}: {result.rowcount} rows deleted")
 
 

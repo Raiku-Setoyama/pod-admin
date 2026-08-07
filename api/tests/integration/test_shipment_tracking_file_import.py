@@ -15,13 +15,14 @@ AC-012: GET /api/v1/shipments/import-templateでサンプルCSVテンプレー�
 
 import csv
 import io
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-
 
 # ---- Helpers ----
 
@@ -48,7 +49,7 @@ def create_csv_bytes(
 
 
 @pytest.fixture
-async def order_with_shipment(db_session: AsyncSession, test_order_source: dict):
+async def order_with_shipment(db_session: AsyncSession, test_order_source: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """テスト用の注文 + 配送データ（shipment紐づき済み）
 
     注文番号 "FEAT18-{uuid[:8]}" で作成し、shipmentと紐づけます。
@@ -127,8 +128,8 @@ async def order_with_shipment(db_session: AsyncSession, test_order_source: dict)
 
 @pytest.fixture
 async def multiple_orders_with_shipments(
-    db_session: AsyncSession, test_order_source: dict
-):
+    db_session: AsyncSession, test_order_source: dict[str, Any]
+) -> AsyncIterator[Any]:
     """テスト用の3件の注文 + 配送データ"""
     orders = []
     for i in range(3):
@@ -203,7 +204,7 @@ async def multiple_orders_with_shipments(
 
 
 @pytest.fixture
-async def order_without_shipment(db_session: AsyncSession, test_order_source: dict):
+async def order_without_shipment(db_session: AsyncSession, test_order_source: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """テスト用の注文（shipment紐づきなし）"""
     order_id = str(uuid4())
     order_number = f"FEAT18-NOSHIP-{order_id[:8]}"
@@ -261,10 +262,10 @@ class TestImportTrackingFileAPI:
     async def test_ac001_csv_upload_updates_tracking_and_carrier(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        order_with_shipment: dict,
+        auth_headers: dict[str, Any],
+        order_with_shipment: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """AC-001: CSVファイルで伝票番号・運送会社が更新される.
 
         Given: shipmentが存在し、注文番号に紐づいている
@@ -311,10 +312,10 @@ class TestImportTrackingFileAPI:
     async def test_ac002_xlsx_upload_updates_tracking_and_carrier(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        order_with_shipment: dict,
+        auth_headers: dict[str, Any],
+        order_with_shipment: dict[str, Any],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """AC-002: XLSXファイルで伝票番号・運送会社が更新される.
 
         Given: shipmentが存在し、注文番号に紐づいている
@@ -374,10 +375,10 @@ class TestImportTrackingFileAPI:
     async def test_ac003_multiple_rows_bulk_update(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        multiple_orders_with_shipments: list[dict],
+        auth_headers: dict[str, Any],
+        multiple_orders_with_shipments: list[dict[str, Any]],
         db_session: AsyncSession,
-    ):
+    ) -> None:
         """AC-003: 3行のCSVで3件すべてのshipmentが更新される.
 
         Given: 3件のshipmentが存在する
@@ -428,9 +429,9 @@ class TestImportTrackingFileAPI:
     async def test_ac004_nonexistent_order_number_partial_success(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        order_with_shipment: dict,
-    ):
+        auth_headers: dict[str, Any],
+        order_with_shipment: dict[str, Any],
+    ) -> None:
         """AC-004: 存在しない注文番号の行はエラー、他の行は正常処理.
 
         Given: "ORD-001"は存在するが"ORD-999"は存在しない
@@ -467,9 +468,9 @@ class TestImportTrackingFileAPI:
     async def test_ac005_order_without_shipment_is_error(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        order_without_shipment: dict,
-    ):
+        auth_headers: dict[str, Any],
+        order_without_shipment: dict[str, Any],
+    ) -> None:
         """AC-005: shipmentが紐づいていない注文番号はエラー.
 
         Given: 注文は存在するがshipmentが紐づいていない
@@ -509,8 +510,8 @@ class TestImportTemplateAPI:
     async def test_ac012_import_template_download(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-    ):
+        auth_headers: dict[str, Any],
+    ) -> None:
         """AC-012: GET /api/v1/shipments/import-templateでテンプレートCSVがダウンロードできる.
 
         Given: 認証済み管理者
@@ -562,7 +563,7 @@ class TestImportTemplateAPI:
     async def test_ac012_import_template_requires_auth(
         self,
         client: AsyncClient,
-    ):
+    ) -> None:
         """テンプレートダウンロードには認証が必要."""
         response = await client.get("/api/v1/shipments/import-template")
 

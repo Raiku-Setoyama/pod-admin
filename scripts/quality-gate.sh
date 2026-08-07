@@ -22,17 +22,13 @@ RESULT="$GATE_DIR/result.json"
 # プロジェクト固有の静的チェック
 # ここを各プロジェクトで書き換える。存在しないコマンドは自動でスキップされる。
 # ---------------------------------------------------------------------------
+# cwd が漏れないよう bash -c で囲む（monorepo の api/ web/ 対策）。
 PROJECT_CHECKS=(
-  # 導入予定（2026-08-06 時点の main では下記が大量に失敗するため未有効化。
-  # REQ-0041 で是正し、緑化したものから順にコメントを外して有効化する）。
-  # 有効化時は cwd が漏れないよう bash -c で囲む（monorepo の api/ web/ 対策）。
-  #   api（uv）: ruff 260 errors / mypy 1758 errors（116 files）
-  #   web（npm）: eslint 5 errors・35 warnings / tsc 26 errors
-  # "bash -c 'cd api && uv run ruff check .'"
-  # "bash -c 'cd api && uv run mypy .'"
-  # "bash -c 'cd web && npm run lint'"
-  # "bash -c 'cd web && npx tsc --noEmit'"
-  # テスト（要 DB/インフラ。ci.yml 側で導入予定）:
+  "bash -c 'cd api && uv run ruff check .'"
+  "bash -c 'cd api && uv run mypy .'"
+  "bash -c 'cd web && npm run lint'"
+  "bash -c 'cd web && npx tsc --noEmit'"
+  # テストは DB・インフラの準備が要るため対象外（REQ-0041 のスコープ外）。
   # "bash -c 'cd api && uv run pytest -q'"
   # "bash -c 'cd web && npm run test:run'"
 )

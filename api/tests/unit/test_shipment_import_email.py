@@ -5,14 +5,14 @@ including status updates, duplicate prevention, and edge cases.
 """
 
 import io
-from unittest.mock import AsyncMock, MagicMock, PropertyMock
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.models.order import Order, OrderItem, OrderStatus
 from app.models.shipment import Shipment, ShipmentItem, ShipmentStatus
 from app.services.shipment_service import ShipmentService
-
 
 # ---- Helpers ----
 
@@ -40,7 +40,7 @@ def make_order(
     customer_email: str | None = "customer@example.com",
     customer_name: str = "テスト顧客",
     status: str = "delivered",
-    items: list | None = None,
+    items: list[Any] | None = None,
 ) -> MagicMock:
     """Create a mock Order."""
     order = MagicMock(spec=Order)
@@ -84,7 +84,7 @@ def make_shipment(
 
 
 @pytest.fixture
-def mock_repos():
+def mock_repos() -> dict[str, Any]:
     """Create mock repositories."""
     return {
         "shipment_repo": AsyncMock(),
@@ -95,7 +95,7 @@ def mock_repos():
 
 
 @pytest.fixture
-def mock_email_service():
+def mock_email_service() -> Any:
     """Create mock email service."""
     service = AsyncMock()
     service.send_shipping_notification = AsyncMock(return_value=True)
@@ -103,7 +103,7 @@ def mock_email_service():
 
 
 @pytest.fixture
-def service_with_email(mock_repos, mock_email_service):
+def service_with_email(mock_repos: dict[str, Any], mock_email_service: Any) -> Any:
     """ShipmentService with email service."""
     return ShipmentService(
         shipment_repo=mock_repos["shipment_repo"],
@@ -115,7 +115,7 @@ def service_with_email(mock_repos, mock_email_service):
 
 
 @pytest.fixture
-def service_without_email(mock_repos):
+def service_without_email(mock_repos: dict[str, Any]) -> Any:
     """ShipmentService without email service."""
     return ShipmentService(
         shipment_repo=mock_repos["shipment_repo"],
@@ -131,8 +131,8 @@ class TestImportTrackingWithEmail:
 
     @pytest.mark.asyncio
     async def test_sends_email_on_successful_import(
-        self, service_with_email, mock_repos, mock_email_service
-    ):
+        self, service_with_email: Any, mock_repos: dict[str, Any], mock_email_service: Any
+    ) -> None:
         """Email is sent when import succeeds and customer has email."""
         order = make_order()
         shipment = make_shipment()
@@ -154,8 +154,8 @@ class TestImportTrackingWithEmail:
 
     @pytest.mark.asyncio
     async def test_updates_status_to_shipped(
-        self, service_with_email, mock_repos, mock_email_service
-    ):
+        self, service_with_email: Any, mock_repos: dict[str, Any], mock_email_service: Any
+    ) -> None:
         """Shipment and order status are updated to shipped."""
         order = make_order()
         shipment = make_shipment()
@@ -176,8 +176,8 @@ class TestImportTrackingWithEmail:
 
     @pytest.mark.asyncio
     async def test_sets_shipping_email_sent_flag(
-        self, service_with_email, mock_repos, mock_email_service
-    ):
+        self, service_with_email: Any, mock_repos: dict[str, Any], mock_email_service: Any
+    ) -> None:
         """shipping_email_sent flag is set to True after successful send."""
         order = make_order()
         shipment = make_shipment()
@@ -196,8 +196,8 @@ class TestImportTrackingWithEmail:
 
     @pytest.mark.asyncio
     async def test_skips_email_when_already_sent(
-        self, service_with_email, mock_repos, mock_email_service
-    ):
+        self, service_with_email: Any, mock_repos: dict[str, Any], mock_email_service: Any
+    ) -> None:
         """No duplicate email when shipping_email_sent is already True."""
         order = make_order()
         shipment = make_shipment(shipping_email_sent=True)
@@ -218,8 +218,8 @@ class TestImportTrackingWithEmail:
 
     @pytest.mark.asyncio
     async def test_skips_email_when_no_customer_email(
-        self, service_with_email, mock_repos, mock_email_service
-    ):
+        self, service_with_email: Any, mock_repos: dict[str, Any], mock_email_service: Any
+    ) -> None:
         """No email sent when customer has no email address."""
         order = make_order(customer_email=None)
         shipment = make_shipment()
@@ -240,8 +240,8 @@ class TestImportTrackingWithEmail:
 
     @pytest.mark.asyncio
     async def test_no_email_without_email_service(
-        self, service_without_email, mock_repos
-    ):
+        self, service_without_email: Any, mock_repos: dict[str, Any]
+    ) -> None:
         """Import works normally without email service (no crash)."""
         order = make_order()
         shipment = make_shipment()
@@ -261,8 +261,8 @@ class TestImportTrackingWithEmail:
 
     @pytest.mark.asyncio
     async def test_email_failure_does_not_rollback_update(
-        self, service_with_email, mock_repos, mock_email_service
-    ):
+        self, service_with_email: Any, mock_repos: dict[str, Any], mock_email_service: Any
+    ) -> None:
         """DB update succeeds even when email sending fails."""
         mock_email_service.send_shipping_notification.return_value = False
 
@@ -293,8 +293,8 @@ class TestImportTrackingWithEmail:
 
     @pytest.mark.asyncio
     async def test_results_contain_row_details(
-        self, service_with_email, mock_repos, mock_email_service
-    ):
+        self, service_with_email: Any, mock_repos: dict[str, Any], mock_email_service: Any
+    ) -> None:
         """Results list contains per-row details including email status."""
         order = make_order()
         shipment = make_shipment()

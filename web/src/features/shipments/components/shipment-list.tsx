@@ -11,7 +11,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { StatusBadge } from "@/components/common/status-badge";
 import type { ShipmentOrPendingOrder } from "@/types/api";
-import { isPendingOrder, isShipment } from "@/types/api";
+import { isPendingOrder } from "@/types/api";
 
 interface ShipmentListProps {
   shipments: ShipmentOrPendingOrder[];

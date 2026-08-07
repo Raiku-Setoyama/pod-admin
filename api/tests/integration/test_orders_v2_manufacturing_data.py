@@ -9,6 +9,8 @@ illustrator-vm は未設定（テスト環境）のため、バックグラウ�
 """
 
 import json
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -18,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.fixture
-async def mfg_manufacturer(db_session: AsyncSession):
+async def mfg_manufacturer(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """acrylic_keychain を扱うメーカー."""
     manufacturer_id = str(uuid4())
     await db_session.execute(
@@ -49,7 +51,7 @@ async def mfg_manufacturer(db_session: AsyncSession):
 
 
 @pytest.fixture
-async def mfg_keychain_product(db_session: AsyncSession, mfg_manufacturer: dict):
+async def mfg_keychain_product(db_session: AsyncSession, mfg_manufacturer: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """acrylic_keychain のマスタ商品."""
     product_id = str(uuid4())
     await db_session.execute(
@@ -80,7 +82,7 @@ async def mfg_keychain_product(db_session: AsyncSession, mfg_manufacturer: dict)
 
 
 @pytest.fixture
-async def mfg_order_source(db_session: AsyncSession):
+async def mfg_order_source(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """API キー付きの受注元."""
     source_id = str(uuid4())
     api_key = f"mfg-api-key-{source_id}"
@@ -111,7 +113,7 @@ async def mfg_order_source(db_session: AsyncSession):
     yield {"id": source_id, "api_key": api_key}
 
 
-def _customer() -> dict:
+def _customer() -> dict[str, Any]:
     return {
         "name": "山田太郎",
         "postal_code": "123-4567",
@@ -122,7 +124,7 @@ def _customer() -> dict:
     }
 
 
-def _keychain_item(uid: str, product_code: str, *, with_white: bool = False) -> dict:
+def _keychain_item(uid: str, product_code: str, *, with_white: bool = False) -> dict[str, Any]:
     layers = [
         {"layer_type": "color", "url": "https://example.com/color.png"},
         {"layer_type": "cutline", "url": "https://example.com/cutline.png"},
@@ -149,9 +151,9 @@ class TestV2Intake:
         self,
         client: AsyncClient,
         db_session: AsyncSession,
-        mfg_keychain_product: dict,
-        mfg_order_source: dict,
-    ):
+        mfg_keychain_product: dict[str, Any],
+        mfg_order_source: dict[str, Any],
+    ) -> None:
         product_code = f"RKSYO-{uuid4().hex[:6]}"
         payload = {
             "order_number": "1000001",
@@ -203,9 +205,9 @@ class TestV2Intake:
         self,
         client: AsyncClient,
         db_session: AsyncSession,
-        mfg_keychain_product: dict,
-        mfg_order_source: dict,
-    ):
+        mfg_keychain_product: dict[str, Any],
+        mfg_order_source: dict[str, Any],
+    ) -> None:
         product_code = f"RKSYO-{uuid4().hex[:6]}"
         headers = {"X-API-Key": mfg_order_source["api_key"]}
 
@@ -259,10 +261,10 @@ class TestV2Intake:
     async def test_order_cannot_go_manufacturing_until_ready(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        mfg_keychain_product: dict,
-        mfg_order_source: dict,
-    ):
+        auth_headers: dict[str, Any],
+        mfg_keychain_product: dict[str, Any],
+        mfg_order_source: dict[str, Any],
+    ) -> None:
         product_code = f"RKSYO-{uuid4().hex[:6]}"
         resp = await client.post(
             "/api/v2/orders",
@@ -289,11 +291,11 @@ class TestV2Intake:
     async def test_bulk_status_gate_blocks_unready_v2_order(
         self,
         client: AsyncClient,
-        auth_headers: dict,
+        auth_headers: dict[str, Any],
         db_session: AsyncSession,
-        mfg_keychain_product: dict,
-        mfg_order_source: dict,
-    ):
+        mfg_keychain_product: dict[str, Any],
+        mfg_order_source: dict[str, Any],
+    ) -> None:
         # 一括ステータス更新でも、未ready の v2 注文は MANUFACTURING に遷移できない
         # （単発 update_status の 409 ゲートと同一規則。一括では failed として記録しスキップ）。
         product_code = f"RKSYO-{uuid4().hex[:6]}"
@@ -335,9 +337,9 @@ class TestV2Intake:
         self,
         client: AsyncClient,
         db_session: AsyncSession,
-        mfg_keychain_product: dict,
-        mfg_order_source: dict,
-    ):
+        mfg_keychain_product: dict[str, Any],
+        mfg_order_source: dict[str, Any],
+    ) -> None:
         # acrylic_keychain は color+cutline が必須。cutline を欠くと intake で 400 拒否され、
         # 注文・製造データ行は一切作成されない（201受理→恒久保留を防ぐ）。
         product_code = f"RKSYO-{uuid4().hex[:6]}"
@@ -388,11 +390,11 @@ class TestV2Intake:
     async def test_reaffirming_manufacturing_is_not_gated(
         self,
         client: AsyncClient,
-        auth_headers: dict,
+        auth_headers: dict[str, Any],
         db_session: AsyncSession,
-        mfg_keychain_product: dict,
-        mfg_order_source: dict,
-    ):
+        mfg_keychain_product: dict[str, Any],
+        mfg_order_source: dict[str, Any],
+    ) -> None:
         # メーカーが明細単位で一部を製造中にした結果、注文が既に MANUFACTURING の場合、
         # 未ready明細が残っていても「manufacturing のまま」への再確定は 409 にならない
         # （注文レベルゲートと明細レベルゲートの不整合を避ける = 前進遷移でのみゲート）。
@@ -430,10 +432,10 @@ class TestV1BackwardCompatibility:
     async def test_v1_intake_unchanged_and_not_gated(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        mfg_keychain_product: dict,
-        mfg_order_source: dict,
-    ):
+        auth_headers: dict[str, Any],
+        mfg_keychain_product: dict[str, Any],
+        mfg_order_source: dict[str, Any],
+    ) -> None:
         # v1（design_image_url 方式）は従来通り受理され、発注ゲートの対象外
         resp = await client.post(
             "/api/v1/orders",
@@ -479,11 +481,11 @@ class TestRegenerateEndpoint:
     async def test_regenerate_demotes_shared_items_and_blocks_when_manufacturing(
         self,
         client: AsyncClient,
-        auth_headers: dict,
+        auth_headers: dict[str, Any],
         db_session: AsyncSession,
-        mfg_keychain_product: dict,
-        mfg_order_source: dict,
-    ):
+        mfg_keychain_product: dict[str, Any],
+        mfg_order_source: dict[str, Any],
+    ) -> None:
         # 同一 product_code の v2 注文を2件作成 → 同一製造データ行を共有する。
         product_code = f"RKSYO-{uuid4().hex[:6]}"
         headers = {"X-API-Key": mfg_order_source["api_key"]}

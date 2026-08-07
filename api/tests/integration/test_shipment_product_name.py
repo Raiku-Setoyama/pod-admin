@@ -8,15 +8,18 @@ from OrderItem instead of the deprecated Order.product_name.
 AC-005: 配送詳細APIが正しい商品名を返す
 """
 
+from collections.abc import AsyncIterator
+from typing import Any
+from uuid import uuid4
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import uuid4
 
 
 @pytest.fixture
-async def test_product(db_session: AsyncSession):
+async def test_product(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """テスト用の商品マスタ (order_items FK のため必要).
 
     既存の商品がある場合はそれを使い、なければ新規作成する。
@@ -96,9 +99,9 @@ async def test_product(db_session: AsyncSession):
 @pytest.fixture
 async def shipment_with_order_items(
     db_session: AsyncSession,
-    test_order_source: dict,
-    test_product: dict,
-):
+    test_order_source: dict[str, Any],
+    test_product: dict[str, Any],
+) -> AsyncIterator[dict[str, Any]]:
     """配送データ: Order に OrderItem (product_name="テスト商品") が紐づくケース.
 
     Order.product_name は null (新しいデータ形式)。
@@ -216,9 +219,9 @@ class TestShipmentProductNameAPI:
     async def test_ac005_get_shipment_returns_correct_product_name(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        shipment_with_order_items: dict,
-    ):
+        auth_headers: dict[str, Any],
+        shipment_with_order_items: dict[str, Any],
+    ) -> None:
         """AC-005: 配送詳細APIが正しい商品名を返す.
 
         Given: 配送に紐づく注文に OrderItem (product_name="テスト商品") が存在する

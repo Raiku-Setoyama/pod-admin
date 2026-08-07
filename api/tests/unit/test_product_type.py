@@ -6,7 +6,6 @@ FEAT-0002: 商品種別を5種類に限定（マグカップ削除）
 MUG が削除されていることを検証します。
 """
 
-import pytest
 
 from app.models.product import ProductType
 
@@ -14,7 +13,7 @@ from app.models.product import ProductType
 class TestProductType:
     """ProductType Enumのテスト"""
 
-    def test_product_type_has_exactly_five_types(self):
+    def test_product_type_has_exactly_five_types(self) -> None:
         """ProductTypeは正確に5種類のみ定義されている"""
         expected_count = 5
         actual_count = len(ProductType)
@@ -24,27 +23,27 @@ class TestProductType:
             f"but has {actual_count}"
         )
 
-    def test_product_type_contains_acrylic_keychain(self):
+    def test_product_type_contains_acrylic_keychain(self) -> None:
         """ProductTypeにアクリルキーホルダーが含まれる"""
         assert ProductType.ACRYLIC_KEYCHAIN.value == "acrylic_keychain"
 
-    def test_product_type_contains_acrylic_stand(self):
+    def test_product_type_contains_acrylic_stand(self) -> None:
         """ProductTypeにアクリルスタンドが含まれる"""
         assert ProductType.ACRYLIC_STAND.value == "acrylic_stand"
 
-    def test_product_type_contains_sticker(self):
+    def test_product_type_contains_sticker(self) -> None:
         """ProductTypeにステッカーが含まれる"""
         assert ProductType.STICKER.value == "sticker"
 
-    def test_product_type_contains_tote_bag(self):
+    def test_product_type_contains_tote_bag(self) -> None:
         """ProductTypeにトートバッグが含まれる"""
         assert ProductType.TOTE_BAG.value == "tote_bag"
 
-    def test_product_type_contains_tshirt(self):
+    def test_product_type_contains_tshirt(self) -> None:
         """ProductTypeにTシャツが含まれる"""
         assert ProductType.TSHIRT.value == "tshirt"
 
-    def test_product_type_does_not_contain_mug(self):
+    def test_product_type_does_not_contain_mug(self) -> None:
         """ProductTypeにマグカップ（MUG）が含まれない"""
         # MUGが存在しないことを確認
         assert not hasattr(ProductType, "MUG"), (
@@ -57,7 +56,7 @@ class TestProductType:
             "ProductType should not contain 'mug' value"
         )
 
-    def test_all_allowed_product_types(self):
+    def test_all_allowed_product_types(self) -> None:
         """許可された5種類の商品種別がすべて存在する"""
         allowed_values = {
             "acrylic_keychain",

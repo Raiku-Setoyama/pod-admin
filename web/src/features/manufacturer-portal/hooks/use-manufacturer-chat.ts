@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useCallback } from "react";
 import useSWR from "swr";
 import { apiClient } from "@/lib/api/client";
+import { useLocalStorageValue } from "@/lib/use-local-storage-value";
 import type { ChatMessageListResponse } from "@/types/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -18,12 +19,7 @@ const fetcher = async (url: string) => {
 };
 
 export function useManufacturerChat() {
-  const [token, setToken] = useState<string | null>(null);
-
-  useEffect(() => {
-    const storedToken = localStorage.getItem("manufacturer_token");
-    setToken(storedToken);
-  }, []);
+  const token = useLocalStorageValue("manufacturer_token");
 
   const { data, error, isLoading, mutate } = useSWR<ChatMessageListResponse>(
     token ? `/manufacturer-portal/chat` : null,

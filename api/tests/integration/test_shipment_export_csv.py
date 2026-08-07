@@ -11,6 +11,8 @@ AC-006: POST /api/v1/shipments/export-csv returns 18-column CSV
 
 import csv
 import io
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -20,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.fixture
-async def test_product_for_csv(db_session: AsyncSession):
+async def test_product_for_csv(db_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """テスト用の商品マスタ (order_items FK のため必要).
 
     既存の商品がある場合はそれを使い、なければ新規作成する。
@@ -98,9 +100,9 @@ async def test_product_for_csv(db_session: AsyncSession):
 @pytest.fixture
 async def shipment_for_csv_export(
     db_session: AsyncSession,
-    test_order_source: dict,
-    test_product_for_csv: dict,
-):
+    test_order_source: dict[str, Any],
+    test_product_for_csv: dict[str, Any],
+) -> AsyncIterator[dict[str, Any]]:
     """配送CSVエクスポートテスト用のデータセット.
 
     Order -> OrderItem (uid="TEST-UID-0017") -> Shipment の完全なリレーションを構築。
@@ -220,9 +222,9 @@ class TestShipmentExportCsvAPI:
     async def test_ac006_export_csv_has_18_columns_with_processing_product_name(
         self,
         client: AsyncClient,
-        auth_headers: dict,
-        shipment_for_csv_export: dict,
-    ):
+        auth_headers: dict[str, Any],
+        shipment_for_csv_export: dict[str, Any],
+    ) -> None:
         """AC-006: POST /api/v1/shipments/export-csv が18列のCSVを返す.
 
         Given: 配送データが登録されている

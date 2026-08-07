@@ -6,6 +6,7 @@ import asyncio
 import logging
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from jinja2 import Environment, FileSystemLoader
@@ -47,7 +48,7 @@ class EmailService:
         tracking_number: str,
         carrier_name: str,
         order_external_id: str,
-        order_items: list[dict],
+        order_items: list[dict[str, Any]],
     ) -> bool:
         """Send shipping notification email.
 
@@ -124,7 +125,7 @@ class EmailService:
         source_code: str | None,
         ordered_at: datetime,
         customer_name: str,
-        order_items: list[dict],
+        order_items: list[dict[str, Any]],
         total_price: int,
         order_id: str | None = None,
     ) -> bool:
@@ -310,7 +311,7 @@ class EmailService:
         source_code: str | None,
         ordered_at: str,
         customer_name: str,
-        order_items: list[dict],
+        order_items: list[dict[str, Any]],
         total_price: str,
         order_detail_url: str | None,
     ) -> str:
@@ -343,7 +344,7 @@ class EmailService:
         tracking_number: str,
         carrier_name: str,
         order_external_id: str,
-        order_items: list[dict],
+        order_items: list[dict[str, Any]],
     ) -> str:
         """Build plain text email content."""
         items_text = "\n".join(

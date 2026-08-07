@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 from enum import Enum
-from typing import Literal, Union
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
@@ -120,7 +120,7 @@ class ShipmentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # pydantic 公式の書き方。mypy が @property の重ね掛けを解釈できない
     @property
     def customer_full_address(self) -> str:
         """結合された完全な住所."""
@@ -142,7 +142,7 @@ class ShipmentListResponse(BaseModel):
 
 
 # Union type for mixed list items
-ShipmentOrPendingOrder = Union[ShipmentResponse, PendingOrderResponse]
+ShipmentOrPendingOrder = ShipmentResponse | PendingOrderResponse
 
 
 class ShipmentListWithPendingResponse(BaseModel):

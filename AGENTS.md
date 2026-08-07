@@ -344,7 +344,15 @@ cd api && uv run ruff check .        # backend（line-length 100, py312）
 cd web && npm run lint               # frontend（eslint 9）
 ```
 
-`scripts/quality-gate.sh` の `PROJECT_CHECKS` は現状 docs-lint のみ有効。上記のコード用チェック（ruff / mypy / eslint / tsc）は 2026-08-06 時点で大量に失敗するため導入予定（REQ-0041）。緑化したものから順に有効化する。
+`scripts/quality-gate.sh` の `PROJECT_CHECKS` では docs-lint に加え、上記 4 つのコード用チェック
+（ruff / mypy / eslint / tsc）がすべて有効である（REQ-0041 で全件を緑化した。ADR-0021）。
+`ci.yml` でも同じ 4 つをブロッキングで実行する。**赤い状態を新たに持ち込まないこと。**
+
+mypy は `strict = true` で、対象は `app/` だけでなく `tests/` / `scripts/` / `alembic/` を含む api 全体である。
+ルールの除外は**ツールの仕様上の偽陽性に限る**（現在は FastAPI の `Depends()` / `Query()` に対する `B008` のみ）。
+指摘を消すためのルール無効化や、理由のない `# type: ignore` を足さないこと。
+
+テスト（pytest / vitest）はまだゲートにも CI にも入っていない。着手時点で赤いため（REQ-0042）。
 
 ### このプロジェクト特有の注意点
 

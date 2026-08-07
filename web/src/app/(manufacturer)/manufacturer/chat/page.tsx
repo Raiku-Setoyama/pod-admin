@@ -1,20 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { ChatPanel } from "@/features/chat/components/chat-panel";
+import { useLocalStorageValue } from "@/lib/use-local-storage-value";
 import { useManufacturerChat } from "@/features/manufacturer-portal/hooks/use-manufacturer-chat";
 import { MessageSquare } from "lucide-react";
 
 export default function ManufacturerChatPage() {
-  const [manufacturerName, setManufacturerName] = useState<string | null>(null);
+  const manufacturerName = useLocalStorageValue("manufacturer_name");
   const { messages, isLoading, sendMessage } = useManufacturerChat();
-
-  useEffect(() => {
-    const name = localStorage.getItem("manufacturer_name");
-    setManufacturerName(name);
-  }, []);
 
   const handleSendMessage = async (content: string, files?: File[]) => {
     try {

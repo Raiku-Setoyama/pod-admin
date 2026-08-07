@@ -10,36 +10,37 @@ AC-003: Order is null -> product_name is null
 AC-004: Order has 0 OrderItems -> product_name is null
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.models.order import Order, OrderItem, OrderStatus
+from app.models.order import Order, OrderItem
 from app.models.shipment import Shipment, ShipmentItem, ShipmentStatus
 from app.services.shipment_service import ShipmentService
 
 
 @pytest.fixture
-def mock_shipment_repo():
+def mock_shipment_repo() -> Any:
     """Mock shipment repository."""
     return AsyncMock()
 
 
 @pytest.fixture
-def mock_order_repo():
+def mock_order_repo() -> Any:
     """Mock order repository."""
     return AsyncMock()
 
 
 @pytest.fixture
-def mock_file_storage():
+def mock_file_storage() -> Any:
     """Mock file storage."""
     return AsyncMock()
 
 
 @pytest.fixture
-def shipment_service(mock_shipment_repo, mock_order_repo, mock_file_storage):
+def shipment_service(mock_shipment_repo: Any, mock_order_repo: Any, mock_file_storage: Any) -> Any:
     """Create ShipmentService with mocked dependencies."""
     return ShipmentService(
         shipment_repo=mock_shipment_repo,
@@ -112,8 +113,8 @@ def create_mock_shipment(
     shipment.shipped_at = None
     shipment.delivered_at = None
     shipment.note = None
-    shipment.created_at = datetime.now(timezone.utc)
-    shipment.updated_at = datetime.now(timezone.utc)
+    shipment.created_at = datetime.now(UTC)
+    shipment.updated_at = datetime.now(UTC)
     shipment.items = []
 
     if shipment_items:
@@ -140,7 +141,7 @@ class TestShipmentProductName:
     # AC-001: Single OrderItem -> product_name from OrderItem
     # ===========================================
 
-    def test_ac001_single_order_item_product_name(self, shipment_service):
+    def test_ac001_single_order_item_product_name(self, shipment_service: Any) -> None:
         """AC-001: ShipmentItemResponse の product_name に OrderItem の商品名が設定される.
 
         Given: ShipmentItem に紐づく Order が1件の OrderItem
@@ -170,7 +171,7 @@ class TestShipmentProductName:
     # AC-002: Multiple OrderItems -> comma-separated
     # ===========================================
 
-    def test_ac002_multiple_order_items_expanded(self, shipment_service):
+    def test_ac002_multiple_order_items_expanded(self, shipment_service: Any) -> None:
         """AC-002: Order に複数の OrderItem がある場合、OrderItem 単位で展開される.
 
         Given: ShipmentItem に紐づく Order が複数の OrderItem
@@ -202,7 +203,7 @@ class TestShipmentProductName:
     # AC-003: Order is null -> product_name is null
     # ===========================================
 
-    def test_ac003_order_is_null_product_name_is_none(self, shipment_service):
+    def test_ac003_order_is_null_product_name_is_none(self, shipment_service: Any) -> None:
         """AC-003: Order が null の場合、product_name は null になる.
 
         Given: ShipmentItem に紐づく Order が null である
@@ -220,8 +221,8 @@ class TestShipmentProductName:
         shipment.shipped_at = None
         shipment.delivered_at = None
         shipment.note = None
-        shipment.created_at = datetime.now(timezone.utc)
-        shipment.updated_at = datetime.now(timezone.utc)
+        shipment.created_at = datetime.now(UTC)
+        shipment.updated_at = datetime.now(UTC)
 
         si = MagicMock(spec=ShipmentItem)
         si.id = "item-001"
@@ -242,7 +243,7 @@ class TestShipmentProductName:
     # AC-004: Order has 0 OrderItems -> product_name is null
     # ===========================================
 
-    def test_ac004_order_with_empty_items_product_name_is_none(self, shipment_service):
+    def test_ac004_order_with_empty_items_product_name_is_none(self, shipment_service: Any) -> None:
         """AC-004: Order に OrderItem が0件の場合、product_name は null になる.
 
         Given: ShipmentItem に紐づく Order の items が空リストであり、
@@ -274,8 +275,8 @@ class TestShipmentProductName:
     # ===========================================
 
     def test_fallback_to_deprecated_field_when_items_empty_but_product_name_exists(
-        self, shipment_service
-    ):
+        self, shipment_service: Any
+    ) -> None:
         """Fallback: When Order.items is empty but Order.product_name (deprecated)
         has a value, the deprecated field should be used as fallback.
 
@@ -302,7 +303,7 @@ class TestShipmentProductName:
         # Assert - fallback to deprecated Order.product_name
         assert response.items[0].product_name == "Legacy Product Name"
 
-    def test_multiple_shipment_items_each_with_different_orders(self, shipment_service):
+    def test_multiple_shipment_items_each_with_different_orders(self, shipment_service: Any) -> None:
         """Multiple ShipmentItems with different orders should each resolve
         product_name independently from their own Order's OrderItems.
         FEAT-0021: OrderItem 単位で展開されるため、合計3行になる。"""

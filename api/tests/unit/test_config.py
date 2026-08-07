@@ -2,10 +2,8 @@
 
 import os
 
-import pytest
 
-
-def test_settings_defaults():
+def test_settings_defaults() -> None:
     """Test default settings values."""
     from app.config import Settings
 
@@ -23,7 +21,7 @@ def test_settings_defaults():
     assert settings.DEBUG is False
 
 
-def test_settings_environment_override():
+def test_settings_environment_override() -> None:
     """Test settings can be overridden via environment variables."""
     os.environ["PROJECT_NAME"] = "Custom API Name"
     os.environ["DEBUG"] = "true"
@@ -43,7 +41,7 @@ def test_settings_environment_override():
     del os.environ["SECRET_KEY"]
 
 
-def test_settings_cors_origins():
+def test_settings_cors_origins() -> None:
     """Test CORS origins are properly parsed."""
     from app.config import Settings
 

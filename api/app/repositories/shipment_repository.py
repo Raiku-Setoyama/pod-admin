@@ -6,7 +6,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.order import Order, OrderItem
+from app.models.order import Order
 from app.models.shipment import Shipment, ShipmentItem, ShipmentStatus
 
 

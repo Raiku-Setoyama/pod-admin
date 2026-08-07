@@ -5,40 +5,41 @@ Tests cover all shipment status transition scenarios including
 bidirectional transitions and order status synchronization.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from app.models.order import Order, OrderStatus
 from app.models.shipment import Shipment, ShipmentItem, ShipmentStatus
 from app.schemas.shipment import ShipmentStatusUpdate
 from app.services.shipment_service import ShipmentService
-from app.utils.exceptions import InvalidStatusTransitionError
 
 
 @pytest.fixture
-def mock_shipment_repo():
+def mock_shipment_repo() -> Any:
     """Mock shipment repository."""
     repo = AsyncMock()
     return repo
 
 
 @pytest.fixture
-def mock_order_repo():
+def mock_order_repo() -> Any:
     """Mock order repository."""
     repo = AsyncMock()
     return repo
 
 
 @pytest.fixture
-def mock_file_storage():
+def mock_file_storage() -> Any:
     """Mock file storage."""
     storage = AsyncMock()
     return storage
 
 
 @pytest.fixture
-def shipment_service(mock_shipment_repo, mock_order_repo, mock_file_storage):
+def shipment_service(mock_shipment_repo: Any, mock_order_repo: Any, mock_file_storage: Any) -> Any:
     """Create ShipmentService with mocked dependencies."""
     return ShipmentService(
         shipment_repo=mock_shipment_repo,
@@ -89,8 +90,8 @@ def create_mock_shipment(
     shipment.shipped_at = shipped_at
     shipment.delivered_at = None
     shipment.note = None
-    shipment.created_at = datetime.now(timezone.utc)
-    shipment.updated_at = datetime.now(timezone.utc)
+    shipment.created_at = datetime.now(UTC)
+    shipment.updated_at = datetime.now(UTC)
     shipment.items = []
 
     if order_ids:
@@ -119,8 +120,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_pending_to_ready_success(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: pending -> ready is allowed."""
         # Arrange
         shipment = create_mock_shipment(status=ShipmentStatus.PENDING.value)
@@ -130,7 +131,7 @@ class TestShipmentStatusTransition:
         update_data = ShipmentStatusUpdate(status=ShipmentStatus.READY)
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -141,8 +142,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_ready_to_pending_success(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: ready -> pending is allowed (reverse transition)."""
         # Arrange
         shipment = create_mock_shipment(status=ShipmentStatus.READY.value)
@@ -152,7 +153,7 @@ class TestShipmentStatusTransition:
         update_data = ShipmentStatusUpdate(status=ShipmentStatus.PENDING)
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -163,8 +164,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_pending_to_shipped_success(
-        self, shipment_service, mock_shipment_repo, mock_order_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any, mock_order_repo: Any
+    ) -> None:
         """Test: pending -> shipped is allowed, sets shipped_at and updates orders."""
         # Arrange
         order_ids = ["order-123", "order-456"]
@@ -178,7 +179,7 @@ class TestShipmentStatusTransition:
         update_data = ShipmentStatusUpdate(status=ShipmentStatus.SHIPPED)
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -191,8 +192,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_ready_to_shipped_success(
-        self, shipment_service, mock_shipment_repo, mock_order_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any, mock_order_repo: Any
+    ) -> None:
         """Test: ready -> shipped is allowed, sets shipped_at and updates orders."""
         # Arrange
         order_ids = ["order-123"]
@@ -206,7 +207,7 @@ class TestShipmentStatusTransition:
         update_data = ShipmentStatusUpdate(status=ShipmentStatus.SHIPPED)
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -224,15 +225,15 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_shipped_to_pending_success(
-        self, shipment_service, mock_shipment_repo, mock_order_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any, mock_order_repo: Any
+    ) -> None:
         """Test: shipped -> pending clears shipped_at and reverts order status to delivered."""
         # Arrange
         order_ids = ["order-123"]
         shipment = create_mock_shipment(
             status=ShipmentStatus.SHIPPED.value,
             order_ids=order_ids,
-            shipped_at=datetime.now(timezone.utc),
+            shipped_at=datetime.now(UTC),
         )
         mock_shipment_repo.find_by_id.return_value = shipment
         mock_shipment_repo.update.return_value = shipment
@@ -240,7 +241,7 @@ class TestShipmentStatusTransition:
         update_data = ShipmentStatusUpdate(status=ShipmentStatus.PENDING)
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -254,15 +255,15 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_shipped_to_ready_success(
-        self, shipment_service, mock_shipment_repo, mock_order_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any, mock_order_repo: Any
+    ) -> None:
         """Test: shipped -> ready clears shipped_at and reverts order status to delivered."""
         # Arrange
         order_ids = ["order-123", "order-456"]
         shipment = create_mock_shipment(
             status=ShipmentStatus.SHIPPED.value,
             order_ids=order_ids,
-            shipped_at=datetime.now(timezone.utc),
+            shipped_at=datetime.now(UTC),
         )
         mock_shipment_repo.find_by_id.return_value = shipment
         mock_shipment_repo.update.return_value = shipment
@@ -270,7 +271,7 @@ class TestShipmentStatusTransition:
         update_data = ShipmentStatusUpdate(status=ShipmentStatus.READY)
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -289,15 +290,15 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_shipped_to_pending_updates_all_orders(
-        self, shipment_service, mock_shipment_repo, mock_order_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any, mock_order_repo: Any
+    ) -> None:
         """Test: When multiple orders in shipment, all are updated on status change."""
         # Arrange
         order_ids = ["order-1", "order-2", "order-3"]
         shipment = create_mock_shipment(
             status=ShipmentStatus.SHIPPED.value,
             order_ids=order_ids,
-            shipped_at=datetime.now(timezone.utc),
+            shipped_at=datetime.now(UTC),
         )
         mock_shipment_repo.find_by_id.return_value = shipment
         mock_shipment_repo.update.return_value = shipment
@@ -305,7 +306,7 @@ class TestShipmentStatusTransition:
         update_data = ShipmentStatusUpdate(status=ShipmentStatus.PENDING)
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -321,8 +322,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_tracking_number_updated_on_transition(
-        self, shipment_service, mock_shipment_repo, mock_order_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any, mock_order_repo: Any
+    ) -> None:
         """Test: Tracking number can be set during status update."""
         # Arrange
         shipment = create_mock_shipment(
@@ -339,7 +340,7 @@ class TestShipmentStatusTransition:
         )
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -350,8 +351,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_note_updated_on_transition(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: Note can be set during status update."""
         # Arrange
         shipment = create_mock_shipment(status=ShipmentStatus.PENDING.value)
@@ -364,7 +365,7 @@ class TestShipmentStatusTransition:
         )
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
@@ -378,8 +379,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_all_transitions_allowed(
-        self, shipment_service, mock_shipment_repo, mock_order_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any, mock_order_repo: Any
+    ) -> None:
         """Test: All status transitions are allowed in the new bidirectional model."""
         transitions = [
             (ShipmentStatus.PENDING, ShipmentStatus.READY),
@@ -396,7 +397,7 @@ class TestShipmentStatusTransition:
                 shipment_id=f"shipment-{from_status.value}-{to_status.value}",
                 status=from_status.value,
                 order_ids=["order-123"],
-                shipped_at=datetime.now(timezone.utc) if from_status == ShipmentStatus.SHIPPED else None,
+                shipped_at=datetime.now(UTC) if from_status == ShipmentStatus.SHIPPED else None,
             )
             mock_shipment_repo.find_by_id.return_value = shipment
             mock_shipment_repo.update.return_value = shipment
@@ -404,7 +405,7 @@ class TestShipmentStatusTransition:
             update_data = ShipmentStatusUpdate(status=to_status)
 
             # Act - should not raise
-            result = await shipment_service.update_status(
+            await shipment_service.update_status(
                 shipment_id=shipment.id,
                 data=update_data,
             )
@@ -418,8 +419,8 @@ class TestShipmentStatusTransition:
 
     @pytest.mark.asyncio
     async def test_same_status_transition_is_idempotent(
-        self, shipment_service, mock_shipment_repo
-    ):
+        self, shipment_service: Any, mock_shipment_repo: Any
+    ) -> None:
         """Test: Transitioning to the same status is allowed (idempotent)."""
         # Arrange
         shipment = create_mock_shipment(status=ShipmentStatus.READY.value)
@@ -429,7 +430,7 @@ class TestShipmentStatusTransition:
         update_data = ShipmentStatusUpdate(status=ShipmentStatus.READY)
 
         # Act
-        result = await shipment_service.update_status(
+        await shipment_service.update_status(
             shipment_id="shipment-123",
             data=update_data,
         )
