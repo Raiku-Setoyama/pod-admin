@@ -2,6 +2,7 @@
 
 import logging
 import os
+from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Any
 from urllib.parse import urlparse
@@ -322,7 +323,7 @@ class ManufacturerOrderService:
     }
 
     @staticmethod
-    def _hold_unready_items(rows: list[tuple[Any, ...]]) -> list[tuple[Any, ...]]:
+    def _hold_unready_items(rows: Sequence[Any]) -> list[Any]:
         """製造データが未準備の明細（発注準備中）を発注資料から除外する.
 
         統合ステータスでは未 ready 明細は「発注準備中（preparing_order）」を取る。
@@ -428,6 +429,7 @@ class ManufacturerOrderService:
         # グループキー別にアイテムを整理
         # Tシャツは (product_type, position) でグループ、他は (product_type,) でグループ
         items_by_group: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+        group_key: tuple[Any, ...]
         for order_item, order_number, ordered_at, _customer_name, cost, _item_status, _order_status, _lead_time_days in rows:
             item_product_type = order_item.product_type
             if item_product_type == "tshirt":

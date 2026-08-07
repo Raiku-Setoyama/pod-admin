@@ -120,7 +120,7 @@ class ShipmentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # pydantic 公式の書き方。mypy が @property の重ね掛けを解釈できない
     @property
     def customer_full_address(self) -> str:
         """結合された完全な住所."""

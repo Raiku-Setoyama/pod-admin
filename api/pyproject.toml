@@ -48,6 +48,8 @@ dev = [
     "mypy>=1.13.0",
     # Type Stubs
     "types-passlib>=1.7.0",
+    "types-aiofiles>=25.1.0",
+    "types-pyyaml>=6.0.12",
 ]
 
 [dependency-groups]
@@ -61,6 +63,8 @@ dev = [
     "mypy>=1.13.0",
     # Type Stubs
     "types-passlib>=1.7.0",
+    "types-aiofiles>=25.1.0",
+    "types-pyyaml>=6.0.12",
     # HTTP client for testing
     "httpx>=0.28.0",
 ]

@@ -378,6 +378,8 @@ async def get_current_manufacturer(
         raise UnauthorizedError("Invalid manufacturer token")
 
     manufacturer_id = payload.get("manufacturer_id")
+    if not isinstance(manufacturer_id, str):
+        raise UnauthorizedError("Invalid manufacturer token")
     manufacturer = await manufacturer_repo.find_by_id(manufacturer_id)
 
     if not manufacturer or not manufacturer.is_active:

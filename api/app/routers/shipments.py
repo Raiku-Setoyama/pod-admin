@@ -303,7 +303,7 @@ async def download_shipment_documents(
     else:  # packing_list
         items = [{"product_name": item.product_name, "size": "", "quantity": 1} for item in shipment.items]
         content = csv_gen.generate_packing_list_csv(
-            order_number=shipment.items[0].order_number if shipment.items else "",
+            order_number=(shipment.items[0].order_number or "") if shipment.items else "",
             items=items,
         )
         filename = f"同梱リスト_{shipment_id[:8]}.csv"

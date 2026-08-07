@@ -135,8 +135,10 @@ class ChatService:
                 )
 
         # Reload message with attachments
-        message = await self._chat_repo.find_by_id(message.id)
-        return self._to_response(message)  # type: ignore
+        reloaded = await self._chat_repo.find_by_id(message.id)
+        # 直前に作成・flush しているので必ず見つかる
+        assert reloaded is not None
+        return self._to_response(reloaded)
 
     def _to_response(self, message: Any) -> ChatMessageResponse:
         """Convert message model to response schema."""

@@ -176,6 +176,9 @@ class ManufacturingDataService:
         self, order_source_id: str | None, item: OrderItem
     ) -> tuple[ManufacturingData, bool]:
         """キャッシュを検索し、無ければ作成する。(row, 生成が必要か) を返す."""
+        # 呼び出し元（_generate_for_order）で両方の存在を確認済み
+        assert item.product_code is not None
+        assert item.source_images is not None
         layer_types = {img["layer_type"] for img in item.source_images}
         try:
             mapping = build_vm_mapping(item.product_type, item.size, layer_types)
@@ -251,6 +254,8 @@ class ManufacturingDataService:
                     await self._session.flush()
                 return md, True
             except IntegrityError:
+                # 呼び出し元（_resolve_or_create）で product_code の存在を確認済み
+                assert item.product_code is not None
                 existing = await self._md_repo.find_by_cache_key(
                     order_source_id, item.product_code, item.size, variant
                 )

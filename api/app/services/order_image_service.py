@@ -68,7 +68,7 @@ class OrderImageService:
 
         # Fetch images in parallel with semaphore
         semaphore = asyncio.Semaphore(10)
-        fetched_images: list[dict[str, Any] | None] = []
+        fetched_images: list[dict[str, Any]] = []
 
         async with httpx.AsyncClient() as client:
 

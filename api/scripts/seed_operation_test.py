@@ -14,6 +14,7 @@ import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 # Add the project root to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -47,7 +48,7 @@ SAMPLE_THUMBNAIL_IMAGE_URL = "https://jmgzsiogrviyrppxtaqs.supabase.co/storage/v
 # =============================================================================
 # 顧客データ（5パターン）
 # =============================================================================
-CUSTOMERS = [
+CUSTOMERS: list[dict[str, Any]] = [
     {
         "name": "山田 太郎",
         "postal_code": "150-0001",
@@ -98,7 +99,7 @@ CUSTOMERS = [
 # =============================================================================
 # 商品名パターン
 # =============================================================================
-PRODUCT_NAMES = {
+PRODUCT_NAMES: dict[str, list[str]] = {
     "tshirt": [
         "オリジナルTシャツ A柄",
         "限定デザインTシャツ",

@@ -358,6 +358,8 @@ class ExternalService:
         updated_order = await self._order_repo.update_status(
             order.id, OrderStatus.CANCELLED
         )
+        # 直前に取得した order を更新しているので必ず見つかる
+        assert updated_order is not None
 
         return OrderCancelResponse(
             order_number=updated_order.order_number,

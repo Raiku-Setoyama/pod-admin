@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import csv
 import io
 import logging
 import mimetypes
+from collections.abc import Callable
 from datetime import date, datetime
 from typing import Any
 from urllib.parse import urlparse
@@ -151,9 +153,9 @@ class OrderService:
         *,
         order_number: str,
         customer: CustomerInfo,
-        items: list[Any],
+        items: builtins.list[Any],
         order_source_id: str | None,
-        build_item,
+        build_item: Callable[[Any, Product, date], OrderItem],
     ) -> OrderResponse:
         """v1/v2 共通の注文作成ロジック（明細組み立てのみ build_item に委譲）."""
         # Check for duplicate order number
@@ -685,7 +687,7 @@ class OrderService:
 
     async def bulk_update_status(
         self,
-        order_ids: list[str],
+        order_ids: builtins.list[str],
         status: OrderStatus,
     ) -> OrderBulkStatusUpdateResponse:
         """Bulk update order status.
@@ -771,7 +773,7 @@ class OrderService:
             failed_ids=failed_ids,
         )
 
-    async def export_csv(self, order_ids: list[str]) -> tuple[bytes, str]:
+    async def export_csv(self, order_ids: builtins.list[str]) -> tuple[bytes, str]:
         """Export orders to CSV for delivery.
 
         Generates a CSV file with 18 columns for delivery company import.
@@ -869,7 +871,7 @@ class OrderService:
         return csv_bytes, filename
 
     async def download_thumbnails(
-        self, order_ids: list[str]
+        self, order_ids: builtins.list[str]
     ) -> tuple[bytes, str]:
         """Download thumbnail images from orders and build a ZIP file.
 

@@ -242,7 +242,8 @@ class IllustratorVmClient:
                         f"{_extract_error(response)}"
                     )
                 try:
-                    return response.json()
+                    body: dict[str, Any] = response.json()
+                    return body
                 except ValueError:
                     # 2xx だが本文が JSON でない（前段 proxy の一時的な HTML/空応答など）。
                     # 一過性のことが多いためリトライ対象として扱う（未捕捉で生成を

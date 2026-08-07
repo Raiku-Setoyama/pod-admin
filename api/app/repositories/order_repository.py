@@ -1,9 +1,10 @@
 """Order repository for database operations."""
 
+from collections.abc import Sequence
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import ColumnElement, Row, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -134,14 +135,20 @@ class OrderRepository:
         await self._db.flush()
         await self._db.refresh(order)
         # Reload order with items to avoid lazy loading issues
-        return await self.find_by_id(order.id)
+        reloaded = await self.find_by_id(order.id)
+        # 直前に flush / refresh しているので必ず見つかる
+        assert reloaded is not None
+        return reloaded
 
     async def update(self, order: Order) -> Order:
         """Update an existing order."""
         await self._db.flush()
         await self._db.refresh(order)
         # Reload order with items to avoid lazy loading issues
-        return await self.find_by_id(order.id)
+        reloaded = await self.find_by_id(order.id)
+        # 直前に flush / refresh しているので必ず見つかる
+        assert reloaded is not None
+        return reloaded
 
     async def update_status(self, order_id: str, status: OrderStatus) -> Order | None:
         """Update order status."""
@@ -301,7 +308,7 @@ class OrderRepository:
         search: str | None = None,
         expected_delivery_from: date | None = None,
         expected_delivery_to: date | None = None,
-    ) -> list[tuple[Any, ...]]:
+    ) -> Sequence[Row[Any]]:
         """メーカー別の受注明細を詳細情報付きで取得
 
         Args:
@@ -386,7 +393,7 @@ class OrderRepository:
         manufacturer_id: str | None = None,
         expected_delivery_from: date | None = None,
         expected_delivery_to: date | None = None,
-    ) -> list[tuple[Any, ...]]:
+    ) -> Sequence[Row[Any]]:
         """全メーカー横断の受注明細を詳細情報付きで取得
 
         Args:
@@ -725,7 +732,7 @@ class OrderRepository:
         orders_with_shipment = select(ShipmentItem.order_id).distinct()
 
         # Base query for orders without shipments
-        base_conditions = [
+        base_conditions: list[ColumnElement[bool]] = [
             Order.id.notin_(orders_with_shipment),
             Order.status.notin_([OrderStatus.SHIPPED.value, OrderStatus.CANCELLED.value]),
         ]

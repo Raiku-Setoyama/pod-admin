@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import csv
 import io
 import logging
@@ -319,6 +320,8 @@ class ShipmentService:
 
         # Refresh shipment to get updated relationships
         refreshed_shipment = await self._shipment_repo.find_by_id(shipment_id)
+        # 直前に update しているので必ず見つかる
+        assert refreshed_shipment is not None
         return self._to_response(refreshed_shipment)
 
     async def upload_packing_photo(
@@ -369,7 +372,7 @@ class ShipmentService:
 
     async def import_tracking_numbers(
         self, data: TrackingImportRequest
-    ) -> list[ShipmentResponse]:
+    ) -> builtins.list[ShipmentResponse]:
         """Import tracking numbers from CSV data."""
         results = []
         for item in data.items:
@@ -616,7 +619,7 @@ class ShipmentService:
             updated_shipments=updated_shipments,
         )
 
-    def _parse_csv(self, content: bytes) -> list[list[str]]:
+    def _parse_csv(self, content: bytes) -> builtins.list[builtins.list[str]]:
         """CSVバイトデータを解析する.
 
         UTF-8 (BOM付き/なし) および Shift-JIS に対応。
@@ -641,7 +644,7 @@ class ShipmentService:
         reader = csv.reader(io.StringIO(text))
         return list(reader)
 
-    def _parse_xlsx(self, content: bytes) -> list[list[str]]:
+    def _parse_xlsx(self, content: bytes) -> builtins.list[builtins.list[str]]:
         """XLSXバイトデータを解析する."""
         wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True)
         ws = wb.active
@@ -670,8 +673,8 @@ class ShipmentService:
 
     async def download_thumbnails(
         self,
-        shipment_ids: list[str] | None = None,
-        order_ids: list[str] | None = None,
+        shipment_ids: builtins.list[str] | None = None,
+        order_ids: builtins.list[str] | None = None,
     ) -> tuple[bytes, str]:
         """Download thumbnail images from shipments and/or orders and build a ZIP file.
 
@@ -710,11 +713,11 @@ class ShipmentService:
 
         # Process orders (for pending orders without shipments)
         for order_id in order_ids:
-            order = await self._order_repo.find_by_id(order_id)
-            if order is None:
+            pending_order = await self._order_repo.find_by_id(order_id)
+            if pending_order is None:
                 logger.warning(f"Order not found: {order_id}")
                 continue
-            self._collect_order_thumbnails(order, image_tasks)
+            self._collect_order_thumbnails(pending_order, image_tasks)
 
         if not image_tasks:
             raise HTTPException(
@@ -909,8 +912,8 @@ class ShipmentService:
 
     async def export_csv(
         self,
-        shipment_ids: list[str] | None = None,
-        order_ids: list[str] | None = None,
+        shipment_ids: builtins.list[str] | None = None,
+        order_ids: builtins.list[str] | None = None,
     ) -> tuple[bytes, str]:
         """Export shipments and/or orders to CSV for delivery.
 
@@ -935,7 +938,7 @@ class ShipmentService:
             raise ValidationError("shipment_ids または order_ids が必要です")
 
         # Collect CSV rows (one row per order item)
-        rows = []
+        rows: builtins.list[builtins.list[str]] = []
 
         # Process shipments
         for shipment_id in shipment_ids:
@@ -952,10 +955,10 @@ class ShipmentService:
 
         # Process orders (for pending orders without shipments)
         for order_id in order_ids:
-            order = await self._order_repo.find_by_id(order_id)
-            if not order:
+            pending_order = await self._order_repo.find_by_id(order_id)
+            if not pending_order:
                 raise NotFoundError("Order", order_id)
-            self._append_order_rows(order, rows)
+            self._append_order_rows(pending_order, rows)
 
         # Generate CSV with UTF-8 BOM for Excel compatibility
         output = io.StringIO()
@@ -997,7 +1000,7 @@ class ShipmentService:
 
         return csv_bytes, filename
 
-    def _append_order_rows(self, order: Order, rows: list[list[str]]) -> None:
+    def _append_order_rows(self, order: Order, rows: builtins.list[builtins.list[str]]) -> None:
         """Append CSV rows for an order's items.
 
         Args:
@@ -1033,7 +1036,7 @@ class ShipmentService:
             rows.append(row)
 
     def _collect_order_thumbnails(
-        self, order: Order, image_tasks: list[dict[str, Any]]
+        self, order: Order, image_tasks: builtins.list[dict[str, Any]]
     ) -> None:
         """Collect thumbnail image tasks from an order.
 

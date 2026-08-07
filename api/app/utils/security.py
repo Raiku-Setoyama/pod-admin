@@ -35,7 +35,8 @@ def create_access_token(
         expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     to_encode.update({"exp": expire, "type": "access"})
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+    token: str = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+    return token
 
 
 def create_refresh_token(
@@ -48,7 +49,8 @@ def create_refresh_token(
         expires_delta or timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     )
     to_encode.update({"exp": expire, "type": "refresh"})
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+    token: str = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+    return token
 
 
 def decode_token(token: str) -> dict[str, Any] | None:
@@ -57,7 +59,7 @@ def decode_token(token: str) -> dict[str, Any] | None:
     Returns None if the token is invalid or expired.
     """
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        payload: dict[str, Any] = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
         return payload
     except JWTError:
         return None
