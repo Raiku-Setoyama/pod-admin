@@ -15,13 +15,14 @@ Refs:
 
 <!-- 実装 PR では必須。/quality-gate の出力に従って埋めること -->
 <!-- ドキュメントのみの PR ではこのセクションを「該当なし（docs のみ）」に置き換える -->
-<!-- 品質ゲートの push フック・CI は段階4で導入予定。それまでは各コマンドを手で通す -->
+<!-- 下の 3 行は pr-quality-check.yml が文字列一致で検査する。文言を変えない -->
+<!-- 個別のコマンド（mypy / ruff / tsc / eslint）は quality-gate.sh が一括で実行する -->
 
-- [ ] 型チェック: `uv run mypy .`（api） / `npx tsc --noEmit`（web）
-- [ ] Lint: `uv run ruff check .`（api） / `npm run lint`（web）
-- [ ] テスト: `uv run pytest`（api） / `npm run test:run`（web）
+- [ ] 静的チェック: `scripts/quality-gate.sh` 通過
 - [ ] `/simplify max` 実行済み
   - 指摘: 件 / 修正: 件
+  - 主な修正: <!-- 1〜3行で要約。指摘ゼロなら「指摘なし」 -->
+- [ ] 静的チェック再実行: 通過
 
 ## スクリーンショット
 
