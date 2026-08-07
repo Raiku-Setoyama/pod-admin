@@ -162,7 +162,7 @@ async def reset_data(session: AsyncSession) -> None:
 
 async def get_or_create_order_sources(session: AsyncSession) -> list[OrderSource]:
     """受注元を取得または作成。"""
-    sources_data = [
+    sources_data: list[dict[str, Any]] = [
         {
             "code": "SUZURI",
             "name": "SUZURI",

@@ -322,6 +322,7 @@ class TestShipmentStatusTransitionAPI:
             {"id": shipment_id},
         )
         row = result.fetchone()
+        assert row is not None
         assert row[0] == "ready"
 
     @pytest.mark.asyncio
@@ -374,6 +375,7 @@ class TestShipmentStatusTransitionAPI:
             {"id": order_id},
         )
         row = result.fetchone()
+        assert row is not None
         assert row[0] == "shipped"
 
     @pytest.mark.asyncio
@@ -405,6 +407,7 @@ class TestShipmentStatusTransitionAPI:
             {"id": order_id},
         )
         row = result.fetchone()
+        assert row is not None
         assert row[0] == "shipped"
 
     # ===========================================
@@ -440,6 +443,7 @@ class TestShipmentStatusTransitionAPI:
             {"id": order_id},
         )
         row = result.fetchone()
+        assert row is not None
         assert row[0] == "delivered"
 
     @pytest.mark.asyncio
@@ -471,6 +475,7 @@ class TestShipmentStatusTransitionAPI:
             {"id": order_id},
         )
         row = result.fetchone()
+        assert row is not None
         assert row[0] == "delivered"
 
     # ===========================================
@@ -506,6 +511,7 @@ class TestShipmentStatusTransitionAPI:
                 {"id": order_id},
             )
             row = result.fetchone()
+            assert row is not None
             assert row[0] == "shipped"
 
     @pytest.mark.asyncio
@@ -545,6 +551,7 @@ class TestShipmentStatusTransitionAPI:
                 {"id": order_id},
             )
             row = result.fetchone()
+            assert row is not None
             assert row[0] == "delivered"
 
     # ===========================================
@@ -583,6 +590,7 @@ class TestShipmentStatusTransitionAPI:
             {"id": shipment_id},
         )
         row = result.fetchone()
+        assert row is not None
         assert row[0] == "1234567890"
         assert row[1] == "Yamato"
 

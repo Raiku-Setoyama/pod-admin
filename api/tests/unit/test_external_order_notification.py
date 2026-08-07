@@ -8,12 +8,13 @@
 
 import types
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import BackgroundTasks
 
+from app.schemas.order import OrderResponse
 from app.services.external_order_notification import (
     NOTIFICATION_ENABLED_KEY,
     NOTIFICATION_RECIPIENTS_KEY,
@@ -108,7 +109,7 @@ class TestEnqueueIfEnabled:
         service = ExternalOrderNotificationService(repo, None)
         bg = BackgroundTasks()
 
-        await service.enqueue_if_enabled(bg, order=_make_order())
+        await service.enqueue_if_enabled(bg, order=cast("OrderResponse", _make_order()))
 
         assert len(bg.tasks) == 0
 
@@ -118,7 +119,7 @@ class TestEnqueueIfEnabled:
         service = ExternalOrderNotificationService(repo, MagicMock())
         bg = BackgroundTasks()
 
-        await service.enqueue_if_enabled(bg, order=_make_order())
+        await service.enqueue_if_enabled(bg, order=cast("OrderResponse", _make_order()))
 
         assert len(bg.tasks) == 0
 
@@ -128,7 +129,7 @@ class TestEnqueueIfEnabled:
         service = ExternalOrderNotificationService(repo, MagicMock())
         bg = BackgroundTasks()
 
-        await service.enqueue_if_enabled(bg, order=_make_order())
+        await service.enqueue_if_enabled(bg, order=cast("OrderResponse", _make_order()))
 
         assert len(bg.tasks) == 0
 
@@ -138,7 +139,7 @@ class TestEnqueueIfEnabled:
         service = ExternalOrderNotificationService(repo, MagicMock())
         bg = BackgroundTasks()
 
-        await service.enqueue_if_enabled(bg, order=_make_order())
+        await service.enqueue_if_enabled(bg, order=cast("OrderResponse", _make_order()))
 
         assert len(bg.tasks) == 0
 
@@ -149,7 +150,7 @@ class TestEnqueueIfEnabled:
         service = ExternalOrderNotificationService(repo, email_service)
         bg = BackgroundTasks()
 
-        await service.enqueue_if_enabled(bg, order=_make_order())
+        await service.enqueue_if_enabled(bg, order=cast("OrderResponse", _make_order()))
 
         assert len(bg.tasks) == 1
         task = bg.tasks[0]
@@ -170,6 +171,6 @@ class TestEnqueueIfEnabled:
         bg = BackgroundTasks()
 
         # 例外を送出せず、タスクも積まれない（注文受付はブロックされない）
-        await service.enqueue_if_enabled(bg, order=_make_order())
+        await service.enqueue_if_enabled(bg, order=cast("OrderResponse", _make_order()))
 
         assert len(bg.tasks) == 0

@@ -7,14 +7,13 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from app.services import manufacturing_data_service as mds
 from app.services.manufacturing_data_service import (
     ManufacturingDataService,
     SourceImageTooLargeError,
 )
 
 
-def _service(**kwargs) -> Any:
+def _service(**kwargs: Any) -> Any:
     return ManufacturingDataService(
         md_repo=AsyncMock(), order_repo=AsyncMock(), session=None, **kwargs
     )
@@ -39,7 +38,7 @@ class _StreamCtx:
     async def __aenter__(self) -> Any:
         return self._resp
 
-    async def __aexit__(self, *exc) -> bool:
+    async def __aexit__(self, *exc: Any) -> bool:
         return False
 
 
@@ -47,14 +46,14 @@ def _fake_client_factory(chunks_by_marker: Any) -> Any:
     """Return a fake httpx.AsyncClient class whose stream() picks chunks by url substring."""
 
     class _FakeClient:
-        def __init__(self, *args, **kwargs) -> None:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
             # must tolerate timeout=..., follow_redirects=... kwargs
             pass
 
         async def __aenter__(self) -> Any:
             return self
 
-        async def __aexit__(self, *exc) -> bool:
+        async def __aexit__(self, *exc: Any) -> bool:
             return False
 
         def stream(self, method: Any, url: Any) -> Any:
@@ -76,7 +75,7 @@ class TestDownloadSsrfGuard:
         ]
         svc = _service(allowed_source_hosts=frozenset({"cdn.trusted"}))
         fake = _fake_client_factory({"color.png": [b"COLORBYTES"], "cutline.png": [b"NOPE"]})
-        with patch.object(mds.httpx, "AsyncClient", fake):
+        with patch("app.services.manufacturing_data_service.httpx.AsyncClient", fake):
             images = await svc._download_source_images(source_images, {"color", "cutline"})
         assert set(images.keys()) == {"color"}
         assert images["color"] == b"COLORBYTES"
@@ -96,7 +95,7 @@ class TestDownloadSizeLimit:
         fake = _fake_client_factory(
             {"color.png": [b"123456"], "cutline.png": [b"AAAAAAAA", b"BBBBBBBB"]}
         )
-        with patch.object(mds.httpx, "AsyncClient", fake):
+        with patch("app.services.manufacturing_data_service.httpx.AsyncClient", fake):
             images = await svc._download_source_images(source_images, {"color", "cutline"})
         assert set(images.keys()) == {"color"}
 

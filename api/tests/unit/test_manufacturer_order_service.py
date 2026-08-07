@@ -35,7 +35,7 @@ def _make_order_item(
     product_type: str = "tshirt",
     quantity: int = 1,
     size: str = "M",
-    position: str = "正面",
+    position: str | None = "正面",
     color: str = "白",
     design_image_url: str | None = "https://example.com/design.ai",
     thumbnail_image_url: str | None = "https://example.com/thumb.png",

@@ -19,10 +19,10 @@ from app.utils.exceptions import ConflictError, NotFoundError
 
 def _v2_item(
     *,
-    product_code="RKSYO-1",
-    product_type="acrylic_keychain",
-    size="50x50mm",
-    layers=("color", "cutline"),
+    product_code: str="RKSYO-1",
+    product_type: str="acrylic_keychain",
+    size: str="50x50mm",
+    layers: Any=("color", "cutline"),
 ) -> Any:
     """v2 明細（product_code + source_images あり）の簡易モック."""
     return SimpleNamespace(
@@ -36,7 +36,7 @@ def _v2_item(
     )
 
 
-def _service(md_repo: Any, order_repo: Any=None, **kwargs) -> Any:
+def _service(md_repo: Any, order_repo: Any=None, **kwargs: Any) -> Any:
     return ManufacturingDataService(
         md_repo=md_repo,
         order_repo=order_repo or AsyncMock(),
@@ -172,7 +172,7 @@ class TestCacheResolution:
             async def __aenter__(self) -> Any:
                 return self
 
-            async def __aexit__(self, *exc) -> bool:
+            async def __aexit__(self, *exc: Any) -> bool:
                 return False
 
         session = MagicMock()
@@ -330,17 +330,17 @@ class TestGenerateDriver:
             async def __aenter__(self) -> Any:
                 return self._resp
 
-            async def __aexit__(self, *exc) -> bool:
+            async def __aexit__(self, *exc: Any) -> bool:
                 return False
 
         class _FakeClient:
-            def __init__(self, *args, **kwargs) -> None:
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
                 pass
 
             async def __aenter__(self) -> Any:
                 return self
 
-            async def __aexit__(self, *exc) -> bool:
+            async def __aexit__(self, *exc: Any) -> bool:
                 return False
 
             def stream(self, method: Any, url: Any) -> Any:
@@ -350,7 +350,7 @@ class TestGenerateDriver:
 
         # host "x" は許可リストで素通し（このテストの主眼はレイヤー欠落の耐性）。
         svc = _service(AsyncMock(), allowed_source_hosts=frozenset({"x"}))
-        with patch.object(mds.httpx, "AsyncClient", _FakeClient):
+        with patch("app.services.manufacturing_data_service.httpx.AsyncClient", _FakeClient):
             images = await svc._download_source_images(
                 source_images, {"color", "cutline", "white"}
             )

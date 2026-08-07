@@ -17,6 +17,14 @@ from app.utils.file_storage import (
     generate_stored_filename,
 )
 
+# google.api_core は型情報を持たないため、そのまま呼ぶと untyped 扱いになる。
+# 例外クラスとして型を与えてから使う。
+_NotFound: type[Exception] = NotFound
+
+
+def _not_found(name: str) -> Exception:
+    return _NotFound(f"blob {name} not found")
+
 
 @pytest.fixture
 def temp_upload_dir() -> Iterator[Any]:
@@ -154,12 +162,12 @@ class _FakeBlob:
 
     def download_as_bytes(self) -> bytes:
         if self._name not in self._store:
-            raise NotFound(f"blob {self._name} not found")
+            raise _not_found(self._name)
         return self._store[self._name]
 
     def delete(self) -> None:
         if self._name not in self._store:
-            raise NotFound(f"blob {self._name} not found")
+            raise _not_found(self._name)
         del self._store[self._name]
 
     def exists(self) -> bool:
@@ -305,7 +313,7 @@ async def test_gcs_prefix_is_prepended_to_object_name(fake_gcs_client: Any) -> N
 # ---------------------------------------------------------------------------
 
 
-def _settings(**overrides) -> Any:
+def _settings(**overrides: Any) -> Any:
     """Minimal settings stub for the factory (duck-typed, no env required)."""
     base = {
         "UPLOAD_DIR": "uploads",
@@ -348,7 +356,7 @@ def test_gcs_client_is_cached_per_process(monkeypatch: pytest.MonkeyPatch) -> No
 
     constructed: list[object] = []
 
-    def _fake_client_ctor(*args, **kwargs) -> Any:
+    def _fake_client_ctor(*args: Any, **kwargs: Any) -> Any:
         client = object()
         constructed.append(client)
         return client

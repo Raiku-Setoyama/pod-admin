@@ -46,7 +46,7 @@ def _md(
     return md
 
 
-def _service(md: ManufacturingData | None, *, storage=None, order_repo=None, **kwargs) -> Any:
+def _service(md: ManufacturingData | None, *, storage: Any=None, order_repo: Any=None, **kwargs: Any) -> Any:
     md_repo = AsyncMock()
     md_repo.find_by_id.return_value = md
     md_repo.find_by_cache_key.return_value = md
@@ -125,6 +125,7 @@ class TestReplaceSourceImages:
             background_tasks=bg,
         )
 
+        assert md.source_images is not None
         assert [img["filename"] for img in md.source_images] == ["c.png", "k.png"]
         bg.add_task.assert_called_once()  # 再生成は1回だけ
 
@@ -252,6 +253,7 @@ class TestReplaceSourceImages:
             )
 
         storage.save.assert_not_called()
+        assert md.source_images is not None
         assert md.source_images[0] == {"layer_type": "color", "url": "https://x/color.png"}
 
 

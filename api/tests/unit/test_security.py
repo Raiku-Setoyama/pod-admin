@@ -91,7 +91,9 @@ def test_access_and_refresh_tokens_different() -> None:
     refresh_token = create_refresh_token(data)
 
     access_decoded = decode_token(access_token)
+    assert access_decoded is not None
     refresh_decoded = decode_token(refresh_token)
+    assert refresh_decoded is not None
 
     assert access_decoded["type"] == "access"
     assert refresh_decoded["type"] == "refresh"

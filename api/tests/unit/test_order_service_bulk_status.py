@@ -25,7 +25,7 @@ except ImportError:
     # TDD Red phase: Schemas don't exist yet, create mock classes for testing structure
     from pydantic import BaseModel
 
-    class OrderBulkStatusUpdateResponse(BaseModel):
+    class OrderBulkStatusUpdateResponse(BaseModel):  # type: ignore[no-redef]  # import 失敗時のみ使うフォールバック
         """Mock schema for testing - will be replaced by actual implementation."""
         updated_count: int
         failed_count: int

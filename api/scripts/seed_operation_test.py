@@ -163,7 +163,7 @@ async def seed_users(session: AsyncSession) -> dict[str, User]:
     """管理者アカウントを作成."""
     print("ユーザーを作成中...")
 
-    users_data = [
+    users_data: list[dict[str, Any]] = [
         {
             "id": generate_uuid(),
             "email": "admin@example.com",
@@ -197,7 +197,7 @@ async def seed_manufacturers(session: AsyncSession) -> dict[str, Manufacturer]:
     """メーカーを作成."""
     print("メーカーを作成中...")
 
-    manufacturers_data = [
+    manufacturers_data: list[dict[str, Any]] = [
         {
             "id": generate_uuid(),
             "name": "シードット",
@@ -271,7 +271,7 @@ async def seed_products(
     seedot_id = manufacturers["シードット"].id
     sample1_id = manufacturers["サンプルメーカー1"].id
 
-    products_data = [
+    products_data: list[dict[str, Any]] = [
         # シードット - Tシャツ (4サイズ)
         {"product_type": ProductType.TSHIRT.value, "size": "S", "position": "正面", "color": "白", "manufacturer_id": seedot_id, "cost": 870, "lead_time_days": 10},
         {"product_type": ProductType.TSHIRT.value, "size": "M", "position": "正面", "color": "白", "manufacturer_id": seedot_id, "cost": 870, "lead_time_days": 10},
@@ -314,7 +314,7 @@ async def seed_order_sources(session: AsyncSession) -> dict[str, OrderSource]:
     """受注元を作成."""
     print("受注元を作成中...")
 
-    order_sources_data = [
+    order_sources_data: list[dict[str, Any]] = [
         {
             "id": generate_uuid(),
             "code": "TEST",

@@ -30,7 +30,7 @@ def _setting(value: str | None) -> types.SimpleNamespace | None:
     return types.SimpleNamespace(value=value) if value is not None else None
 
 
-def _make_app_setting_repo(*, enabled="true", send_time="09:00", claim=True) -> MagicMock:
+def _make_app_setting_repo(*, enabled: str="true", send_time: str | None = "09:00", claim: bool=True) -> MagicMock:
     async def find_by_key(key: str) -> Any:
         if key == DIGEST_ENABLED_KEY:
             return _setting(enabled)
@@ -44,7 +44,7 @@ def _make_app_setting_repo(*, enabled="true", send_time="09:00", claim=True) -> 
     return repo
 
 
-def _manufacturer(mid: Any="m1", name: Any="メーカーA", email="mfr@ex: Any: Any: Any: Any: Anyample.com") -> Any:
+def _manufacturer(mid: str = "m1", name: str = "メーカーA", email: str = "mfr@example.com") -> Any:
     return types.SimpleNamespace(id=mid, name=name, email=email)
 
 
@@ -86,7 +86,7 @@ def _make_db() -> MagicMock:
     return db
 
 
-def _service(*, app_setting_repo=None, notif_repo=None, order_repo=None, email_service="default", db=None) -> Any:
+def _service(*, app_setting_repo: Any=None, notif_repo: Any=None, order_repo: Any=None, email_service: Any = "default", db: Any=None) -> Any:
     return ManufacturerDailyDigestService(
         db or _make_db(),
         order_repo or _make_order_repo({}),

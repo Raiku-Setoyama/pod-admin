@@ -157,7 +157,7 @@ class TestOrderDocumentsDownloadStatusUpdate:
         test_product: dict[str, Any],
     ) -> AsyncIterator[Any]:
         """発注中2件、製造中1件のミックス明細"""
-        items = {"ordered": [], "manufacturing": []}
+        items: dict[str, list[Any]] = {"ordered": [], "manufacturing": []}
         statuses = ["ordered", "ordered", "manufacturing"]
 
         for i, status in enumerate(statuses):
@@ -634,7 +634,7 @@ class TestManufacturerPortalOrderDocumentsDownload:
         test_product_for_portal: dict[str, Any],
     ) -> AsyncIterator[Any]:
         """発注中1件、製造中1件のミックス明細（メーカーポータル用）"""
-        items = {"ordered": [], "manufacturing": []}
+        items: dict[str, list[Any]] = {"ordered": [], "manufacturing": []}
         statuses = ["ordered", "manufacturing"]
 
         for i, status in enumerate(statuses):

@@ -17,7 +17,7 @@ def _no_sleep() -> Iterator[Any]:
         yield
 
 
-def _client(handler: Any, **kwargs) -> IllustratorVmClient:
+def _client(handler: Any, **kwargs: Any) -> IllustratorVmClient:
     return IllustratorVmClient(
         "http://vm.test",
         poll_interval=0,
@@ -31,7 +31,7 @@ def _client(handler: Any, **kwargs) -> IllustratorVmClient:
 class TestSubmit:
     @pytest.mark.asyncio
     async def test_submit_returns_job_id_and_base64_encodes(self) -> None:
-        captured = {}
+        captured: dict[str, Any] = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
             captured["path"] = request.url.path
@@ -68,7 +68,7 @@ class TestSubmit:
 
     @pytest.mark.asyncio
     async def test_submit_single_image_uses_image_data(self) -> None:
-        captured = {}
+        captured: dict[str, Any] = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
             import json
@@ -95,7 +95,7 @@ class TestSubmit:
 
     @pytest.mark.asyncio
     async def test_submit_missing_job_id_raises(self) -> None:
-        def handler(request: pytest.FixtureRequest) -> Any:
+        def handler(request: httpx.Request) -> Any:
             return httpx.Response(202, json={"unexpected": True})
 
         with pytest.raises(IllustratorVmError):
@@ -109,7 +109,7 @@ class TestSubmit:
 
     @pytest.mark.asyncio
     async def test_submit_422_reads_detail(self) -> None:
-        def handler(request: pytest.FixtureRequest) -> Any:
+        def handler(request: httpx.Request) -> Any:
             return httpx.Response(422, json={"detail": [{"msg": "bad size"}]})
 
         with pytest.raises(IllustratorVmError) as exc:
@@ -128,7 +128,7 @@ class TestStatusAndWait:
     async def test_wait_polls_until_complete(self) -> None:
         calls = {"n": 0}
 
-        def handler(request: pytest.FixtureRequest) -> Any:
+        def handler(request: httpx.Request) -> Any:
             calls["n"] += 1
             if calls["n"] < 3:
                 return httpx.Response(200, json={"status": "processing"})
@@ -143,7 +143,7 @@ class TestStatusAndWait:
 
     @pytest.mark.asyncio
     async def test_wait_raises_on_failed(self) -> None:
-        def handler(request: pytest.FixtureRequest) -> Any:
+        def handler(request: httpx.Request) -> Any:
             return httpx.Response(200, json={"status": "failed", "error": "boom"})
 
         with pytest.raises(IllustratorVmError) as exc:
@@ -152,7 +152,7 @@ class TestStatusAndWait:
 
     @pytest.mark.asyncio
     async def test_wait_times_out(self) -> None:
-        def handler(request: pytest.FixtureRequest) -> Any:
+        def handler(request: httpx.Request) -> Any:
             return httpx.Response(200, json={"status": "processing"})
 
         client = IllustratorVmClient(
@@ -169,7 +169,7 @@ class TestStatusAndWait:
 class TestDownloadAndRetry:
     @pytest.mark.asyncio
     async def test_download_returns_bytes(self) -> None:
-        def handler(request: pytest.FixtureRequest) -> Any:
+        def handler(request: httpx.Request) -> Any:
             return httpx.Response(200, content=b"AI-FILE-BYTES")
 
         content = await _client(handler).download("job-1")
@@ -179,7 +179,7 @@ class TestDownloadAndRetry:
     async def test_503_is_retried_then_succeeds(self) -> None:
         calls = {"n": 0}
 
-        def handler(request: pytest.FixtureRequest) -> Any:
+        def handler(request: httpx.Request) -> Any:
             calls["n"] += 1
             if calls["n"] == 1:
                 return httpx.Response(503, json={"detail": "queue full"})
@@ -191,7 +191,7 @@ class TestDownloadAndRetry:
 
     @pytest.mark.asyncio
     async def test_transport_error_retried_then_raises(self) -> None:
-        def handler(request: pytest.FixtureRequest) -> None:
+        def handler(request: httpx.Request) -> None:
             raise httpx.ConnectError("refused")
 
         with pytest.raises(IllustratorVmError):
@@ -204,7 +204,7 @@ class TestNonJsonResponse:
         # 2xx だが本文が JSON でない一過性応答はリトライ対象（生成を落とさない）。
         calls = {"n": 0}
 
-        def handler(request: pytest.FixtureRequest) -> Any:
+        def handler(request: httpx.Request) -> Any:
             calls["n"] += 1
             if calls["n"] == 1:
                 return httpx.Response(200, text="<html>502 Bad Gateway</html>")
@@ -218,7 +218,7 @@ class TestNonJsonResponse:
 
     @pytest.mark.asyncio
     async def test_persistent_non_json_raises_illustrator_error(self) -> None:
-        def handler(request: pytest.FixtureRequest) -> Any:
+        def handler(request: httpx.Request) -> Any:
             return httpx.Response(200, text="not json")
 
         with pytest.raises(IllustratorVmError):

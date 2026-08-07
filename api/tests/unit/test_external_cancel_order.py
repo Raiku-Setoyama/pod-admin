@@ -33,7 +33,7 @@ class TestOrderStatusCancelled:
     def test_cancelled_is_str_enum(self) -> None:
         """AC-001: OrderStatus.CANCELLED は str として使える."""
         assert isinstance(OrderStatus.CANCELLED, str)
-        assert OrderStatus.CANCELLED == "cancelled"
+        assert OrderStatus.CANCELLED.value == "cancelled"
 
 
 # ============================================================

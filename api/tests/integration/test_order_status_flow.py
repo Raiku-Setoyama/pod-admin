@@ -264,6 +264,7 @@ class TestOrderStatusTransitionAPI:
             {"id": order_id},
         )
         row = result.fetchone()
+        assert row is not None
         assert row[0] == "manufacturing"
 
     @pytest.mark.asyncio

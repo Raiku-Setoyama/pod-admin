@@ -376,6 +376,7 @@ class TestOrderBulkStatusUpdateAPI:
                 {"id": order_id},
             )
             row = result.fetchone()
+            assert row is not None
             assert row[0] == "manufacturing"
 
     # ===========================================
@@ -415,6 +416,7 @@ class TestOrderBulkStatusUpdateAPI:
             {"id": order_ordered_id},
         )
         row = result.fetchone()
+        assert row is not None
         assert row[0] == "manufacturing"
 
         # Verify shipped order was NOT updated
@@ -423,6 +425,7 @@ class TestOrderBulkStatusUpdateAPI:
             {"id": order_shipped_id},
         )
         row = result.fetchone()
+        assert row is not None
         assert row[0] == "shipped"
 
     # ===========================================
@@ -480,6 +483,7 @@ class TestOrderBulkStatusUpdateAPI:
                 {"id": order_id},
             )
             row = result.fetchone()
+            assert row is not None
             assert row[0] == "delivered"
 
             # Verify shipment was created for each order
@@ -527,6 +531,7 @@ class TestOrderBulkStatusUpdateAPI:
                 {"id": order_id},
             )
             row = result.fetchone()
+            assert row is not None
             assert row[0] == "ordered"
 
             # Verify shipment was deleted
@@ -710,4 +715,6 @@ class TestOrderBulkStatusUpdateAPI:
                 text("SELECT status FROM orders WHERE id = :id"),
                 {"id": order_id},
             )
-            assert result.fetchone()[0] == "manufacturing"
+            row = result.fetchone()
+            assert row is not None
+            assert row[0] == "manufacturing"

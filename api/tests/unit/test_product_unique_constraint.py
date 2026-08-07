@@ -380,6 +380,7 @@ class TestAlembicMigration:
 
         migration_path = Path(__file__).parent.parent.parent / "alembic" / "versions" / "add_product_unique_constraint.py"
         spec = importlib.util.spec_from_file_location("migration", migration_path)
+        assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
@@ -393,6 +394,7 @@ class TestAlembicMigration:
 
         migration_path = Path(__file__).parent.parent.parent / "alembic" / "versions" / "add_product_unique_constraint.py"
         spec = importlib.util.spec_from_file_location("migration", migration_path)
+        assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
@@ -406,6 +408,7 @@ class TestAlembicMigration:
 
         migration_path = Path(__file__).parent.parent.parent / "alembic" / "versions" / "add_product_unique_constraint.py"
         spec = importlib.util.spec_from_file_location("migration", migration_path)
+        assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 

@@ -293,7 +293,7 @@ async def update_manufacturer_invoice_fields(session: AsyncSession) -> None:
 
     manufacturers = await get_manufacturers(session)
 
-    invoice_data = [
+    invoice_data: list[dict[str, Any]] = [
         {
             "postal_code": "150-0001",
             "address": "東京都渋谷区神宮前1-2-3 シードットビル5F",

@@ -336,7 +336,7 @@ class TestImageFetchFailureSkipAndLog:
         mock_response_bad.status_code = 404
         mock_response_bad.content = b""
 
-        async def side_effect_get(url: Any, **kwargs) -> Any:
+        async def side_effect_get(url: Any, **kwargs: Any) -> Any:
             if "good" in url:
                 return mock_response_good
             return mock_response_bad
@@ -402,7 +402,7 @@ class TestImageFetchFailureSkipAndLog:
         mock_response_good.content = b"good-image-data"
         mock_response_good.headers = {"content-type": "image/png"}
 
-        async def side_effect_get(url: Any, **kwargs) -> Any:
+        async def side_effect_get(url: Any, **kwargs: Any) -> Any:
             if "timeout" in url:
                 raise httpx.TimeoutException("Connection timed out")
             return mock_response_good
