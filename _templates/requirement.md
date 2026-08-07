@@ -1,7 +1,7 @@
 ---
 id: REQ-0000
 title: 一行で要件を要約する
-priority: undecided      # must | future | undecided | wont  ← 採否。人間が PR マージで決める
+priority: undecided      # must | future | undecided | wont  ← 採否。確定は人間の PR マージ
 status: not-started      # not-started | in-progress | done | on-hold  ← 実装。エージェントが進める
 area: unassigned         # docs/00-charter/areas.md のキーから 1 つ。空欄は CI エラー
 category: functional     # functional | non-functional | constraint
@@ -9,7 +9,7 @@ source: []               # この要件を生んだ／変えた議事録 ID を�
                          # 打ち合わせ由来でない要件は空でよい。出典は下の「経緯」に書く
 requester: ""            # 誰の要求か（例: 営業部 田中様）
 related: []              # 関連する REQ / ADR
-depends_on: []           # 先に done である必要がある REQ-ID
+depends_on: []           # 先に done である必要がある REQ-ID。全件の洗い直しは /docs-audit
 milestone: ""            # 例: v1.0
 estimate: TBD            # 人間が入れる。エージェントは TBD のままにする
 decision: ""             # future / wont にするときは必須。理由を一行で
@@ -17,7 +17,8 @@ decided_at: ""           # 同上。YYYY-MM-DD
 updated: 2026-01-01
 ---
 
-<!-- 起票は必ず priority: undecided。must / future / wont への変更は人間の判断（PR マージ）。 -->
+<!-- priority は起票時から提案してよいが、根拠を入力から引用できるときだけ。確定は人間の判断（PR マージ）。 -->
+<!-- 根拠が引用できないものは undecided のままにする。推測で埋めない。 -->
 <!-- 段階によって空でよいセクションがある。各セクション冒頭の注記を参照。 -->
 
 ## 内容

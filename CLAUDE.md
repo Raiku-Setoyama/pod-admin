@@ -24,10 +24,10 @@
 ## Claude Code 固有の設定
 
 - 規約の正本は `AGENTS.md`（上の `@AGENTS.md` で読み込む）。ワークフローも同ファイルを参照。
-- 実装作業は `/implement-requirement <REQ-ID>` から開始する。例外は AGENTS.md「全工程を通さなくてよい変更」だけ。
+- 実装作業は `/implement <REQ-ID>` から開始する。**不具合の修正は `/implement <BUG-ID>`** で、
+  起票は `/defect-intake` が入口になる。例外は AGENTS.md「全工程を通さなくてよい変更」だけ。
 - コードを変更したら、コミット前・push 前に `/quality-gate` を実行する。
   push を機械的に止める push フック（`.claude/hooks/guard-push.sh`）を配置済み。**有効化には `.claude/settings.json` の登録が必要**（`docs/*` ブランチは対象外）。
   `quality-gate.sh` の `PROJECT_CHECKS` では docs-lint + ruff / mypy / eslint / tsc がすべて有効（REQ-0041 で緑化済み）。`ci.yml` も同じ 4 つをブロッキングで実行する。詳細と除外の方針は AGENTS.md「ビルド・テストコマンド」を参照。
 - `/effort` の使い分け: 要件整理・設計判断は `high` 以上、定型のドキュメント更新は `medium` で足りる。
-
 

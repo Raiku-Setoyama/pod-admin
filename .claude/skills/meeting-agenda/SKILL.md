@@ -28,7 +28,23 @@ echo "--- 実装中の要件 ---"
 grep -rl "^status: in-progress" docs/01-requirements/ || echo "なし"
 echo "--- 保留中の要件 ---"
 grep -rl "^status: on-hold" docs/01-requirements/ || echo "なし"
+echo "--- 未修正の不具合（顧客への説明対象）---"
+for f in docs/05-defects/BUG-*.md; do
+  [ -e "$f" ] || continue
+  grep -q "^status: done" "$f" && continue
+  echo "$f: $(grep -m1 '^priority:' "$f")  $(grep -m1 '^title:' "$f")"
+done
+echo "--- 直さないと判断した不具合（説明が要る）---"
+grep -l "^priority: wont" docs/05-defects/BUG-*.md 2>/dev/null || echo "なし"
 ```
+
+**不具合は「決めてほしいこと」ではなく「報告すること」である。** 採否は既に決まっているので、
+議題の先頭には置かない。ただし次の 2 つは**顧客の判断が要るので議題に上げる。**
+
+- `priority: future` に下げたい不具合（＝既知の不具合として今回リリースする提案）
+- `priority: wont` にしたい不具合（＝現状仕様として受容する提案）
+
+**未修正の不具合は、決定事項でなくても必ず報告欄に載せる。** 伏せると次にまとめて発覚する。
 
 加えて次を取得する。
 
@@ -71,7 +87,7 @@ gh pr list --state open --limit 30
   領域が決まらないと `must` に上げられない
 - 選択肢を提示できないか → 「どうしましょうか」ではなく「A か B か」の形にする。案がないまま議題に載せるのは準備不足。
   論点は ADR を `proposed` で起こし、選択肢と弊社推奨を書いてから議題にする
-- 30 日以上動いていない `undecided` の要件がないか → `/requirements-refine` で先に仕分けてから議題を組む
+- 30 日以上動いていない `undecided` の要件がないか → `/docs-audit` で先に洗い出してから議題を組む
 
 **選択肢を提示できない議題は、選択肢を作ってから載せる。**
 

@@ -23,6 +23,7 @@ KINDS = {
     "01-requirements": "REQ",
     "02-decisions": "ADR",
     "03-meetings": "MTG",
+    "05-defects": "BUG",
 }
 
 # 採否（priority）の語彙。「合意済みか」「理由が要るか」は、リンタ・顧客向け成果物・
@@ -30,6 +31,12 @@ KINDS = {
 PRIORITIES = {"must", "future", "undecided", "wont"}
 AGREED = {"must", "future"}          # 人間が採否を判断し、やると決めたもの
 REQUIRES_REASON = {"future", "wont"}  # decision / decided_at が必須のもの
+
+# 不具合に undecided は無い。要件の priority は「やると約束するか」だが、
+# 不具合の priority は「すでにした約束をいつ果たすか」であり、採否を問う段階が存在しない。
+# 起票は must から始まり、人間の判断が要るのは future / wont に下げるときだけになる。
+DEFECT_PRIORITIES = PRIORITIES - {"undecided"}
+PRIORITIES_BY_KIND = {"REQ": PRIORITIES, "BUG": DEFECT_PRIORITIES}
 
 # 受入基準のチェックボックス。捕捉群は " "（未達）か "x"（達成）。
 CHECKBOX = re.compile(r"^\s*-\s*\[([ x])\]", re.M)

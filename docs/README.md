@@ -9,8 +9,10 @@
 | `02-decisions/` | 意思決定記録・論点（ADR-XXXX） | **追記** |
 | `03-meetings/` | 議事録（MTG-YYYY-MM-DD）とアジェンダ | **追記のみ** |
 | `03-meetings/raw/` | 文字起こしの原文 | **編集厳禁** |
-| `04-wbs/` | WBS・スケジュール | 要件から導出 |
+| `05-defects/` | 不具合（BUG-XXXX） | **要件とは別の層**。約束が満たされていない状態 |
 | `90-glossary.md` | 用語集 | 随時 |
+
+**WBS はここに置きません。** 要件からの投影なので `scripts/export-wbs.py` が必要なときに生成します（→ `AGENTS.md`「WBS は生成物である」）。
 
 規約の正本は `AGENTS.md` です。ID 体系・領域（`area`）・frontmatter スキーマはそちらを参照してください。
 **日々の進め方は [`../WORKFLOW.md`](../WORKFLOW.md) に 1 枚でまとまっています。**
@@ -30,6 +32,10 @@
 `priority`（採否）と `status`（実装）の 2 つのフィールドで区別します。
 詳細は `01-requirements/index.md` を参照してください。
 
+**不具合だけは分けます。** 要件は「これから何を作るか」の合意、
+不具合は「した合意が果たされていない」状態です。判定は
+**「既存の受入基準に違反しているか」**の 1 問で決まります（→ `05-defects/index.md`）。
+
 ## 更新の入口
 
 ドキュメントを直接編集するのではなく、スキル経由で更新してください。
@@ -39,8 +45,9 @@
 | 打ち合わせの準備 | `/meeting-agenda` |
 | 打ち合わせ内容の反映 | `/meeting-intake` |
 | 打ち合わせによらない起票（Slack・メモ・口頭） | `/requirements-intake` |
-| 要件の棚卸し（採否・受入基準・WBS） | `/requirements-refine` |
-| 要件の実装 | `/implement-requirement <REQ-ID>` |
-| 整合性の確認 | `/docs-audit` |
+| 不具合の起票 | `/defect-intake` |
+| 要件の実装・不具合の修正 | `/implement <REQ-ID または BUG-ID>` |
+| 整合性の確認・論点の回収・放置の洗い出し | `/docs-audit`（週次） |
+| WBS の生成 | `python3 scripts/export-wbs.py`（`dist/wbs.md`。コミットしません） |
 | 進捗の把握 | `/status-report` |
 | 顧客提出資料の生成 | `/client-export` |
