@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import ColumnElement, Row, func, select, update
+from sqlalchemy import ColumnElement, Row, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -722,8 +722,9 @@ class OrderRepository:
             page: Page number (1-indexed)
             limit: Number of items per page
             status: Filter by PendingOrderStatus (preparing)
-            search: 配送一覧のキーワード検索。宛先名（customer_name）に部分一致させる。
-                実配送側と同じ検索語で絞り込むために受け取る（BUG-0001）
+            search: 配送一覧のキーワード検索。宛先名（customer_name）と注文番号
+                （order_number）に部分一致させる。実配送側と同じ検索語で絞り込むために
+                受け取る（BUG-0001 / REQ-0048）
 
         Returns:
             Tuple of (orders, total_count)
@@ -759,7 +760,13 @@ class OrderRepository:
             base_conditions.append(Order.estimated_shipping_date <= estimated_shipping_date_to)
 
         if search:
-            base_conditions.append(Order.customer_name.ilike(f"%{search}%"))
+            search_pattern = f"%{search}%"
+            base_conditions.append(
+                or_(
+                    Order.customer_name.ilike(search_pattern),
+                    Order.order_number.ilike(search_pattern),
+                )
+            )
 
         # Query for orders without shipments
         query = (

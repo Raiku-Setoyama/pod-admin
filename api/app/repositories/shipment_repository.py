@@ -89,12 +89,17 @@ class ShipmentRepository:
             count_query = count_query.where(func.date(Shipment.created_at) <= created_to)
 
         if search:
-            # Search by tracking_number, shipment id, or customer_name via Order
+            # Search by tracking_number, shipment id, or order_number / customer_name via Order
             pattern = f"%{search}%"
             search_subquery = (
                 select(ShipmentItem.shipment_id)
                 .join(Order, ShipmentItem.order_id == Order.id)
-                .where(Order.customer_name.ilike(pattern))
+                .where(
+                    or_(
+                        Order.customer_name.ilike(pattern),
+                        Order.order_number.ilike(pattern),
+                    )
+                )
             )
             search_filter = or_(
                 Shipment.tracking_number.ilike(pattern),
