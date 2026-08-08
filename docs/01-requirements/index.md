@@ -59,8 +59,9 @@ Slack で流れた話も、合意した要件も、見送ったものも、す�
 | [REQ-0044](REQ-0044.md) | shipment | 何も検証していないテスト（同語反復のアサーション）を実装の検証に置き換える | undecided | not-started | |
 | [REQ-0045](REQ-0045.md) | purchase-order | 全メーカー受注明細一覧で商品タイプ・発注日フィルタを操作するUIが無い | undecided | not-started | |
 | [REQ-0048](REQ-0048.md) | shipment | 配送一覧の検索で注文番号も検索でき、検索欄の表記が実際の検索対象と一致する | must | done | |
-| [REQ-0049](REQ-0049.md) | shipment | 配送一覧を作成日・配送予定日・ステータス・注文番号・宛先で昇順／降順に並び替えられる | must | not-started | |
+| [REQ-0049](REQ-0049.md) | shipment | 配送一覧を作成日・配送予定日・ステータス・注文番号・宛先で昇順／降順に並び替えられる | must | done | |
 | [REQ-0050](REQ-0050.md) | shipment | 配送一覧の 1 ページ表示件数と総件数を、実配送と準備中注文を通して正しくする | undecided | not-started | |
+| [REQ-0051](REQ-0051.md) | shipment | 複数の注文を含む実配送で、一覧に出す配送予定日と並び替えの基準を揃える | undecided | not-started | |
 
 ## priority — 採否・約束の度合い
 

@@ -31,7 +31,13 @@ import { ShipmentFilters } from "@/features/shipments/components/shipment-filter
 import { TrackingImport } from "@/features/shipments/components/tracking-import";
 import { useShipments } from "@/features/shipments/hooks/use-shipments";
 import { getShipmentStatusUpdateOptions } from "@/constants/status";
-import type { ShipmentStatus, ShipmentOrPendingOrder, PendingOrderStatus } from "@/types/api";
+import type {
+  ShipmentStatus,
+  ShipmentOrPendingOrder,
+  PendingOrderStatus,
+  ShipmentSortBy,
+  ShipmentSortOrder,
+} from "@/types/api";
 import { isShipment } from "@/types/api";
 
 const statusOptions = getShipmentStatusUpdateOptions();
@@ -48,6 +54,10 @@ export default function ShipmentsPage() {
   const [status, setStatus] = useState<ShipmentFilterStatus | null>(null);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [estimatedShippingDateRange, setEstimatedShippingDateRange] = useState<DateRange | undefined>(undefined);
+
+  // 並び替え（REQ-0049）。既定は作成日の降順で、実配送にのみ効く（ADR-0025）
+  const [sortBy, setSortBy] = useState<ShipmentSortBy>("created_at");
+  const [sortOrder, setSortOrder] = useState<ShipmentSortOrder>("desc");
 
   // 一括更新用state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -77,7 +87,15 @@ export default function ShipmentsPage() {
     created_to: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
     estimated_shipping_date_from: estimatedShippingDateRange?.from ? format(estimatedShippingDateRange.from, "yyyy-MM-dd") : undefined,
     estimated_shipping_date_to: estimatedShippingDateRange?.to ? format(estimatedShippingDateRange.to, "yyyy-MM-dd") : undefined,
+    sort_by: sortBy,
+    sort_order: sortOrder,
   });
+
+  const handleSortChange = (nextSortBy: ShipmentSortBy, nextSortOrder: ShipmentSortOrder) => {
+    setSortBy(nextSortBy);
+    setSortOrder(nextSortOrder);
+    setPage(1);
+  };
 
   // Helper functions to separate selected IDs by type
   const getSelectedShipmentIds = (): string[] => {
@@ -321,6 +339,9 @@ export default function ShipmentsPage() {
               onRowClick={handleRowClick}
               selectedIds={selectedIds}
               onSelectChange={setSelectedIds}
+              sortBy={sortBy}
+              sortOrder={sortOrder}
+              onSortChange={handleSortChange}
             />
             <Pagination
               page={page}

@@ -1,9 +1,7 @@
 import useSWR from "swr";
 import { apiClient } from "@/lib/api/client";
-import type { ShipmentListWithPendingResponse, ShipmentStatus, ShipmentOrPendingOrder, PendingOrderStatus } from "@/types/api";
+import type { ShipmentListWithPendingResponse, ShipmentStatus, ShipmentOrPendingOrder, PendingOrderStatus, ShipmentSortBy, ShipmentSortOrder } from "@/types/api";
 
-type SortBy = "created_at" | "shipped_at" | "delivered_at";
-type SortOrder = "asc" | "desc";
 type ShipmentFilterStatus = ShipmentStatus | PendingOrderStatus;
 
 interface UseShipmentsParams {
@@ -21,8 +19,8 @@ interface UseShipmentsParams {
   delivered_to?: string;
   estimated_shipping_date_from?: string;
   estimated_shipping_date_to?: string;
-  sort_by?: SortBy;
-  sort_order?: SortOrder;
+  sort_by?: ShipmentSortBy;
+  sort_order?: ShipmentSortOrder;
 }
 
 export function useShipments(params: UseShipmentsParams = {}) {
