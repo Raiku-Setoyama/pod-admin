@@ -58,6 +58,7 @@ Slack で流れた話も、合意した要件も、見送ったものも、す�
 | [REQ-0043](REQ-0043.md) | common | openapi/schema.yaml を正本として復旧しフロントのAPI型を自動生成に戻す | undecided | not-started | |
 | [REQ-0044](REQ-0044.md) | shipment | 何も検証していないテスト（同語反復のアサーション）を実装の検証に置き換える | undecided | not-started | |
 | [REQ-0045](REQ-0045.md) | purchase-order | 全メーカー受注明細一覧で商品タイプ・発注日フィルタを操作するUIが無い | undecided | not-started | |
+| [REQ-0046](REQ-0046.md) | common | RKSYO が判定した配送区分を管理画面の受注情報・配送一覧に表示する | undecided | not-started | |
 
 ## priority — 採否・約束の度合い
 
