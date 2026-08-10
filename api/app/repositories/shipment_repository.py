@@ -1,13 +1,56 @@
 """Shipment repository for database operations."""
 
 from datetime import date
+from typing import Any
 
-from sqlalchemy import Text, cast, func, or_, select
+from sqlalchemy import SQLColumnExpression, Text, case, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.order import Order
 from app.models.shipment import Shipment, ShipmentItem, ShipmentStatus
+
+# ステータスの並びは業務上の進行順にする（文字列の辞書順ではない）。REQ-0049
+_STATUS_SORT_POSITION: dict[str, int] = {
+    ShipmentStatus.PENDING.value: 1,
+    ShipmentStatus.READY.value: 2,
+    ShipmentStatus.SHIPPED.value: 3,
+}
+
+
+def _min_over_related_orders(column: SQLColumnExpression[Any]) -> SQLColumnExpression[Any]:
+    """実配送に紐づく注文の中から、指定した列の最小値を返す相関サブクエリ.
+
+    1 つの実配送が複数の注文を含む場合、最小値を代表として並べる（REQ-0049）。
+    """
+    return (
+        select(func.min(column))
+        .select_from(ShipmentItem)
+        .join(Order, ShipmentItem.order_id == Order.id)
+        .where(ShipmentItem.shipment_id == Shipment.id)
+        .scalar_subquery()
+    )
+
+
+# 並び替えのキー。SQL 式は不変なので、クエリごとに組み直さず使い回す。
+_SORT_COLUMNS: dict[str, SQLColumnExpression[Any]] = {
+    "created_at": Shipment.created_at,
+    "shipped_at": Shipment.shipped_at,
+    "delivered_at": Shipment.delivered_at,
+    "status": case(
+        _STATUS_SORT_POSITION,
+        value=Shipment.status,
+        else_=len(_STATUS_SORT_POSITION) + 1,
+    ),
+    "estimated_shipping_date": _min_over_related_orders(Order.estimated_shipping_date),
+    "order_number": _min_over_related_orders(Order.order_number),
+    "customer_name": _min_over_related_orders(Order.customer_name),
+}
+
+
+def _sort_column(sort_by: str) -> SQLColumnExpression[Any]:
+    """`sort_by` に対応する並び替えのキーを返す。未知の値は作成日にフォールバックする."""
+    return _SORT_COLUMNS.get(sort_by, Shipment.created_at)
 
 
 class ShipmentRepository:
@@ -158,11 +201,11 @@ class ShipmentRepository:
         total = total_result.scalar() or 0
 
         # Apply sorting
-        sort_column = getattr(Shipment, sort_by, Shipment.created_at)
-        if sort_order == "asc":
-            query = query.order_by(sort_column.asc())
-        else:
-            query = query.order_by(sort_column.desc())
+        # 未設定（配送予定日が無い等）は昇順・降順のいずれでも末尾に置く。
+        # 同値のときにページ送りで順序が揺れないよう、ID を最後の決め手にする。
+        sort_column = _sort_column(sort_by)
+        direction = sort_column.asc() if sort_order == "asc" else sort_column.desc()
+        query = query.order_by(direction.nulls_last(), Shipment.id)
 
         # Apply pagination
         offset = (page - 1) * limit

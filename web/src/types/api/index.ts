@@ -282,6 +282,18 @@ export interface Shipment {
   updated_at: string;
 }
 
+// 配送一覧の並び替え（REQ-0049）。並び替えは実配送にのみ効く（ADR-0025）
+export type ShipmentSortBy =
+  | "created_at"
+  | "shipped_at"
+  | "delivered_at"
+  | "estimated_shipping_date"
+  | "status"
+  | "order_number"
+  | "customer_name";
+
+export type ShipmentSortOrder = "asc" | "desc";
+
 // Union type for shipment list items (either Shipment or PendingOrder)
 export type ShipmentOrPendingOrder = (Shipment & { type?: "shipment" }) | PendingOrder;
 

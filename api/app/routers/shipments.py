@@ -46,7 +46,15 @@ async def list_shipments(
     delivered_to: date | None = None,
     estimated_shipping_date_from: date | None = None,
     estimated_shipping_date_to: date | None = None,
-    sort_by: Literal["created_at", "shipped_at", "delivered_at"] = "created_at",
+    sort_by: Literal[
+        "created_at",
+        "shipped_at",
+        "delivered_at",
+        "estimated_shipping_date",
+        "status",
+        "order_number",
+        "customer_name",
+    ] = "created_at",
     sort_order: Literal["asc", "desc"] = "desc",
 ) -> ShipmentListWithPendingResponse:
     """List shipments with pagination and filters.
@@ -57,6 +65,9 @@ async def list_shipments(
     Status filter accepts:
     - ShipmentStatus: pending, ready, shipped
     - PendingOrderStatus: preparing
+
+    並び替えは実配送（shipment）にのみ効く。準備中注文（pending_order）は
+    従来どおり受注日の降順で並ぶ（ADR-0025）。
     """
     # Parse status into ShipmentStatus or PendingOrderStatus
     shipment_status: ShipmentStatus | None = None
