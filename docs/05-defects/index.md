@@ -7,7 +7,7 @@
 
 | ID | 領域 | 現象 | 対象 | priority | status |
 |---|---|---|---|---|---|
-| [BUG-0001](BUG-0001.md) | shipment | 配送一覧のキーワード検索が、どんな入力でも 0 件になる | [REQ-0026](../01-requirements/REQ-0026.md) | must | not-started |
+| [BUG-0001](BUG-0001.md) | shipment | 配送一覧のキーワード検索が、どんな入力でも 0 件になる | [REQ-0026](../01-requirements/REQ-0026.md) | must | done |
 
 ## 不具合と要件の違い
 

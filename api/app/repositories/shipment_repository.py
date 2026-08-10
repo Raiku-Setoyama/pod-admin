@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import Text, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -90,14 +90,17 @@ class ShipmentRepository:
 
         if search:
             # Search by tracking_number, shipment id, or customer_name via Order
+            pattern = f"%{search}%"
             search_subquery = (
                 select(ShipmentItem.shipment_id)
                 .join(Order, ShipmentItem.order_id == Order.id)
-                .where(Order.customer_name.ilike(f"%{search}%"))
+                .where(Order.customer_name.ilike(pattern))
             )
             search_filter = or_(
-                Shipment.tracking_number.ilike(f"%{search}%"),
-                Shipment.id.ilike(f"%{search}%"),
+                Shipment.tracking_number.ilike(pattern),
+                # Shipment.id は PostgreSQL の uuid 型で ILIKE 演算子を持たない。
+                # 一覧に出る先頭 8 桁で引けるよう、text にキャストしてから部分一致させる。
+                cast(Shipment.id, Text).ilike(pattern),
                 Shipment.id.in_(search_subquery),
             )
             query = query.where(search_filter)

@@ -206,6 +206,7 @@ class ShipmentService:
                 status=pending_order_status,
                 estimated_shipping_date_from=estimated_shipping_date_from,
                 estimated_shipping_date_to=estimated_shipping_date_to,
+                search=search,
             )
             # Convert pending orders to responses
             for order in pending_orders:

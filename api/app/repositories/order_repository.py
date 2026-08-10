@@ -710,6 +710,7 @@ class OrderRepository:
         status: "PendingOrderStatus | None" = None,
         estimated_shipping_date_from: date | None = None,
         estimated_shipping_date_to: date | None = None,
+        search: str | None = None,
     ) -> tuple[list[Order], int]:
         """Find orders that don't have associated shipments.
 
@@ -721,6 +722,8 @@ class OrderRepository:
             page: Page number (1-indexed)
             limit: Number of items per page
             status: Filter by PendingOrderStatus (preparing)
+            search: 配送一覧のキーワード検索。宛先名（customer_name）に部分一致させる。
+                実配送側と同じ検索語で絞り込むために受け取る（BUG-0001）
 
         Returns:
             Tuple of (orders, total_count)
@@ -754,6 +757,9 @@ class OrderRepository:
             base_conditions.append(Order.estimated_shipping_date >= estimated_shipping_date_from)
         if estimated_shipping_date_to:
             base_conditions.append(Order.estimated_shipping_date <= estimated_shipping_date_to)
+
+        if search:
+            base_conditions.append(Order.customer_name.ilike(f"%{search}%"))
 
         # Query for orders without shipments
         query = (
