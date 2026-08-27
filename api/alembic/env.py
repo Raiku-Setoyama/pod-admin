@@ -9,20 +9,12 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from app.config import settings
-from app.models.base import Base
 
-# Import all models here to ensure they are registered with Base.metadata
-from app.models.chat_message import ChatAttachment, ChatMessage  # noqa: F401
-from app.models.company_holiday import CompanyHoliday  # noqa: F401
-from app.models.manufacturer import Manufacturer  # noqa: F401
-from app.models.manufacturer_notification_settings import (  # noqa: F401
-    ManufacturerNotificationSettings,
-)
-from app.models.manufacturing_data import ManufacturingData  # noqa: F401
-from app.models.order import Order, OrderItem  # noqa: F401
-from app.models.product import Product  # noqa: F401
-from app.models.shipment import Shipment, ShipmentItem  # noqa: F401
-from app.models.user import User  # noqa: F401
+# app.models を import すると全モデルが Base.metadata に載る。
+# 個別に import を並べると、モデルを増やしたときに書き漏らしても気づけない
+# （実際、この一覧は AppSetting と OrderSource を取りこぼしていた。取りこぼした
+# テーブルは autogenerate から「消えた」ように見えるため、DROP が生成される）。
+from app.models import Base
 
 # Alembic Config object
 config = context.config

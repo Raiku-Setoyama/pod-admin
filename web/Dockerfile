@@ -28,6 +28,12 @@ RUN npm ci
 
 COPY . .
 
+# API の向き先はビルド時にクライアントバンドルへ焼き込まれる（NEXT_PUBLIC_* の仕様）。
+# 実行時の環境変数では変えられないため、環境ごとに別のイメージをビルドする。
+# 未指定なら空になり、アプリ側の既定値（http://localhost:8000/api/v1）にフォールバックする。
+ARG NEXT_PUBLIC_API_URL=""
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
 # Build the application
 RUN npm run build
 

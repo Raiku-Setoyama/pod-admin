@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from typing import Any
 
 from sqlalchemy import and_, func, select, update
@@ -50,26 +51,48 @@ class ManufacturingDataRepository:
         )
         return result.scalar_one_or_none() is not None
 
-    async def reclaim_stranded(self) -> list[str]:
-        """宙吊り（pending/generating）の行を pending に戻し、その id を1文で回収する.
+    async def reclaim_stranded(self) -> int:
+        """中断されて generating のまま残った行を pending へ戻し、戻した件数を返す.
 
-        プロセス再起動時の復旧に使用する。新プロセスには in-flight な生成タスクが存在しない
-        ため、pending/generating のまま残る行は全て再駆動が必要。中断された generating を
-        claim 可能な pending に戻したうえで、再駆動対象の id を RETURNING で取得する
-        （全行を ORM ハイドレートせず JSONB も読まない）。
+        ワーカーが生成中に落ちると、その行は generating のまま取り残される。
+        ワーカーは同時に 1 本しか走らないので、この呼び出しの時点で generating に
+        残っているものは全て中断済みであり、pending へ戻して差し支えない。
+
+        **pending の行は対象にしない。** 戻す必要が無いうえ、同じ値で UPDATE すると
+        バックログ全件の updated_at が動き、戻した件数も読めなくなる。
+        対象を generating に絞ったことで、通常運用ではほぼ 0 件しか触らない。
         """
         result = await self._db.execute(
             update(ManufacturingData)
-            .where(
-                ManufacturingData.status.in_(
-                    [MfgDataStatus.PENDING.value, MfgDataStatus.GENERATING.value]
-                )
-            )
+            .where(ManufacturingData.status == MfgDataStatus.GENERATING.value)
             .values(status=MfgDataStatus.PENDING.value)
             .returning(ManufacturingData.id)
             .execution_options(synchronize_session=False)
         )
-        return list(result.scalars().all())
+        return len(result.scalars().all())
+
+    async def find_next_pending_id(self, exclude: Collection[str]) -> str | None:
+        """生成待ち（pending）の行のうち、最も古い 1 件の id を返す（無ければ None）.
+
+        ワーカーが処理対象を 1 件ずつ取り出すために使う。1 件だけ引くのは、処理のたびに
+        「その時点で最も古い生成待ち」を見るためである（処理中に他プロセスが積んだ行も拾える）。
+
+        ``exclude`` は、処理しても pending から外れなかった行を除くためのもの。無限ループを
+        防ぐ。ワーカーの 1 回の起動で処理する件数には上限があるため、この集合は小さいままになる。
+
+        ここでは行をロックしない：実際の確保は claim_for_generation の条件付き UPDATE が
+        原子的に行うため、複数のワーカーが同じ id を拾っても generating へ進めるのは一方だけ。
+        """
+        query = (
+            select(ManufacturingData.id)
+            .where(ManufacturingData.status == MfgDataStatus.PENDING.value)
+            .order_by(ManufacturingData.created_at)
+            .limit(1)
+        )
+        if exclude:
+            query = query.where(ManufacturingData.id.notin_(exclude))
+        result = await self._db.execute(query)
+        return result.scalars().first()
 
     async def find_by_cache_key(
         self,

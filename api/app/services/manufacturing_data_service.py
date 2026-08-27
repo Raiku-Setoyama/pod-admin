@@ -3,7 +3,9 @@
 外部注文（v2）の製造データを illustrator-vm で生成し、pod-admin 側に自前保存する。
 
 - 商品×サイズ×バリアント単位でキャッシュ（同一商品の再注文で VM を再度呼ばない）。
-- 生成は非同期（intake をブロックしない）。BackgroundTasks で新規セッションを開いて実行。
+- 生成は intake をブロックしない。intake は行を pending で作るだけで、実際の生成は
+  ワーカー（app/worker.py）が別プロセスで拾う。コンテナ実行基盤ではレスポンス送出後に
+  CPU が絞られるため、リクエスト内で生成を走らせると完走しない（ADR-0026）。
 - VM の72h削除に依存せず、完了ジョブは速やかに DL して FileStorage に保存。
 """
 
@@ -11,11 +13,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Collection
 from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-from fastapi import BackgroundTasks, UploadFile
+from fastapi import UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -79,15 +82,6 @@ def _merge_uploaded_layers(
     return refreshed + list(uploaded.values())
 
 
-# recover_stranded_generations が起動した復旧タスクの強参照を保持する集合。
-# create_task の戻り値を保持しないとタスクが GC で途中消滅しうるため。
-_recovery_tasks: set[asyncio.Task[None]] = set()
-
-# 起動時復旧で同時に走らせる生成の上限。VM は直列・DB プールも有限のため、大量の宙吊り行が
-# 一斉に生成を始めて接続を枯渇させたり VM を過負荷にしたりしないよう抑制する。
-_RECOVERY_CONCURRENCY = 4
-
-
 class _BytesUpload:
     """FileStorage.save に生バイト列を渡すための最小アダプタ."""
 
@@ -136,6 +130,10 @@ class ManufacturingDataService:
 
         製造データ行は intake 内で同期的に作成/紐付けする（manufacturing_data_id を
         即時に確定させることで発注ゲートを確実に機能させる）。生成そのものは行わない。
+
+        戻り値は「この受付で新たに生成が必要になった行」の報告である。**ワーカーは
+        これを使わない**（生成待ちは DB から自分で導出する）。キャッシュ再利用が効いた
+        ことの確認に使えるため残している。
         """
         order = await self._order_repo.find_by_id(order_id)
         if not order:
@@ -164,13 +162,6 @@ class ManufacturingDataService:
         # 注文・明細・製造データ行を確定（バックグラウンド生成が別セッションから参照できるように）
         await self._commit()
         return to_generate
-
-    def enqueue_generation(
-        self, background_tasks: BackgroundTasks, md_ids: list[str]
-    ) -> None:
-        """製造データ生成をバックグラウンドで起動する（新規セッションで実行）."""
-        for md_id in md_ids:
-            background_tasks.add_task(run_generation, md_id)
 
     async def _resolve_or_create(
         self, order_source_id: str | None, item: OrderItem
@@ -442,17 +433,15 @@ class ManufacturingDataService:
 
     # === 管理API（リクエストスコープ） ===
 
-    async def retry(
-        self, md_id: str, background_tasks: BackgroundTasks
-    ) -> ManufacturingDataResponse:
+    async def retry(self, md_id: str) -> ManufacturingDataResponse:
         """失敗した製造データ生成を手動で再駆動する.
 
         retry は failed 行の再実行のみ許可する。製造データ行は
         （受注元 × 商品コード × サイズ × バリアント）単位で複数注文に共有されるため、
         ready/generating/pending の行を無条件に巻き戻すと、その行を参照する他の注文の
         is_manufacturing_ready まで劣化させてしまう（生成済みファイルの喪失や、発注可能
-        だった明細の再ブロックにつながる）。宙吊りになった generating/pending 行は起動時の
-        復旧処理（recover_stranded_generations）が再駆動する。
+        だった明細の再ブロックにつながる）。中断されて宙吊りになった generating 行は、
+        ワーカーの復旧処理（reclaim_stranded_generations）が pending へ戻す。
         """
         md = await self._require_row(md_id)
         if md.status != MfgDataStatus.FAILED.value:
@@ -465,13 +454,9 @@ class ManufacturingDataService:
         md.error_message = None
         await self._md_repo.update(md)
         await self._commit()
-
-        background_tasks.add_task(run_generation, md_id)
         return ManufacturingDataResponse.model_validate(md)
 
-    async def regenerate(
-        self, md_id: str, background_tasks: BackgroundTasks
-    ) -> ManufacturingDataResponse:
+    async def regenerate(self, md_id: str) -> ManufacturingDataResponse:
         """製造データを手動で再作成（同じ元データで再生成）する（管理者操作）.
 
         メーカーが製造着手前（参照する明細が全て 発注準備中 / 発注済み）のときのみ許可する
@@ -479,7 +464,7 @@ class ManufacturingDataService:
         """
         md = await self._require_row(md_id)
         await self._assert_rebuildable(md)
-        await self._restart_generation(md, background_tasks)
+        await self._restart_generation(md)
         return ManufacturingDataResponse.model_validate(md)
 
     async def get_detail(self, md_id: str) -> ManufacturingDataDetailResponse:
@@ -493,7 +478,6 @@ class ManufacturingDataService:
         uploads: dict[str, UploadFile],
         *,
         replaced_by: str | None,
-        background_tasks: BackgroundTasks,
     ) -> ManufacturingDataDetailResponse:
         """元画像（PNGレイヤー）を差し替えて製造データを再生成する（管理者操作）.
 
@@ -546,7 +530,7 @@ class ManufacturingDataService:
         md.source_images_replaced_at = datetime.now(UTC)
         md.source_images_replaced_by = replaced_by
 
-        await self._restart_generation(md, background_tasks)
+        await self._restart_generation(md)
         logger.info(
             "source images replaced for manufacturing data %s (layers=%s, by=%s)",
             md_id,
@@ -600,10 +584,8 @@ class ManufacturingDataService:
                 "manufacturing/delivered; regeneration is blocked to protect it"
             )
 
-    async def _restart_generation(
-        self, md: ManufacturingData, background_tasks: BackgroundTasks
-    ) -> None:
-        """行を pending に戻し、参照明細を降格させてバックグラウンド生成を起動する.
+    async def _restart_generation(self, md: ManufacturingData) -> None:
+        """行を pending に戻し、参照明細を降格させる（生成はワーカーが拾う）.
 
         呼び出し側が md に加えた変更（元画像の差し替え等）もここでまとめて永続化する。
 
@@ -615,7 +597,6 @@ class ManufacturingDataService:
         await self._md_repo.update(md)
         await self._order_repo.sync_item_status_for_manufacturing_data(md.id, ready=False)
         await self._commit()
-        background_tasks.add_task(run_generation, md.id)
 
     @staticmethod
     def _validate_replacement_layers(
@@ -680,10 +661,11 @@ class ManufacturingDataService:
 
 
 async def run_generation(md_id: str) -> None:
-    """バックグラウンドで新規セッションを開き、1件の製造データを生成する.
+    """新規セッションを開き、1件の製造データを生成する.
 
-    BackgroundTasks から呼ばれる。リクエストのセッションや ORM を持ち込まず、
-    プレーンな md_id だけを受け取る（外部注文通知と同型）。
+    ワーカー（app/worker.py）から呼ばれる。呼び出し元のセッションや ORM を持ち込まず、
+    プレーンな md_id だけを受け取る。生成は 30〜360 秒かかりうるため、この関数を
+    リクエストの処理中やレスポンス送出後に呼んではならない（ADR-0026）。
     """
     session_maker = get_session_maker()
     async with session_maker() as session:
@@ -701,34 +683,30 @@ async def run_generation(md_id: str) -> None:
             logger.exception("run_generation crashed for %s", md_id)
 
 
-async def recover_stranded_generations() -> None:
-    """起動時に宙吊りの製造データ生成を再駆動する.
+async def next_pending_generation_id(exclude: Collection[str]) -> str | None:
+    """次に生成すべき製造データ id（最も古い pending）を返す。無ければ None.
 
-    生成は in-process の BackgroundTask で走るため、生成中（generating）に API が
-    再起動/デプロイ/クラッシュすると、その行は generating のまま取り残され、参照する
-    注文が発注ゲートで恒久的に保留される。新プロセスには in-flight タスクが無いので、
-    起動時点の generating は全て中断済み。generating を pending に戻したうえで、
-    pending/generating だった行を再駆動する（generate() 側の claim で二重起動は防止される）。
-    失敗しても起動は継続させる（例外は握って記録するだけ）。
+    ワーカーから呼ばれる。run_generation と同じく、呼び出し元のセッションを持ち込まず
+    新規セッションを開く。``exclude`` の意味は find_next_pending_id を参照。
     """
     session_maker = get_session_maker()
     async with session_maker() as session:
-        # 宙吊り行を pending に戻し、再駆動対象の id を1文で回収する。
-        stranded_ids = await ManufacturingDataRepository(session).reclaim_stranded()
+        return await ManufacturingDataRepository(session).find_next_pending_id(exclude)
+
+
+async def reclaim_stranded_generations() -> int:
+    """中断されて宙吊りになった生成を pending へ戻し、戻した件数を返す.
+
+    生成は別プロセスのワーカーが担うため、ワーカーが生成中（generating）に落ちると、
+    その行は generating のまま取り残され、参照する注文が発注ゲートで恒久的に保留される。
+
+    **ワーカーの排他ロックを保持した状態からのみ呼ぶこと。** generating に残る行を
+    「全て中断済み」と見なせる根拠は、同時に走るワーカーが 1 本だけであることにある。
+    ロックの外から呼ぶと、他のワーカーが処理中の行を pending へ巻き戻し、同じ製造データに
+    対して VM ジョブが二重に投入される。
+    """
+    session_maker = get_session_maker()
+    async with session_maker() as session:
+        reclaimed = await ManufacturingDataRepository(session).reclaim_stranded()
         await session.commit()
-
-    if not stranded_ids:
-        return
-
-    logger.info("recovering %d stranded manufacturing generation(s)", len(stranded_ids))
-    # 同時実行数を抑えて再駆動する（VM 直列・DB プール有限のため一斉起動を避ける）。
-    semaphore = asyncio.Semaphore(_RECOVERY_CONCURRENCY)
-
-    async def _drive(md_id: str) -> None:
-        async with semaphore:
-            await run_generation(md_id)
-
-    for md_id in stranded_ids:
-        task = asyncio.create_task(_drive(md_id))
-        _recovery_tasks.add(task)
-        task.add_done_callback(_recovery_tasks.discard)
+    return reclaimed

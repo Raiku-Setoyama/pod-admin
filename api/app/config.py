@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str
 
+    # 接続プール。1 インスタンスあたり DB_POOL_SIZE + DB_MAX_OVERFLOW 本まで接続を開く。
+    # コンテナ実行基盤では「インスタンス数 × この値」が DB の max_connections を超えないよう、
+    # 環境ごとに絞る（小さいインスタンスの DB は max_connections も小さい）。
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
+
     @property
     def async_database_url(self) -> str:
         """Convert standard PostgreSQL URL to asyncpg format."""
@@ -95,6 +101,14 @@ class Settings(BaseSettings):
     # 内部エンドポイント（メーカー日次発注ダイジェスト）の共有シークレット。
     # 未設定なら内部エンドポイントは無効（403）。外部トリガ(cron等)から X-Internal-Secret で認証する。
     INTERNAL_API_SECRET: str = ""
+
+    # 製造データ生成ワーカー（app/worker.py）
+    # 1 回の起動で処理を続ける上限秒数。超えたら残りは次回の起動に委ねる。
+    # 実行基盤側のタスクタイムアウトより十分に短くしておくこと（途中で殺されると
+    # 生成中の行が宙吊りになり、次回の起動が復旧するまで待たされる）。
+    WORKER_MAX_RUNTIME_SECONDS: float = 3000.0
+    # 1 回の起動で処理する件数の上限。0 以下なら件数では打ち切らない。
+    WORKER_MAX_ITEMS: int = 50
 
 
 settings = Settings()

@@ -1,6 +1,5 @@
 """Unit tests for ManufacturingDataService and the manufacturing readiness gate."""
 
-import asyncio
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import Any
@@ -360,7 +359,7 @@ class TestGenerateDriver:
 
 class TestRetry:
     @pytest.mark.asyncio
-    async def test_retry_resets_to_pending_and_enqueues(self) -> None:
+    async def test_retry_resets_to_pending_without_generating_inline(self) -> None:
         from datetime import UTC, datetime
 
         md = ManufacturingData(product_code="p", product_type="sticker")
@@ -374,21 +373,20 @@ class TestRetry:
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
 
-        bg = MagicMock()
         svc = _service(md_repo)
-        resp = await svc.retry("md-1", bg)
+        resp = await svc.retry("md-1")
 
+        # 行を pending へ戻すだけ。生成はワーカーが別プロセスで拾う（ADR-0026）。
         assert md.status == MfgDataStatus.PENDING.value
         assert md.error_message is None
         assert resp.status == MfgDataStatus.PENDING.value
-        bg.add_task.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_retry_missing_raises(self) -> None:
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = None
         with pytest.raises(NotFoundError):
-            await _service(md_repo).retry("missing", MagicMock())
+            await _service(md_repo).retry("missing")
 
     @pytest.mark.asyncio
     async def test_retry_rejects_non_failed_row(self) -> None:
@@ -398,13 +396,11 @@ class TestRetry:
         md.status = MfgDataStatus.READY.value
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
-        bg = MagicMock()
 
         with pytest.raises(ConflictError):
-            await _service(md_repo).retry("md-1", bg)
+            await _service(md_repo).retry("md-1")
 
         assert md.status == MfgDataStatus.READY.value  # 状態は変えない
-        bg.add_task.assert_not_called()  # 再生成も起動しない
 
 
 class TestRegenerate:
@@ -424,23 +420,22 @@ class TestRegenerate:
     @pytest.mark.asyncio
     async def test_regenerate_demotes_and_enqueues_when_pre_manufacturing(self) -> None:
         # 参照明細が全て発注準備中/発注済みなら再作成可。ready 行を pending に戻し、
-        # 発注済み明細を発注準備中へ戻して（demote）バックグラウンド生成を起動する。
+        # 発注済み明細を発注準備中へ戻す（demote）。生成そのものはワーカーが拾う。
         md = self._md(MfgDataStatus.READY.value)
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
         order_repo = AsyncMock()
         order_repo.has_manufacturing_or_delivered_items.return_value = False
-        bg = MagicMock()
 
         svc = _service(md_repo, order_repo)
-        resp = await svc.regenerate("md-1", bg)
+        resp = await svc.regenerate("md-1")
 
         assert md.status == MfgDataStatus.PENDING.value
         assert md.error_message is None
+        # 降格は 1 回だけ（生成の起動もこの 1 回に対応する）
         order_repo.sync_item_status_for_manufacturing_data.assert_awaited_once_with(
             "md-1", ready=False
         )
-        bg.add_task.assert_called_once()
         assert resp.status == MfgDataStatus.PENDING.value
 
     @pytest.mark.asyncio
@@ -450,13 +445,11 @@ class TestRegenerate:
         md_repo.find_by_id.return_value = md
         order_repo = AsyncMock()
         order_repo.has_manufacturing_or_delivered_items.return_value = False
-        bg = MagicMock()
 
-        resp = await _service(md_repo, order_repo).regenerate("md-1", bg)
+        resp = await _service(md_repo, order_repo).regenerate("md-1")
 
         assert md.status == MfgDataStatus.PENDING.value
         assert resp.status == MfgDataStatus.PENDING.value
-        bg.add_task.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_regenerate_blocked_when_shared_with_manufacturing(self) -> None:
@@ -466,15 +459,13 @@ class TestRegenerate:
         md_repo.find_by_id.return_value = md
         order_repo = AsyncMock()
         order_repo.has_manufacturing_or_delivered_items.return_value = True
-        bg = MagicMock()
 
         svc = _service(md_repo, order_repo)
         with pytest.raises(ConflictError):
-            await svc.regenerate("md-1", bg)
+            await svc.regenerate("md-1")
 
         assert md.status == MfgDataStatus.READY.value  # 状態は変えない
         order_repo.sync_item_status_for_manufacturing_data.assert_not_called()
-        bg.add_task.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_regenerate_blocked_when_shared_with_delivered(self) -> None:
@@ -483,11 +474,9 @@ class TestRegenerate:
         md_repo.find_by_id.return_value = md
         order_repo = AsyncMock()
         order_repo.has_manufacturing_or_delivered_items.return_value = True
-        bg = MagicMock()
 
         with pytest.raises(ConflictError):
-            await _service(md_repo, order_repo).regenerate("md-1", bg)
-        bg.add_task.assert_not_called()
+            await _service(md_repo, order_repo).regenerate("md-1")
 
     @pytest.mark.asyncio
     async def test_regenerate_rejects_generating(self) -> None:
@@ -496,27 +485,26 @@ class TestRegenerate:
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
         order_repo = AsyncMock()
-        bg = MagicMock()
 
         svc = _service(md_repo, order_repo)
         with pytest.raises(ConflictError):
-            await svc.regenerate("md-1", bg)
+            await svc.regenerate("md-1")
 
         order_repo.has_manufacturing_or_delivered_items.assert_not_called()
-        bg.add_task.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_regenerate_missing_raises(self) -> None:
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = None
         with pytest.raises(NotFoundError):
-            await _service(md_repo).regenerate("missing", MagicMock())
+            await _service(md_repo).regenerate("missing")
 
 
 class TestRecovery:
     @pytest.mark.asyncio
-    async def test_recover_reenqueues_reclaimed_ids(self) -> None:
-        # 起動時復旧: 宙吊り行を reclaim（pending へ戻す）して得た id を再駆動する。
+    async def test_reclaim_returns_stranded_rows_to_pending(self) -> None:
+        # 中断された generating を pending へ戻し、戻した件数を返す。
+        # 再駆動そのものは行わない（ワーカーが通常の取り出しで拾う）。
         session = AsyncMock()
         session_cm = MagicMock()
         session_cm.__aenter__ = AsyncMock(return_value=session)
@@ -524,23 +512,18 @@ class TestRecovery:
         session_maker = MagicMock(return_value=session_cm)
 
         repo = AsyncMock()
-        repo.reclaim_stranded.return_value = ["md-gen", "md-pend"]
-
-        started: list[str] = []
-
-        async def fake_run(md_id: str) -> None:
-            started.append(md_id)
+        repo.reclaim_stranded.return_value = 2
 
         with (
             patch.object(mds, "get_session_maker", return_value=session_maker),
             patch.object(mds, "ManufacturingDataRepository", return_value=repo),
-            patch.object(mds, "run_generation", fake_run),
+            patch.object(mds, "run_generation", AsyncMock()) as run,
         ):
-            await mds.recover_stranded_generations()
-            await asyncio.sleep(0.05)  # spawn したタスクを走らせる
+            reclaimed = await mds.reclaim_stranded_generations()
 
+        assert reclaimed == 2
         session.commit.assert_awaited()
-        assert set(started) == {"md-gen", "md-pend"}
+        run.assert_not_called()
 
 
 class TestManufacturingReadinessGate:

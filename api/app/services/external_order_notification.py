@@ -12,8 +12,6 @@ from typing import TYPE_CHECKING
 from email_validator import EmailNotValidError, validate_email
 
 if TYPE_CHECKING:
-    from fastapi import BackgroundTasks
-
     from app.repositories.app_setting_repository import AppSettingRepository
     from app.schemas.order import OrderResponse
     from app.services.email_service import EmailService
@@ -59,7 +57,7 @@ def validate_setting_value(key: str, value: str) -> None:
 
 
 class ExternalOrderNotificationService:
-    """確定済みの外部注文をもとに、受注通知メールの送信を予約するサービス."""
+    """確定済みの外部注文をもとに、受注通知メールを送信するサービス."""
 
     def __init__(
         self,
@@ -69,17 +67,15 @@ class ExternalOrderNotificationService:
         self._app_setting_repo = app_setting_repo
         self._email_service = email_service
 
-    async def enqueue_if_enabled(
-        self,
-        background_tasks: BackgroundTasks,
-        *,
-        order: OrderResponse,
-    ) -> None:
-        """通知が有効かつ宛先がある場合のみ、送信を BackgroundTasks に積む.
+    async def notify_if_enabled(self, *, order: OrderResponse) -> None:
+        """通知が有効かつ宛先がある場合に、受注通知メールを送信する.
 
-        メール送信はレスポンス送出後に非同期で行われるため、外部APIのレイテンシに
-        影響しない。設定読込や送信予約で例外が起きても、注文受付（API レスポンス）は
-        絶対に失敗させない。
+        レスポンスを返す前に送信する。コンテナ実行基盤ではレスポンス送出後に CPU が
+        絞られ、そこに積んだ処理は完走しないため、送信を後ろに回せない（ADR-0026）。
+        SendGrid への 1 往復ぶん外部APIのレイテンシが増える。
+
+        設定読込や送信で例外が起きても、注文受付（API レスポンス）は絶対に失敗させない
+        （メール障害で業務処理を止めない。ADR-0014）。
         """
         try:
             if self._email_service is None:
@@ -98,10 +94,7 @@ class ExternalOrderNotificationService:
             if not recipients:
                 return
 
-            # BackgroundTasks には DB セッションや ORM を持ち込まず、
-            # リクエスト内で組み立て済みの素のデータだけを渡す。
-            background_tasks.add_task(
-                self._email_service.send_external_order_notification,
+            await self._email_service.send_external_order_notification(
                 to_emails=recipients,
                 order_number=order.order_number,
                 source_code=order.source,
@@ -115,13 +108,13 @@ class ExternalOrderNotificationService:
                 order_id=order.id,
             )
             logger.info(
-                "Queued external order notification for order %s to %d recipient(s)",
+                "Sent external order notification for order %s to %d recipient(s)",
                 order.order_number,
                 len(recipients),
             )
         except Exception:
-            # 通知のための処理は注文受付をブロックしてはならない
+            # 通知のための処理は注文受付を失敗させてはならない
             logger.exception(
-                "Failed to enqueue external order notification for order %s",
+                "Failed to send external order notification for order %s",
                 order.order_number,
             )

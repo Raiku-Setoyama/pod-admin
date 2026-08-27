@@ -2,8 +2,8 @@
 
 - 設定値バリデーション（有効/無効値、メール形式、長さ）
 - 通知のスキップ条件（無効・宛先空・メールサービス未設定）
-- 有効時に BackgroundTasks へ送信が積まれること
-- 設定読込で例外が起きても注文受付をブロックしないこと
+- 有効時にレスポンスを返す前へ送信されること（BackgroundTasks に積まない）
+- 設定読込や送信で例外が起きても注文受付をブロックしないこと
 """
 
 import types
@@ -12,7 +12,6 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import BackgroundTasks
 
 from app.schemas.order import OrderResponse
 from app.services.external_order_notification import (
@@ -102,64 +101,64 @@ class TestValidateSettingValue:
             validate_setting_value(NOTIFICATION_RECIPIENTS_KEY, long_value)
 
 
-class TestEnqueueIfEnabled:
+def _make_email_service() -> MagicMock:
+    """送信メソッドだけを待てるようにしたメールサービスの代役."""
+    email_service = MagicMock()
+    email_service.send_external_order_notification = AsyncMock(return_value=True)
+    return email_service
+
+
+class TestNotifyIfEnabled:
+    """送信は BackgroundTasks に積まず、レスポンスを返す前に完了させる（ADR-0026）."""
+
     @pytest.mark.asyncio
-    async def test_skips_when_email_service_missing(self) -> None:
+    async def test_skips_before_reading_settings_when_email_service_missing(self) -> None:
         repo = _make_repo("true", "a@example.com")
         service = ExternalOrderNotificationService(repo, None)
-        bg = BackgroundTasks()
 
-        await service.enqueue_if_enabled(bg, order=cast("OrderResponse", _make_order()))
+        await service.notify_if_enabled(order=cast("OrderResponse", _make_order()))
 
-        assert len(bg.tasks) == 0
+        # メールサービスが無いなら設定の読み込みにも入らない
+        repo.find_by_key.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        ("enabled", "recipients"),
+        [
+            pytest.param("false", "a@example.com", id="通知が無効"),
+            pytest.param(None, "a@example.com", id="有効/無効の設定が無い"),
+            pytest.param("true", "", id="宛先が空"),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_skips_when_not_enabled_or_no_recipients(
+        self, enabled: str | None, recipients: str
+    ) -> None:
+        email_service = _make_email_service()
+        service = ExternalOrderNotificationService(
+            _make_repo(enabled, recipients), email_service
+        )
+
+        await service.notify_if_enabled(order=cast("OrderResponse", _make_order()))
+
+        email_service.send_external_order_notification.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_skips_when_disabled(self) -> None:
-        repo = _make_repo("false", "a@example.com")
-        service = ExternalOrderNotificationService(repo, MagicMock())
-        bg = BackgroundTasks()
+    async def test_sends_before_returning_when_enabled_with_recipients(self) -> None:
+        email_service = _make_email_service()
+        service = ExternalOrderNotificationService(
+            _make_repo("true", "a@example.com, b@example.com"), email_service
+        )
 
-        await service.enqueue_if_enabled(bg, order=cast("OrderResponse", _make_order()))
+        await service.notify_if_enabled(order=cast("OrderResponse", _make_order()))
 
-        assert len(bg.tasks) == 0
-
-    @pytest.mark.asyncio
-    async def test_skips_when_enabled_setting_missing(self) -> None:
-        repo = _make_repo(None, "a@example.com")
-        service = ExternalOrderNotificationService(repo, MagicMock())
-        bg = BackgroundTasks()
-
-        await service.enqueue_if_enabled(bg, order=cast("OrderResponse", _make_order()))
-
-        assert len(bg.tasks) == 0
-
-    @pytest.mark.asyncio
-    async def test_skips_when_recipients_empty(self) -> None:
-        repo = _make_repo("true", "")
-        service = ExternalOrderNotificationService(repo, MagicMock())
-        bg = BackgroundTasks()
-
-        await service.enqueue_if_enabled(bg, order=cast("OrderResponse", _make_order()))
-
-        assert len(bg.tasks) == 0
-
-    @pytest.mark.asyncio
-    async def test_enqueues_when_enabled_with_recipients(self) -> None:
-        repo = _make_repo("true", "a@example.com, b@example.com")
-        email_service = MagicMock()
-        service = ExternalOrderNotificationService(repo, email_service)
-        bg = BackgroundTasks()
-
-        await service.enqueue_if_enabled(bg, order=cast("OrderResponse", _make_order()))
-
-        assert len(bg.tasks) == 1
-        task = bg.tasks[0]
-        assert task.func == email_service.send_external_order_notification
-        assert task.kwargs["to_emails"] == ["a@example.com", "b@example.com"]
-        assert task.kwargs["order_number"] == "0000001"
-        assert task.kwargs["source_code"] == "RKSYO"
-        assert task.kwargs["total_price"] == 5000
-        assert task.kwargs["order_items"] == [
+        # notify_if_enabled から戻った時点で送信が終わっていること
+        email_service.send_external_order_notification.assert_awaited_once()
+        kwargs = email_service.send_external_order_notification.await_args.kwargs
+        assert kwargs["to_emails"] == ["a@example.com", "b@example.com"]
+        assert kwargs["order_number"] == "0000001"
+        assert kwargs["source_code"] == "RKSYO"
+        assert kwargs["total_price"] == 5000
+        assert kwargs["order_items"] == [
             {"product_name": "オリジナルTシャツ", "quantity": 2}
         ]
 
@@ -167,10 +166,25 @@ class TestEnqueueIfEnabled:
     async def test_never_raises_on_repo_error(self) -> None:
         repo = MagicMock()
         repo.find_by_key = AsyncMock(side_effect=RuntimeError("db down"))
-        service = ExternalOrderNotificationService(repo, MagicMock())
-        bg = BackgroundTasks()
+        email_service = _make_email_service()
+        service = ExternalOrderNotificationService(repo, email_service)
 
-        # 例外を送出せず、タスクも積まれない（注文受付はブロックされない）
-        await service.enqueue_if_enabled(bg, order=cast("OrderResponse", _make_order()))
+        # 例外を送出しない（注文受付はブロックされない）
+        await service.notify_if_enabled(order=cast("OrderResponse", _make_order()))
 
-        assert len(bg.tasks) == 0
+        email_service.send_external_order_notification.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_never_raises_when_sending_fails(self) -> None:
+        """送信が失敗しても受注は成立させる（ADR-0014: メール障害で業務処理を止めない）."""
+        email_service = _make_email_service()
+        email_service.send_external_order_notification = AsyncMock(
+            side_effect=RuntimeError("sendgrid down")
+        )
+        service = ExternalOrderNotificationService(
+            _make_repo("true", "a@example.com"), email_service
+        )
+
+        await service.notify_if_enabled(order=cast("OrderResponse", _make_order()))
+
+        email_service.send_external_order_notification.assert_awaited_once()
