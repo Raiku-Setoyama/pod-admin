@@ -4,17 +4,19 @@ import io
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import UploadFile
 
 from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
-from app.services import manufacturing_data_service as mds
 from app.services.manufacturing_data_service import ManufacturingDataService
 from app.utils.exceptions import ConflictError, NotFoundError, ValidationError
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"payload"
+
+# 取り出しが返すリースの代役
+_LEASE = datetime(2099, 1, 1, tzinfo=UTC)
 
 
 def _upload(filename: str = "new_color.png", content: bytes = PNG) -> UploadFile:
@@ -330,8 +332,9 @@ class TestGenerationUsesReplacedSource:
 
     @pytest.mark.asyncio
     async def test_generate_sends_replaced_layer_to_vm(self) -> None:
+        # generate はワーカーが確保した（generating の）行を受け取る
         md = _md(
-            status=MfgDataStatus.PENDING.value,
+            status=MfgDataStatus.GENERATING.value,
             source_images=[
                 {"layer_type": "color", "file_path": "source_images/a.png", "filename": "a.png"},
                 {"layer_type": "cutline", "file_path": "source_images/b.png", "filename": "b.png"},
@@ -349,7 +352,7 @@ class TestGenerationUsesReplacedSource:
         vm_client.download = AsyncMock(return_value=b"AI-BYTES")
 
         svc = _service(md, storage=storage, vm_client=vm_client)
-        await svc.generate("md-1")
+        await svc.generate("md-1", _LEASE)
 
         assert md.status == MfgDataStatus.READY.value
         assert vm_client.submit.await_args.kwargs["images"] == {
@@ -440,13 +443,16 @@ async def test_replace_then_generate_end_to_end_in_memory() -> None:
     )
     svc._fetch_with_limit = AsyncMock(return_value=b"CUTLINE")
 
-    with patch.object(mds, "run_generation", AsyncMock()):
-        await svc.replace_source_images(
-            "md-1",
-            {"color": _upload()},
-            replaced_by="a@b.c",
-        )
-    await svc.generate("md-1")
+    await svc.replace_source_images(
+        "md-1",
+        {"color": _upload()},
+        replaced_by="a@b.c",
+    )
+    # 差し替えは行を pending へ戻す。生成はワーカーが確保してから呼ぶので、
+    # その確保をここで再現する。
+    assert md.status == MfgDataStatus.PENDING.value
+    md.status = MfgDataStatus.GENERATING.value
+    await svc.generate("md-1", _LEASE)
 
     # save が返したキーで生成側が読み出せている（差し替え→生成の受け渡しが噛み合う）
     assert vm_client.submit.await_args.kwargs["images"]["color"] == PNG

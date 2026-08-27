@@ -10,10 +10,13 @@
 
 多重起動:
     起動間隔より処理が長引けば実行は重なる。2 本目は Postgres のアドバイザリロックを
-    取れずに即終了する。illustrator-vm が 1 件ずつの直列処理である以上、並列に走らせても
-    速くならないうえ、復旧処理（generating の巻き戻し）が他方の処理中の行を壊す。
+    取れずに即終了する。**これはスループットの都合であって、正しさの条件ではない。**
+    illustrator-vm が 1 件ずつの直列処理である以上、ワーカーを並列に走らせても速くならず、
+    VM のキュー上限（50 超で 503）を無駄に消費するだけだからである。
 
-    行単位の二重処理は、ロックとは別に claim_for_generation の条件付き UPDATE が防いでいる。
+    **ロックを外しても壊れない。**同じ行を 2 度処理しないことは、キューからの取り出し
+    （``claim_next_generation`` の 1 文）とリースが保証している。VM が並列化されたら、
+    ロックを外すだけで並列ワーカーに移行できる。
 
 モデルの読み込み:
     ``app.models`` を import する。モデルどうしは文字列で関連を張っているため、一部しか
@@ -34,8 +37,8 @@ import app.models  # noqa: F401  # 全モデルをマッパー登録に載せる
 from app.config import settings
 from app.database import get_engine
 from app.services.manufacturing_data_service import (
-    next_pending_generation_id,
-    reclaim_stranded_generations,
+    claim_next_generation,
+    reclaim_expired_generation_leases,
     run_generation,
 )
 
@@ -44,18 +47,17 @@ logger = logging.getLogger(__name__)
 # このワーカー専用のアドバイザリロックのキー。他の用途と衝突しない固定値を持つ。
 _ADVISORY_LOCK_KEY = 8_240_517_301
 
+
 async def process_pending(*, max_runtime_seconds: float, max_items: int) -> int:
     """生成待ちの製造データを順に処理し、処理した件数を返す.
 
     打ち切っても取りこぼしにはならない。残りは pending のまま次回の起動が拾う。
 
-    ``attempted`` を持つのは、処理しても pending から外れなかった行で無限ループに
-    陥らないため（本来は generating→ready/failed へ進むので起こらないが、確定に
-    失敗した場合に同じ行を延々と掴み続けるのを防ぐ）。
+    取り出した時点で行は generating になりリースが打たれるので、次の周回で同じ行が
+    返ってくることはない。処理の途中で落ちても、リースが切れれば pending へ戻る。
     """
     started = time.monotonic()
     processed = 0
-    attempted: set[str] = set()
 
     while True:
         if max_items > 0 and processed >= max_items:
@@ -72,12 +74,12 @@ async def process_pending(*, max_runtime_seconds: float, max_items: int) -> int:
             )
             break
 
-        md_id = await next_pending_generation_id(attempted)
-        if md_id is None:
+        claimed = await claim_next_generation(settings.WORKER_LEASE_SECONDS)
+        if claimed is None:
             break
 
-        attempted.add(md_id)
-        await run_generation(md_id)
+        md_id, lease_token = claimed
+        await run_generation(md_id, lease_token)
         processed += 1
 
     return processed
@@ -86,7 +88,8 @@ async def process_pending(*, max_runtime_seconds: float, max_items: int) -> int:
 async def run_once() -> int:
     """ワーカーを 1 回走らせ、処理した件数を返す.
 
-    アドバイザリロックを取れなければ、別のワーカーが動いているので何もせずに戻る。
+    アドバイザリロックを取れなければ、別のワーカーが動いているので何もせずに戻る
+    （正しさの条件ではない。モジュールの docstring を参照）。
     """
     engine = get_engine()
     async with engine.connect() as conn:
@@ -98,6 +101,7 @@ async def run_once() -> int:
             ).scalar()
         )
         if not acquired:
+            # 正しさのためではなく、直列な VM を複数のワーカーで奪い合わないための降り方。
             logger.info("another worker is running; exiting without doing anything")
             return 0
 
@@ -107,9 +111,9 @@ async def run_once() -> int:
         await conn.commit()
 
         try:
-            reclaimed = await reclaim_stranded_generations()
+            reclaimed = await reclaim_expired_generation_leases()
             if reclaimed:
-                logger.info("reclaimed %d stranded generation(s)", reclaimed)
+                logger.info("reclaimed %d generation(s) with an expired lease", reclaimed)
             return await process_pending(
                 max_runtime_seconds=settings.WORKER_MAX_RUNTIME_SECONDS,
                 max_items=settings.WORKER_MAX_ITEMS,
@@ -129,6 +133,9 @@ def main() -> None:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
     )
+    warning = settings.lease_margin_warning()
+    if warning:
+        logger.warning("%s", warning)
     processed = asyncio.run(run_once())
     logger.info("worker finished (processed=%d)", processed)
 

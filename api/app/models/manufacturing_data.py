@@ -94,6 +94,18 @@ class ManufacturingData(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # 生成試行回数
     attempts: Mapped[int] = mapped_column(Integer, default=0)
 
+    # 生成の所有権（リース）の期限。generating へ確保するときに打ち、ready/failed で NULL に戻す。
+    #
+    # **これが「その行を今まさに誰かが処理しているか」の唯一の根拠である。**
+    # 期限を過ぎた generating は、処理していたワーカーが落ちたものと見なして pending へ戻す。
+    # ワーカーが何本走っているかに依存しないので、復旧処理は単独で正しく動く。
+    #
+    # 期限は 1 件の生成にかかりうる最大時間より十分に長くすること。短すぎると、生きている
+    # ワーカーが処理中の行を別のワーカーが奪い、VM ジョブが二重に投入される。
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     def __repr__(self) -> str:
         return (
             f"<ManufacturingData(id={self.id}, product_code={self.product_code}, "

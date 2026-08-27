@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
@@ -24,75 +24,96 @@ class ManufacturingDataRepository:
         )
         return result.scalar_one_or_none()
 
-    async def claim_for_generation(self, mfg_data_id: str) -> bool:
-        """生成のためにこの行を原子的に確保（claim）し、generating へ遷移させる.
+    async def claim_next_generation(
+        self, lease_seconds: float
+    ) -> tuple[str, datetime] | None:
+        """生成待ちの最も古い 1 行を確保して generating にし、``(id, リース期限)`` を返す.
 
-        status が pending/failed のときのみ、status=generating・attempts+1・error クリアを
-        1つの条件付き UPDATE で確定する（生成開始の遷移をこの1文が単独で所有する）。既に
-        generating（他ワーカーが処理中）または ready の場合は 0 行更新となり False を返す。
-        これにより、同一行に対して複数の run_generation が走っても VM ジョブは一度しか投入
-        されない（PostgreSQL は競合 UPDATE をロックし、解放後に WHERE を再評価する）。
+        生成待ちが無ければ None。
+
+        **これがキューからの取り出しである。**候補の選択・確保・リースの付与を 1 つの文で
+        行うので、複数のワーカーが同時に走っても同じ行を 2 度取り出すことはない
+        （``FOR UPDATE SKIP LOCKED`` が、他のワーカーが掴んでいる行を黙って飛ばす）。
+
+        リースの期限は、その行を「今まさに処理している」と見なす期限である。期限を過ぎても
+        generating のままなら、処理していたワーカーが落ちたと判断できる
+        （→ reclaim_expired_generation_leases）。
+
+        **返すリース期限は、その所有権の証明として使う。**結果を書き戻すときにこの値を
+        添えれば、リースが失効して別のワーカーに再確保された行を、古いワーカーが
+        上書きしてしまうことを防げる（→ finish_generation）。
+        """
+        oldest_pending = (
+            select(ManufacturingData.id)
+            .where(ManufacturingData.status == MfgDataStatus.PENDING.value)
+            .order_by(ManufacturingData.created_at)
+            .limit(1)
+            .with_for_update(skip_locked=True)
+            .scalar_subquery()
+        )
+        result = await self._db.execute(
+            update(ManufacturingData)
+            .where(ManufacturingData.id == oldest_pending)
+            .values(
+                status=MfgDataStatus.GENERATING.value,
+                attempts=ManufacturingData.attempts + 1,
+                error_message=None,
+                lease_expires_at=func.now() + timedelta(seconds=lease_seconds),
+            )
+            .returning(ManufacturingData.id, ManufacturingData.lease_expires_at)
+            .execution_options(synchronize_session=False)
+        )
+        row = result.first()
+        return None if row is None else (row[0], row[1])
+
+    async def finish_generation(
+        self, mfg_data_id: str, *, lease_token: datetime, values: dict[str, Any]
+    ) -> bool:
+        """リースを保持している間だけ、生成結果を書き戻してリースを外す.
+
+        ``lease_token`` は claim_next_generation が返したリース期限である。
+        書き戻しの時点でこの値が一致していなければ、**リースが失効して別のワーカーが
+        再確保した後**ということなので、何も書かずに False を返す。
+
+        これが無いと、期限を誤って短く設定したときに、古いワーカーの結果が新しい
+        ワーカーの処理を静かに上書きする（しかも誰も気づけない）。
         """
         result = await self._db.execute(
             update(ManufacturingData)
             .where(
                 ManufacturingData.id == mfg_data_id,
-                ManufacturingData.status.notin_(
-                    [MfgDataStatus.GENERATING.value, MfgDataStatus.READY.value]
-                ),
+                ManufacturingData.lease_expires_at == lease_token,
             )
-            .values(
-                status=MfgDataStatus.GENERATING.value,
-                attempts=ManufacturingData.attempts + 1,
-                error_message=None,
-            )
+            .values(**values, lease_expires_at=None)
             .returning(ManufacturingData.id)
             .execution_options(synchronize_session=False)
         )
-        return result.scalar_one_or_none() is not None
+        return result.scalars().first() is not None
 
-    async def reclaim_stranded(self) -> int:
-        """中断されて generating のまま残った行を pending へ戻し、戻した件数を返す.
+    async def reclaim_expired_leases(self) -> int:
+        """リースが切れた generating 行を pending へ戻し、戻した件数を返す.
 
-        ワーカーが生成中に落ちると、その行は generating のまま取り残される。
-        ワーカーは同時に 1 本しか走らないので、この呼び出しの時点で generating に
-        残っているものは全て中断済みであり、pending へ戻して差し支えない。
+        **この判定は、ワーカーが何本走っているかに依存しない。**期限内のリースを持つ行は
+        誰かが処理中なので触らない。リースを持たない generating は、リース導入前に確保された
+        行（または確保直後に落ちた行）なので、期限切れとして扱う。
 
-        **pending の行は対象にしない。** 戻す必要が無いうえ、同じ値で UPDATE すると
+        pending の行は対象にしない。戻す必要が無いうえ、同じ値で UPDATE すると
         バックログ全件の updated_at が動き、戻した件数も読めなくなる。
-        対象を generating に絞ったことで、通常運用ではほぼ 0 件しか触らない。
         """
         result = await self._db.execute(
             update(ManufacturingData)
-            .where(ManufacturingData.status == MfgDataStatus.GENERATING.value)
-            .values(status=MfgDataStatus.PENDING.value)
+            .where(
+                ManufacturingData.status == MfgDataStatus.GENERATING.value,
+                or_(
+                    ManufacturingData.lease_expires_at.is_(None),
+                    ManufacturingData.lease_expires_at < func.now(),
+                ),
+            )
+            .values(status=MfgDataStatus.PENDING.value, lease_expires_at=None)
             .returning(ManufacturingData.id)
             .execution_options(synchronize_session=False)
         )
         return len(result.scalars().all())
-
-    async def find_next_pending_id(self, exclude: Collection[str]) -> str | None:
-        """生成待ち（pending）の行のうち、最も古い 1 件の id を返す（無ければ None）.
-
-        ワーカーが処理対象を 1 件ずつ取り出すために使う。1 件だけ引くのは、処理のたびに
-        「その時点で最も古い生成待ち」を見るためである（処理中に他プロセスが積んだ行も拾える）。
-
-        ``exclude`` は、処理しても pending から外れなかった行を除くためのもの。無限ループを
-        防ぐ。ワーカーの 1 回の起動で処理する件数には上限があるため、この集合は小さいままになる。
-
-        ここでは行をロックしない：実際の確保は claim_for_generation の条件付き UPDATE が
-        原子的に行うため、複数のワーカーが同じ id を拾っても generating へ進めるのは一方だけ。
-        """
-        query = (
-            select(ManufacturingData.id)
-            .where(ManufacturingData.status == MfgDataStatus.PENDING.value)
-            .order_by(ManufacturingData.created_at)
-            .limit(1)
-        )
-        if exclude:
-            query = query.where(ManufacturingData.id.notin_(exclude))
-        result = await self._db.execute(query)
-        return result.scalars().first()
 
     async def find_by_cache_key(
         self,

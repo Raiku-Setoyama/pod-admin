@@ -1,6 +1,7 @@
 """Unit tests for ManufacturingDataService and the manufacturing readiness gate."""
 
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -195,21 +196,27 @@ class TestCacheResolution:
         assert created is False
 
 
+# 取り出しが返すリースの代役（generate はこの値を書き戻しの条件に使うだけ）
+_LEASE = datetime(2099, 1, 1, tzinfo=UTC)
+
+
 class TestGenerateDriver:
-    def _pending_md(self) -> Any:
+    def _claimed_md(self) -> Any:
+        """ワーカーが取り出した直後の行（generating・試行回数は加算済み・リース保持）."""
         md = ManufacturingData(product_code="RKSYO-1", product_type="sticker", size="50x50mm")
         md.id = "md-1"
-        md.status = MfgDataStatus.PENDING.value
+        md.status = MfgDataStatus.GENERATING.value
         md.source_images = [
             {"layer_type": "color", "url": "https://x/color.png"},
             {"layer_type": "cutline", "url": "https://x/cutline.png"},
         ]
-        md.attempts = 0
+        md.attempts = 1
+        md.lease_expires_at = _LEASE
         return md
 
     @pytest.mark.asyncio
     async def test_successful_generation_marks_ready(self) -> None:
-        md = self._pending_md()
+        md = self._claimed_md()
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
 
@@ -228,14 +235,14 @@ class TestGenerateDriver:
             return_value={"color": b"c", "cutline": b"k"}
         )
 
-        await svc.generate("md-1")
+        await svc.generate("md-1", _LEASE)
 
         assert md.status == MfgDataStatus.READY.value
         assert md.output_filename == "sticker_out.ai"
         assert md.file_path == "manufacturing_data/sticker_out.ai"
         assert md.file_size == len(b"AI-BYTES")
-        assert md.attempts == 1
         assert md.vm_job_id == "job-9"
+        assert md.lease_expires_at is None  # 処理が終わったので所有権を返す
         # VM 必須の order_id に製造データ行の id を渡す（トレーサビリティ）
         assert vm_client.submit.call_args.kwargs["order_id"] == md.id
         # 生成完了を参照明細へ波及（発注準備中→発注済み）
@@ -245,7 +252,7 @@ class TestGenerateDriver:
 
     @pytest.mark.asyncio
     async def test_vm_failure_marks_failed_with_message(self) -> None:
-        md = self._pending_md()
+        md = self._claimed_md()
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
 
@@ -255,52 +262,51 @@ class TestGenerateDriver:
         svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
         svc._download_source_images = AsyncMock(return_value={"color": b"c", "cutline": b"k"})
 
-        await svc.generate("md-1")
+        await svc.generate("md-1", _LEASE)
 
         assert md.status == MfgDataStatus.FAILED.value
         assert "VM 503" in md.error_message
+        assert md.lease_expires_at is None  # 失敗でも所有権は返す
 
     @pytest.mark.asyncio
     async def test_not_configured_vm_marks_failed(self) -> None:
-        md = self._pending_md()
+        md = self._claimed_md()
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
 
         svc = _service(md_repo, file_storage=MagicMock(), vm_client=None)
 
-        await svc.generate("md-1")
+        await svc.generate("md-1", _LEASE)
         assert md.status == MfgDataStatus.FAILED.value
         assert "not configured" in md.error_message
 
+    @pytest.mark.parametrize(
+        "status",
+        [
+            pytest.param(MfgDataStatus.READY.value, id="既に完成している"),
+            pytest.param(MfgDataStatus.PENDING.value, id="まだ確保されていない"),
+            pytest.param(MfgDataStatus.FAILED.value, id="確保されずに失敗で残っている"),
+        ],
+    )
     @pytest.mark.asyncio
-    async def test_ready_row_is_skipped(self) -> None:
-        md = self._pending_md()
-        md.status = MfgDataStatus.READY.value
+    async def test_skips_a_row_that_is_not_claimed(self, status: str) -> None:
+        """確保済み（generating）の行以外は触らない.
+
+        generate は自分では確保しない。確保はキューからの取り出しが 1 文で済ませており、
+        ここで再度確保しようとすると自分の取り出しと衝突する。
+        """
+        md = self._claimed_md()
+        md.status = status
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
         vm_client = MagicMock()
         vm_client.submit = AsyncMock()
 
         svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
-        await svc.generate("md-1")
+        await svc.generate("md-1", _LEASE)
 
         vm_client.submit.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_generate_skips_when_claim_not_acquired(self) -> None:
-        # 別ワーカーが既に生成中（claim 失敗）なら VM を叩かず抜ける（二重生成防止）。
-        md = self._pending_md()
-        md_repo = AsyncMock()
-        md_repo.find_by_id.return_value = md
-        md_repo.claim_for_generation.return_value = False
-        vm_client = MagicMock()
-        vm_client.submit = AsyncMock()
-
-        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
-        await svc.generate("md-1")
-
-        vm_client.submit.assert_not_called()
-        assert md.attempts == 0  # claim できていないので attempts も加算されない
+        assert md.status == status  # 状態も変えない
 
     @pytest.mark.asyncio
     async def test_download_skips_failed_optional_layer(self) -> None:
@@ -502,8 +508,8 @@ class TestRegenerate:
 
 class TestRecovery:
     @pytest.mark.asyncio
-    async def test_reclaim_returns_stranded_rows_to_pending(self) -> None:
-        # 中断された generating を pending へ戻し、戻した件数を返す。
+    async def test_reclaim_returns_the_number_of_expired_leases(self) -> None:
+        # リースが切れた generating を pending へ戻し、戻した件数を返す。
         # 再駆動そのものは行わない（ワーカーが通常の取り出しで拾う）。
         session = AsyncMock()
         session_cm = MagicMock()
@@ -512,18 +518,17 @@ class TestRecovery:
         session_maker = MagicMock(return_value=session_cm)
 
         repo = AsyncMock()
-        repo.reclaim_stranded.return_value = 2
+        repo.reclaim_expired_leases.return_value = 2
 
         with (
             patch.object(mds, "get_session_maker", return_value=session_maker),
             patch.object(mds, "ManufacturingDataRepository", return_value=repo),
-            patch.object(mds, "run_generation", AsyncMock()) as run,
         ):
-            reclaimed = await mds.reclaim_stranded_generations()
+            reclaimed = await mds.reclaim_expired_generation_leases()
 
+        # pending へ戻すだけ。再駆動は通常の取り出しが拾う。
         assert reclaimed == 2
         session.commit.assert_awaited()
-        run.assert_not_called()
 
 
 class TestManufacturingReadinessGate:
