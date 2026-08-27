@@ -189,7 +189,7 @@ class TestV2Intake:
         md = (
             await db_session.execute(
                 text(
-                    "SELECT size, variant, product_type FROM manufacturing_data "
+                    "SELECT size, variant, product_type, status FROM manufacturing_data "
                     "WHERE product_code = :pc AND order_source_id = :sid"
                 ),
                 {"pc": product_code, "sid": mfg_order_source["id"]},
@@ -197,6 +197,10 @@ class TestV2Intake:
         ).fetchone()
         assert md is not None
         assert md[0] == "50x50mm"  # pod-admin サイズをそのまま保持
+        # 受付は行を作るだけで、生成には入らない（生成はワーカーが拾う。ADR-0026）。
+        # レスポンスを返す前後に生成が走っていれば、外部VM未設定のこの環境では
+        # failed になっているはずなので、pending のままであることが証拠になる。
+        assert md[3] == "pending"
         assert md[1] == "clear"  # white レイヤーなし → clear
         assert md[2] == "acrylic_keychain"
 

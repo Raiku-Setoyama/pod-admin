@@ -5,7 +5,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 
 from app.dependencies import get_current_admin, get_manufacturing_data_service
 from app.models.user import User
@@ -52,18 +52,19 @@ async def get_manufacturing_data(
 @router.post("/{mfg_data_id}/retry", response_model=ManufacturingDataResponse)
 async def retry_manufacturing_data(
     mfg_data_id: str,
-    background_tasks: BackgroundTasks,
     service: Annotated[ManufacturingDataService, Depends(get_manufacturing_data_service)],
     current_user: Annotated[User, Depends(get_current_admin)],
 ) -> ManufacturingDataResponse:
-    """製造データ生成を手動で再駆動する（失敗・停滞した行の再実行）."""
-    return await service.retry(mfg_data_id, background_tasks)
+    """製造データ生成を手動で再駆動する（失敗した行を pending へ戻す）.
+
+    行を pending へ戻すところまでを行う。実際の生成はワーカーが拾う。
+    """
+    return await service.retry(mfg_data_id)
 
 
 @router.post("/{mfg_data_id}/regenerate", response_model=ManufacturingDataResponse)
 async def regenerate_manufacturing_data(
     mfg_data_id: str,
-    background_tasks: BackgroundTasks,
     service: Annotated[ManufacturingDataService, Depends(get_manufacturing_data_service)],
     current_user: Annotated[User, Depends(get_current_admin)],
 ) -> ManufacturingDataResponse:
@@ -72,13 +73,12 @@ async def regenerate_manufacturing_data(
     製造中/納入済みの注文と共有されている製造データは、その完成データを保護するため
     409（ConflictError）で拒否する。生成中の行も進行中ジョブと競合させないため拒否する。
     """
-    return await service.regenerate(mfg_data_id, background_tasks)
+    return await service.regenerate(mfg_data_id)
 
 
 @router.post("/{mfg_data_id}/source-images", response_model=ManufacturingDataDetailResponse)
 async def replace_source_images(
     mfg_data_id: str,
-    background_tasks: BackgroundTasks,
     service: Annotated[ManufacturingDataService, Depends(get_manufacturing_data_service)],
     current_user: Annotated[User, Depends(get_current_admin)],
     color: Annotated[UploadFile | None, File()] = None,
@@ -104,7 +104,6 @@ async def replace_source_images(
         mfg_data_id,
         {layer: file for layer, file in uploads.items() if file is not None},
         replaced_by=current_user.email,
-        background_tasks=background_tasks,
     )
 
 

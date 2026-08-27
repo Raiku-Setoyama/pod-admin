@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str
 
+    # 接続プール。1 インスタンスあたり DB_POOL_SIZE + DB_MAX_OVERFLOW 本まで接続を開く。
+    # コンテナ実行基盤では「インスタンス数 × この値」が DB の max_connections を超えないよう、
+    # 環境ごとに絞る（小さいインスタンスの DB は max_connections も小さい）。
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
+
     @property
     def async_database_url(self) -> str:
         """Convert standard PostgreSQL URL to asyncpg format."""
@@ -95,6 +101,49 @@ class Settings(BaseSettings):
     # 内部エンドポイント（メーカー日次発注ダイジェスト）の共有シークレット。
     # 未設定なら内部エンドポイントは無効（403）。外部トリガ(cron等)から X-Internal-Secret で認証する。
     INTERNAL_API_SECRET: str = ""
+
+    # 製造データ生成ワーカー（app/worker.py）
+    # 1 回の起動で処理を続ける上限秒数。超えたら残りは次回の起動に委ねる。
+    # 実行基盤側のタスクタイムアウトより十分に短くしておくこと（途中で殺されると
+    # 生成中の行が宙吊りになり、次回の起動が復旧するまで待たされる）。
+    WORKER_MAX_RUNTIME_SECONDS: float = 3000.0
+    # 1 回の起動で処理する件数の上限。0 以下なら件数では打ち切らない。
+    WORKER_MAX_ITEMS: int = 50
+    # 生成の所有権（リース）の期限。取り出した行を「処理中」と見なす秒数。
+    # **1 件の生成にかかりうる最大時間より長くすること。** 短いと、生きているワーカーが
+    # 処理中の行を別のワーカーが奪う（結果の上書きは防がれるが、VM ジョブは二重に走る）。
+    # 妥当性は generation_worst_case_seconds と照らして起動時に確認する。
+    # 既定の 40 分は、現在の ILLUSTRATOR_VM_* 設定での最悪値（約 920 秒）の 2.6 倍。
+    # 長くするほど安全だが、ワーカーがクラッシュしてから拾い直されるまでの待ち時間も伸びる。
+    WORKER_LEASE_SECONDS: float = 2400.0
+
+    @property
+    def generation_worst_case_seconds(self) -> float:
+        """1 件の生成にかかりうる最大秒数の見積もり.
+
+        illustrator-vm クライアントの実装から導く。完了待ちの打ち切り判定は
+        ``get_status()`` が**戻った後**に行われるため、待ち上限にリトライ 1 回分が
+        上乗せされる。投入と取得にも同じリトライが乗る。
+        """
+        # 1 回の HTTP 呼び出しの最悪値（リトライ回数 × タイムアウト ＋ 指数バックオフ）
+        backoff = float(sum(2**attempt for attempt in range(self.ILLUSTRATOR_VM_MAX_RETRIES)))
+        one_call = self.ILLUSTRATOR_VM_MAX_RETRIES * self.ILLUSTRATOR_VM_REQUEST_TIMEOUT + backoff
+        # 完了待ち（上限＋最後の status 呼び出し）＋ 投入 ＋ 取得
+        return float(self.ILLUSTRATOR_VM_MAX_POLL_SECONDS + one_call * 3)
+
+    def lease_margin_warning(self) -> str | None:
+        """リース期限の余裕が足りなければ警告文を返す（足りていれば None）.
+
+        設定同士の危険な組み合わせを、人間のレビュー任せにしない。
+        """
+        worst_case = self.generation_worst_case_seconds
+        if self.WORKER_LEASE_SECONDS >= worst_case * 2:
+            return None
+        return (
+            f"WORKER_LEASE_SECONDS={self.WORKER_LEASE_SECONDS:.0f}s は "
+            f"1 件の生成の最悪値 {worst_case:.0f}s に対して余裕が 2 倍を切っています。"
+            " リースが処理中に切れると、同じ製造データに VM ジョブが二重に投入されます。"
+        )
 
 
 settings = Settings()

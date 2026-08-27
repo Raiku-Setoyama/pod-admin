@@ -3,7 +3,9 @@
 外部注文（v2）の製造データを illustrator-vm で生成し、pod-admin 側に自前保存する。
 
 - 商品×サイズ×バリアント単位でキャッシュ（同一商品の再注文で VM を再度呼ばない）。
-- 生成は非同期（intake をブロックしない）。BackgroundTasks で新規セッションを開いて実行。
+- 生成は intake をブロックしない。intake は行を pending で作るだけで、実際の生成は
+  ワーカー（app/worker.py）が別プロセスで拾う。コンテナ実行基盤ではレスポンス送出後に
+  CPU が絞られるため、リクエスト内で生成を走らせると完走しない（ADR-0026）。
 - VM の72h削除に依存せず、完了ジョブは速やかに DL して FileStorage に保存。
 """
 
@@ -15,7 +17,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-from fastapi import BackgroundTasks, UploadFile
+from fastapi import UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -79,15 +81,6 @@ def _merge_uploaded_layers(
     return refreshed + list(uploaded.values())
 
 
-# recover_stranded_generations が起動した復旧タスクの強参照を保持する集合。
-# create_task の戻り値を保持しないとタスクが GC で途中消滅しうるため。
-_recovery_tasks: set[asyncio.Task[None]] = set()
-
-# 起動時復旧で同時に走らせる生成の上限。VM は直列・DB プールも有限のため、大量の宙吊り行が
-# 一斉に生成を始めて接続を枯渇させたり VM を過負荷にしたりしないよう抑制する。
-_RECOVERY_CONCURRENCY = 4
-
-
 class _BytesUpload:
     """FileStorage.save に生バイト列を渡すための最小アダプタ."""
 
@@ -136,6 +129,10 @@ class ManufacturingDataService:
 
         製造データ行は intake 内で同期的に作成/紐付けする（manufacturing_data_id を
         即時に確定させることで発注ゲートを確実に機能させる）。生成そのものは行わない。
+
+        戻り値は「この受付で新たに生成が必要になった行」の報告である。**ワーカーは
+        これを使わない**（生成待ちは DB から自分で導出する）。キャッシュ再利用が効いた
+        ことの確認に使えるため残している。
         """
         order = await self._order_repo.find_by_id(order_id)
         if not order:
@@ -164,13 +161,6 @@ class ManufacturingDataService:
         # 注文・明細・製造データ行を確定（バックグラウンド生成が別セッションから参照できるように）
         await self._commit()
         return to_generate
-
-    def enqueue_generation(
-        self, background_tasks: BackgroundTasks, md_ids: list[str]
-    ) -> None:
-        """製造データ生成をバックグラウンドで起動する（新規セッションで実行）."""
-        for md_id in md_ids:
-            background_tasks.add_task(run_generation, md_id)
 
     async def _resolve_or_create(
         self, order_source_id: str | None, item: OrderItem
@@ -266,33 +256,29 @@ class ManufacturingDataService:
 
     # === 生成ドライバ（バックグラウンド） ===
 
-    async def generate(self, md_id: str) -> None:
-        """1件の製造データを生成し、状態を ready/failed に確定させる."""
+    async def generate(self, md_id: str, lease_token: datetime) -> None:
+        """**確保済みの**製造データを1件生成し、状態を ready/failed に確定させる.
+
+        呼び出し側（ワーカー）が claim_next_generation で行を generating へ確保し、
+        リースを打ってから呼ぶ。**この関数は確保をしない。**二重生成の防止は取り出しの
+        1 文が担っており、ここで再度 claim すると自分の確保と衝突する。
+
+        ``lease_token`` は取り出しが返したリース期限＝所有権の証明である。結果の書き戻しは
+        この値が一致する間だけ通す。一致しなければ、生成に手間取っている間にリースが失効し、
+        別のワーカーがこの行を再確保したということなので、**自分の結果を捨てる。**
+        """
         md = await self._md_repo.find_by_id(md_id)
         if md is None:
             logger.warning("manufacturing data %s not found; skip generation", md_id)
             return
-        if md.status == MfgDataStatus.READY.value:
-            return  # 既に完成（冪等）
-
-        # 二重生成防止: pending/failed の行だけを generating へ原子的に claim する。
-        # 既に generating（別ワーカーが処理中）/ready なら claim できず抜ける
-        # （重複した VM ジョブ投入・生成ファイルの孤立を防ぐ）。
-        claimed = await self._md_repo.claim_for_generation(md_id)
-        if not claimed:
-            logger.info(
-                "manufacturing data %s is already generating or ready; skip duplicate",
+        if md.status != MfgDataStatus.GENERATING.value:
+            # 取り出しの直後にしか呼ばれないはずなので、ここに来るのは呼び出し側の誤りである。
+            logger.warning(
+                "manufacturing data %s is %s, not claimed for generation; skip",
                 md_id,
+                md.status,
             )
             return
-
-        # claim（条件付き UPDATE）が status=generating・attempts+1・error クリアを原子的に
-        # 確定済み。commit で他ワーカーへ可視化し、in-memory instance を DB と同期させる
-        # （後続の flush が古い値で上書きしないため。追加の UPDATE は不要）。
-        await self._commit()
-        md.status = MfgDataStatus.GENERATING.value
-        md.attempts += 1
-        md.error_message = None
 
         try:
             if self._vm_client is None:
@@ -331,12 +317,17 @@ class ManufacturingDataService:
             filename = status.output_filename or f"{md.id}{mapping.output_ext}"
             file_path = await self._save_file(content, filename)
 
-            md.status = MfgDataStatus.READY.value
-            md.output_filename = filename
-            md.file_path = file_path
-            md.file_size = len(content)
-            md.error_message = None
-            await self._md_repo.update(md)
+            applied = await self._finish(
+                md,
+                lease_token,
+                status=MfgDataStatus.READY.value,
+                output_filename=filename,
+                file_path=file_path,
+                file_size=len(content),
+                error_message=None,
+            )
+            if not applied:
+                return
             # 生成完了を参照明細へ波及: 「発注準備中」→「発注済み」（発注可能に）。
             await self._order_repo.sync_item_status_for_manufacturing_data(
                 md_id, ready=True
@@ -344,11 +335,39 @@ class ManufacturingDataService:
             await self._commit()
             logger.info("manufacturing data %s generated (%s)", md_id, filename)
         except Exception as exc:  # noqa: BLE001 - 失敗は必ず行に記録して終える
-            md.status = MfgDataStatus.FAILED.value
-            md.error_message = str(exc)[:1000]
-            await self._md_repo.update(md)
-            await self._commit()
             logger.exception("manufacturing data generation failed for %s", md_id)
+            await self._finish(
+                md,
+                lease_token,
+                status=MfgDataStatus.FAILED.value,
+                error_message=str(exc)[:1000],
+            )
+            await self._commit()
+
+    async def _finish(
+        self, md: ManufacturingData, lease_token: datetime, **values: Any
+    ) -> bool:
+        """リースを保持している間だけ結果を書き戻し、書けたかどうかを返す.
+
+        書き戻しは条件付き UPDATE で行う。**先に ORM インスタンスを書き換えてはならない。**
+        書き換えるとコミット時の flush が無条件にその値を書き、条件付き UPDATE の意味が
+        消える。適用できたときだけ、手元のインスタンスにも同じ値を反映する
+        （後続の flush は同じ値を書くだけになる）。
+        """
+        applied = await self._md_repo.finish_generation(
+            md.id, lease_token=lease_token, values=values
+        )
+        if not applied:
+            logger.warning(
+                "lease for manufacturing data %s was lost while generating; "
+                "discarding this result",
+                md.id,
+            )
+            return False
+        for field, value in values.items():
+            setattr(md, field, value)
+        md.lease_expires_at = None
+        return True
 
     async def _download_source_images(
         self, source_images: list[Any], wanted: set[str]
@@ -442,17 +461,15 @@ class ManufacturingDataService:
 
     # === 管理API（リクエストスコープ） ===
 
-    async def retry(
-        self, md_id: str, background_tasks: BackgroundTasks
-    ) -> ManufacturingDataResponse:
+    async def retry(self, md_id: str) -> ManufacturingDataResponse:
         """失敗した製造データ生成を手動で再駆動する.
 
         retry は failed 行の再実行のみ許可する。製造データ行は
         （受注元 × 商品コード × サイズ × バリアント）単位で複数注文に共有されるため、
         ready/generating/pending の行を無条件に巻き戻すと、その行を参照する他の注文の
         is_manufacturing_ready まで劣化させてしまう（生成済みファイルの喪失や、発注可能
-        だった明細の再ブロックにつながる）。宙吊りになった generating/pending 行は起動時の
-        復旧処理（recover_stranded_generations）が再駆動する。
+        だった明細の再ブロックにつながる）。中断されて宙吊りになった generating 行は、
+        リースの失効（reclaim_expired_generation_leases）が pending へ戻す。
         """
         md = await self._require_row(md_id)
         if md.status != MfgDataStatus.FAILED.value:
@@ -465,13 +482,9 @@ class ManufacturingDataService:
         md.error_message = None
         await self._md_repo.update(md)
         await self._commit()
-
-        background_tasks.add_task(run_generation, md_id)
         return ManufacturingDataResponse.model_validate(md)
 
-    async def regenerate(
-        self, md_id: str, background_tasks: BackgroundTasks
-    ) -> ManufacturingDataResponse:
+    async def regenerate(self, md_id: str) -> ManufacturingDataResponse:
         """製造データを手動で再作成（同じ元データで再生成）する（管理者操作）.
 
         メーカーが製造着手前（参照する明細が全て 発注準備中 / 発注済み）のときのみ許可する
@@ -479,7 +492,7 @@ class ManufacturingDataService:
         """
         md = await self._require_row(md_id)
         await self._assert_rebuildable(md)
-        await self._restart_generation(md, background_tasks)
+        await self._restart_generation(md)
         return ManufacturingDataResponse.model_validate(md)
 
     async def get_detail(self, md_id: str) -> ManufacturingDataDetailResponse:
@@ -493,7 +506,6 @@ class ManufacturingDataService:
         uploads: dict[str, UploadFile],
         *,
         replaced_by: str | None,
-        background_tasks: BackgroundTasks,
     ) -> ManufacturingDataDetailResponse:
         """元画像（PNGレイヤー）を差し替えて製造データを再生成する（管理者操作）.
 
@@ -546,7 +558,7 @@ class ManufacturingDataService:
         md.source_images_replaced_at = datetime.now(UTC)
         md.source_images_replaced_by = replaced_by
 
-        await self._restart_generation(md, background_tasks)
+        await self._restart_generation(md)
         logger.info(
             "source images replaced for manufacturing data %s (layers=%s, by=%s)",
             md_id,
@@ -600,10 +612,8 @@ class ManufacturingDataService:
                 "manufacturing/delivered; regeneration is blocked to protect it"
             )
 
-    async def _restart_generation(
-        self, md: ManufacturingData, background_tasks: BackgroundTasks
-    ) -> None:
-        """行を pending に戻し、参照明細を降格させてバックグラウンド生成を起動する.
+    async def _restart_generation(self, md: ManufacturingData) -> None:
+        """行を pending に戻し、参照明細を降格させる（生成はワーカーが拾う）.
 
         呼び出し側が md に加えた変更（元画像の差し替え等）もここでまとめて永続化する。
 
@@ -615,7 +625,6 @@ class ManufacturingDataService:
         await self._md_repo.update(md)
         await self._order_repo.sync_item_status_for_manufacturing_data(md.id, ready=False)
         await self._commit()
-        background_tasks.add_task(run_generation, md.id)
 
     @staticmethod
     def _validate_replacement_layers(
@@ -679,11 +688,12 @@ class ManufacturingDataService:
         )
 
 
-async def run_generation(md_id: str) -> None:
-    """バックグラウンドで新規セッションを開き、1件の製造データを生成する.
+async def run_generation(md_id: str, lease_token: datetime) -> None:
+    """新規セッションを開き、1件の製造データを生成する.
 
-    BackgroundTasks から呼ばれる。リクエストのセッションや ORM を持ち込まず、
-    プレーンな md_id だけを受け取る（外部注文通知と同型）。
+    ワーカー（app/worker.py）から呼ばれる。呼び出し元のセッションや ORM を持ち込まず、
+    プレーンな md_id だけを受け取る。生成は 30〜360 秒かかりうるため、この関数を
+    リクエストの処理中やレスポンス送出後に呼んではならない（ADR-0026）。
     """
     session_maker = get_session_maker()
     async with session_maker() as session:
@@ -695,40 +705,38 @@ async def run_generation(md_id: str) -> None:
             vm_client=IllustratorVmClient.from_settings(settings),
         )
         try:
-            await service.generate(md_id)
+            await service.generate(md_id, lease_token)
         except Exception:  # noqa: BLE001 - バックグラウンドは絶対に落とさない
             await session.rollback()
             logger.exception("run_generation crashed for %s", md_id)
 
 
-async def recover_stranded_generations() -> None:
-    """起動時に宙吊りの製造データ生成を再駆動する.
+async def claim_next_generation(lease_seconds: float) -> tuple[str, datetime] | None:
+    """次に生成すべき製造データを1件確保し、``(id, リース期限)`` を返す。無ければ None.
 
-    生成は in-process の BackgroundTask で走るため、生成中（generating）に API が
-    再起動/デプロイ/クラッシュすると、その行は generating のまま取り残され、参照する
-    注文が発注ゲートで恒久的に保留される。新プロセスには in-flight タスクが無いので、
-    起動時点の generating は全て中断済み。generating を pending に戻したうえで、
-    pending/generating だった行を再駆動する（generate() 側の claim で二重起動は防止される）。
-    失敗しても起動は継続させる（例外は握って記録するだけ）。
+    ワーカーから呼ばれる。run_generation と同じく、呼び出し元のセッションを持ち込まず
+    新規セッションを開く。確保の意味は ManufacturingDataRepository.claim_next_generation を参照。
     """
     session_maker = get_session_maker()
     async with session_maker() as session:
-        # 宙吊り行を pending に戻し、再駆動対象の id を1文で回収する。
-        stranded_ids = await ManufacturingDataRepository(session).reclaim_stranded()
+        claimed = await ManufacturingDataRepository(session).claim_next_generation(
+            lease_seconds
+        )
         await session.commit()
+        return claimed
 
-    if not stranded_ids:
-        return
 
-    logger.info("recovering %d stranded manufacturing generation(s)", len(stranded_ids))
-    # 同時実行数を抑えて再駆動する（VM 直列・DB プール有限のため一斉起動を避ける）。
-    semaphore = asyncio.Semaphore(_RECOVERY_CONCURRENCY)
+async def reclaim_expired_generation_leases() -> int:
+    """リースが切れた生成を pending へ戻し、戻した件数を返す.
 
-    async def _drive(md_id: str) -> None:
-        async with semaphore:
-            await run_generation(md_id)
+    生成は別プロセスのワーカーが担うため、ワーカーが生成中（generating）に落ちると、
+    その行は generating のまま取り残され、参照する注文が発注ゲートで恒久的に保留される。
 
-    for md_id in stranded_ids:
-        task = asyncio.create_task(_drive(md_id))
-        _recovery_tasks.add(task)
-        task.add_done_callback(_recovery_tasks.discard)
+    **この関数は単独で正しい。**期限内のリースを持つ行は誰かが処理中なので触らない。
+    したがって、いつ・誰が・何本同時に呼んでも安全である。
+    """
+    session_maker = get_session_maker()
+    async with session_maker() as session:
+        reclaimed = await ManufacturingDataRepository(session).reclaim_expired_leases()
+        await session.commit()
+    return reclaimed

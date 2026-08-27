@@ -4,17 +4,19 @@ import io
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import UploadFile
 
 from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
-from app.services import manufacturing_data_service as mds
 from app.services.manufacturing_data_service import ManufacturingDataService
 from app.utils.exceptions import ConflictError, NotFoundError, ValidationError
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"payload"
+
+# 取り出しが返すリースの代役
+_LEASE = datetime(2099, 1, 1, tzinfo=UTC)
 
 
 def _upload(filename: str = "new_color.png", content: bytes = PNG) -> UploadFile:
@@ -76,13 +78,11 @@ class TestReplaceSourceImages:
         md = _md()
         storage = _storage()
         svc = _service(md, storage=storage)
-        bg = MagicMock()
 
         resp = await svc.replace_source_images(
             "md-1",
             {"color": _upload()},
             replaced_by="admin@example.com",
-            background_tasks=bg,
         )
 
         # 指定レイヤーだけが file_path 形式に置き換わり、他は元の URL を保つ
@@ -98,12 +98,12 @@ class TestReplaceSourceImages:
         # 差し替え履歴を記録
         assert md.source_images_replaced_at is not None
         assert md.source_images_replaced_by == "admin@example.com"
-        # 再生成の波及（pending へ戻す・発注済み明細を降格・バックグラウンド起動）
+        # 再生成の波及（pending へ戻す・発注済み明細を降格）。
+        # 生成はワーカーが別プロセスで拾うので、この場では走らせない（ADR-0026）。
         assert md.status == MfgDataStatus.PENDING.value
         svc._order_repo.sync_item_status_for_manufacturing_data.assert_awaited_once_with(
             "md-1", ready=False
         )
-        bg.add_task.assert_called_once()
         # レスポンスは由来つきのレイヤー一覧を返す
         assert [(ly.layer_type, ly.origin) for ly in resp.source_images] == [
             ("color", "uploaded"),
@@ -113,21 +113,23 @@ class TestReplaceSourceImages:
         assert resp.source_images[1].url == "https://x/cutline.png"
 
     @pytest.mark.asyncio
-    async def test_replaces_multiple_layers_with_single_generation(self) -> None:
+    async def test_replaces_multiple_layers_with_a_single_restart(self) -> None:
         md = _md()
         svc = _service(md)
-        bg = MagicMock()
 
         await svc.replace_source_images(
             "md-1",
             {"color": _upload("c.png"), "cutline": _upload("k.png")},
             replaced_by="admin@example.com",
-            background_tasks=bg,
         )
 
         assert md.source_images is not None
         assert [img["filename"] for img in md.source_images] == ["c.png", "k.png"]
-        bg.add_task.assert_called_once()  # 再生成は1回だけ
+        # 1リクエストで複数レイヤーを差し替えても、再生成の起動は 1 回だけ
+        assert md.status == MfgDataStatus.PENDING.value
+        svc._order_repo.sync_item_status_for_manufacturing_data.assert_awaited_once_with(
+            "md-1", ready=False
+        )
 
     @pytest.mark.asyncio
     async def test_missing_row_raises_not_found(self) -> None:
@@ -136,22 +138,20 @@ class TestReplaceSourceImages:
                 "missing",
                 {"color": _upload()},
                 replaced_by=None,
-                background_tasks=MagicMock(),
             )
 
     @pytest.mark.asyncio
     async def test_rejects_while_generating(self) -> None:
         md = _md(status=MfgDataStatus.GENERATING.value)
         svc = _service(md)
-        bg = MagicMock()
 
         with pytest.raises(ConflictError):
             await svc.replace_source_images(
-                "md-1", {"color": _upload()}, replaced_by=None, background_tasks=bg
+                "md-1", {"color": _upload()}, replaced_by=None
             )
 
         assert md.source_images_replaced_at is None
-        bg.add_task.assert_not_called()
+        assert md.status == MfgDataStatus.GENERATING.value  # 進行中のジョブを巻き戻さない
 
     @pytest.mark.asyncio
     async def test_rejects_when_shared_with_manufacturing_order(self) -> None:
@@ -159,15 +159,14 @@ class TestReplaceSourceImages:
         order_repo = AsyncMock()
         order_repo.has_manufacturing_or_delivered_items.return_value = True
         svc = _service(md, order_repo=order_repo)
-        bg = MagicMock()
 
         with pytest.raises(ConflictError):
             await svc.replace_source_images(
-                "md-1", {"color": _upload()}, replaced_by=None, background_tasks=bg
+                "md-1", {"color": _upload()}, replaced_by=None
             )
 
         assert md.status == MfgDataStatus.READY.value  # 状態は変えない
-        bg.add_task.assert_not_called()
+        order_repo.sync_item_status_for_manufacturing_data.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_rejects_row_without_source_images(self) -> None:
@@ -178,7 +177,6 @@ class TestReplaceSourceImages:
                 "md-1",
                 {"color": _upload()},
                 replaced_by=None,
-                background_tasks=MagicMock(),
             )
 
     @pytest.mark.asyncio
@@ -200,7 +198,6 @@ class TestReplaceSourceImages:
                 "md-1",
                 uploads,
                 replaced_by=None,
-                background_tasks=MagicMock(),
             )
 
         storage.save.assert_not_called()
@@ -216,7 +213,6 @@ class TestReplaceSourceImages:
                 "md-1",
                 {"color": _upload("fake.png", b"GIF89a-not-a-png")},
                 replaced_by=None,
-                background_tasks=MagicMock(),
             )
 
         storage.save.assert_not_called()
@@ -232,7 +228,6 @@ class TestReplaceSourceImages:
                 "md-1",
                 {"color": _upload()},
                 replaced_by=None,
-                background_tasks=MagicMock(),
             )
 
         storage.save.assert_not_called()
@@ -249,7 +244,6 @@ class TestReplaceSourceImages:
                 "md-1",
                 {"color": _upload(), "cutline": _upload("bad.png", b"not-png")},
                 replaced_by=None,
-                background_tasks=MagicMock(),
             )
 
         storage.save.assert_not_called()
@@ -338,8 +332,9 @@ class TestGenerationUsesReplacedSource:
 
     @pytest.mark.asyncio
     async def test_generate_sends_replaced_layer_to_vm(self) -> None:
+        # generate はワーカーが確保した（generating の）行を受け取る
         md = _md(
-            status=MfgDataStatus.PENDING.value,
+            status=MfgDataStatus.GENERATING.value,
             source_images=[
                 {"layer_type": "color", "file_path": "source_images/a.png", "filename": "a.png"},
                 {"layer_type": "cutline", "file_path": "source_images/b.png", "filename": "b.png"},
@@ -357,7 +352,7 @@ class TestGenerationUsesReplacedSource:
         vm_client.download = AsyncMock(return_value=b"AI-BYTES")
 
         svc = _service(md, storage=storage, vm_client=vm_client)
-        await svc.generate("md-1")
+        await svc.generate("md-1", _LEASE)
 
         assert md.status == MfgDataStatus.READY.value
         assert vm_client.submit.await_args.kwargs["images"] == {
@@ -448,14 +443,16 @@ async def test_replace_then_generate_end_to_end_in_memory() -> None:
     )
     svc._fetch_with_limit = AsyncMock(return_value=b"CUTLINE")
 
-    with patch.object(mds, "run_generation", AsyncMock()):
-        await svc.replace_source_images(
-            "md-1",
-            {"color": _upload()},
-            replaced_by="a@b.c",
-            background_tasks=MagicMock(),
-        )
-    await svc.generate("md-1")
+    await svc.replace_source_images(
+        "md-1",
+        {"color": _upload()},
+        replaced_by="a@b.c",
+    )
+    # 差し替えは行を pending へ戻す。生成はワーカーが確保してから呼ぶので、
+    # その確保をここで再現する。
+    assert md.status == MfgDataStatus.PENDING.value
+    md.status = MfgDataStatus.GENERATING.value
+    await svc.generate("md-1", _LEASE)
 
     # save が返したキーで生成側が読み出せている（差し替え→生成の受け渡しが噛み合う）
     assert vm_client.submit.await_args.kwargs["images"]["color"] == PNG

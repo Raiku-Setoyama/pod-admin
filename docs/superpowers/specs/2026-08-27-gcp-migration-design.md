@@ -164,6 +164,7 @@ Owner にコンソールで設定してもらう。設定値は本設計の「�
 | 2 | Terraform state | 各プロジェクトの GCS バケットに分離（`gs://tosyo-api-stg-tfstate` / `gs://tosyo-api-504104-tfstate`） | 影響範囲を環境で切る。バケットは gcloud で手動ブートストラップ |
 | 3 | Cloud SQL 接続 | **パブリック IP・承認済みネットワーク 0 件**、Cloud Run 内蔵の Cloud SQL 接続（Unix ソケット）のみ | IAM 認証で TLS トンネルを張るため直接叩ける穴は空かない。**コード変更ゼロ**。VPC が不要になる |
 | 4 | 非同期処理 | **Cloud Run Job ワーカー** ＋ Cloud Scheduler（1 分毎） | Job は CPU 常時割当・タスクタイムアウト最大 24h。Cloud Run サービスの CPU スロットリング問題が原理的に起きない。**Windows 側の作業がゼロ**。VM が移送されても影響を受けない |
+| 4-a | 二重処理の防止 | **行の所有権をリースで表す**（ADR-0029）。取り出しは 1 文、復旧は期限切れのみ | 復旧がワーカーの本数に依存しなくなり、排他ロックをスループットの都合に降格できる |
 | 5 | フロント | Cloud Run（`output: "standalone"` ＋ 環境別イメージビルド） | Next.js の標準。実行時注入は 10 箇所の書き換えが要る |
 | 6 | シークレット | Secret Manager ＋ Cloud Run の secret env。`GCS_CREDENTIALS_JSON` は廃止し ADC へ | GCP 上では鍵 JSON を持ち回る理由が消える |
 | 7 | CI/CD | GitHub Actions ＋ Workload Identity 連携 | 既に `ci.yml` が GitHub Actions。鍵 JSON 不要 |
@@ -194,19 +195,27 @@ Cloud Scheduler（1 分毎）
    │ POST run.googleapis.com/v2/.../jobs/pod-admin-worker:run （OIDC）
    ▼
 Cloud Run Job: pod-admin-worker（parallelism=1, taskCount=1, maxRetries=0, timeout=3600s）
-   1. pg_try_advisory_lock(KEY) → 取れなければ即 exit 0（多重起動の単一化）
-   2. recover_stranded_generations() を 1 回
+   1. pg_try_advisory_lock(KEY) → 取れなければ即 exit 0
+      （直列な VM を奪い合わないための降り方。**正しさの条件ではない**）
+   2. リースが切れた generating を pending へ戻す
    3. loop:
-        pending を 1 件 claim（FOR UPDATE SKIP LOCKED）
-        無ければ break
-        run_generation(md_id)
-        経過 > WORKER_MAX_RUNTIME_SECONDS なら break
+        キューから 1 件取り出す（1 文で generating へ確保し、リースを打つ）
+        取れなければ break
+        生成する（確保済みの行を処理するだけ。ここでは確保しない）
+        件数・実行時間の上限に達したら break
    4. unlock, exit 0
 ```
 
-`illustrator-vm` 自体が直列 1 件ずつ（最大約 300 秒）なので、ワーカーを並列化する意味はない。
+**同じ行を二度処理しないことは、行の所有権（リース）が保証している**（ADR-0029）。
 
----
+- 取り出しは 1 つの UPDATE 文で「選ぶ・確保する・リースを打つ」を済ませ、**打ったリースの値を返す**。
+  候補の選択に `FOR UPDATE SKIP LOCKED` を使うので、同時に取り出しても互いをブロックしない
+- 結果の書き戻しは、**そのリースの値が一致する間だけ**通す。手間取っている間にリースが失効して
+  別のワーカーが再確保していれば、古い結果は捨てられて記録に残る
+- 復旧は「リースが切れた generating」だけを戻す。**ワーカーの本数に依存しないので単独で正しい**
+
+`illustrator-vm` 自体が直列 1 件ずつ（最大約 300 秒）なので、ワーカーを並列化する意味はない。
+VM が並列化されたら、排他ロックを外すだけで並列ワーカーへ移行できる。
 
 ## 5. 目標アーキテクチャ
 
@@ -338,7 +347,8 @@ done
 | 1 | `web/next.config.ts` | `output: "standalone"` を追加 |
 | 2 | `web/Dockerfile` | builder ステージに `ARG NEXT_PUBLIC_API_URL` → `ENV` で渡す |
 | 3 | `api/Dockerfile` | production の CMD から `alembic upgrade head` を外し `uvicorn` のみにする。コメントの「`--reset` flag included temporarily」も除去 |
-| 4 | `api/app/worker.py`（新規） | Cloud Run Job のエントリポイント。advisory lock ＋ claim ループ（4.2 節） |
+| 4 | `api/app/worker.py`（新規） | Cloud Run Job のエントリポイント。排他ロック ＋ 取り出しループ（4.2 節） |
+| 4-a | `manufacturing_data.lease_expires_at`（新規列） | 生成の所有権。マイグレーション 1 本（ADR-0029） |
 | 5 | `api/app/services/manufacturing_data_service.py` | `enqueue_generation` / `_restart_generation` から `background_tasks.add_task` を外し、`pending` 行を作るだけにする |
 | 6 | `api/app/services/external_order_notification.py` | `enqueue_if_enabled` を同期送信に変更 |
 | 7 | `api/app/main.py` | lifespan の `recover_stranded_generations` を除去（ワーカーの責務へ移す） |

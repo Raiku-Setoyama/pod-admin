@@ -71,5 +71,8 @@ COPY . .
 RUN uv sync --frozen --no-dev
 
 # Run with uvicorn (production mode)
-# NOTE: --reset flag included temporarily for seeding. Remove after deploy.
-CMD ["sh", "-c", "uv run alembic upgrade head && uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# マイグレーションはここで実行しない。複数インスタンスが同時に起動すると alembic が競合し、
+# 起動そのものを壊す。デプロイ前の独立したステップ（Cloud Run Job）で
+# `uv run alembic upgrade head` を実行する。
+# 製造データ生成ワーカーは同じイメージのまま `uv run python -m app.worker` で起動する。
+CMD ["sh", "-c", "uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

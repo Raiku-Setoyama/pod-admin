@@ -9,7 +9,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, Depends
 
 from app.dependencies import (
     get_external_order_notification_service,
@@ -28,7 +28,6 @@ router = APIRouter(prefix="/orders", tags=["orders-v2"])
 @router.post("", response_model=OrderResponse, status_code=201)
 async def create_order_v2(
     data: OrderCreateV2,
-    background_tasks: BackgroundTasks,
     order_service: Annotated[OrderService, Depends(get_order_service)],
     md_service: Annotated[ManufacturingDataService, Depends(get_manufacturing_data_service)],
     notification_service: Annotated[
@@ -64,10 +63,10 @@ async def create_order_v2(
     _, order_source_id = api_key_info
     order = await order_service.create_v2(data, order_source_id=order_source_id)
 
-    # 製造データ行を同期的に紐付け（発注ゲート用）、必要な生成をバックグラウンド起動
-    md_ids = await md_service.prepare_for_order(order.id)
-    md_service.enqueue_generation(background_tasks, md_ids)
+    # 製造データ行はここで同期的に紐付ける（発注ゲートを確実に効かせるため）。
+    # 生成そのものは行わない。行は pending のまま残り、ワーカー（app/worker.py）が拾う。
+    await md_service.prepare_for_order(order.id)
 
-    # 受注通知メール（有効時のみ、レスポンス送出後に非同期送信）
-    await notification_service.enqueue_if_enabled(background_tasks, order=order)
+    # 受注通知メール（有効時のみ。レスポンスを返す前に送信する）
+    await notification_service.notify_if_enabled(order=order)
     return order
