@@ -103,9 +103,7 @@ module "github_oidc" {
   project_id        = var.project_id
   github_repository = var.github_repository
 
-  impersonating_service_account_ids = {
-    deployer = module.service_accounts.ids["pod-admin-deployer"]
-  }
+  impersonated_service_account_ids = [module.service_accounts.ids["pod-admin-deployer"]]
 
   depends_on = [module.services]
 }

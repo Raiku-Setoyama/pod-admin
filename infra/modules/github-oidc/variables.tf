@@ -22,15 +22,21 @@ variable "pool_id" {
   default     = "github"
 }
 
-variable "provider_id" {
-  type    = string
-  default = "github"
+variable "allowed_ref" {
+  description = <<-DESC
+    トークンの発行を許可する git の ref。**リポジトリ条件だけでは足りない。**
+    同じリポジトリの別のワークフロー（例: .github/workflows/claude.yml は
+    issue コメントを契機に id-token: write で動く）も同じ条件を満たすため、
+    ここで実行の出どころまで絞る。
+  DESC
+  type        = string
+  default     = "refs/heads/main"
 }
 
-variable "impersonating_service_account_ids" {
+variable "impersonated_service_account_ids" {
   description = <<-DESC
     このリポジトリの Actions が名乗れるサービスアカウント。
-    キーは表示用の名前、値は projects/<project>/serviceAccounts/<email> 形式の ID。
+    projects/<project>/serviceAccounts/<email> 形式の ID を入れる。
   DESC
-  type        = map(string)
+  type        = set(string)
 }

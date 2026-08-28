@@ -5,6 +5,8 @@ name: deploy
 # **ここを複製すると、ステージングで直した手順が本番に伝わらなくなる**（ADR-0027 と同じ理由）。
 #
 # 認証は Workload Identity 連携で行う（ADR-0028）。鍵 JSON は存在しない。
+# **借りられるのは main の実行だけ**で、その制約は GCP 側の IAM 条件が持つ
+# （infra/modules/github-oidc）。ワークフローの書き方では守られない。
 
 on:
   workflow_call:
@@ -28,12 +30,26 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    concurrency:
+      # **途中で止めない。** マイグレーションの最中に打ち切ると、
+      # スキーマだけ進んでコードが古い状態で残る。後発は前のデプロイの完了を待つ。
+      # 呼び出し側ではなくここに置く。**書き忘れても何も起きず、
+      # 同時実行が重なったときにだけ壊れる**種類の設定だからである。
+      group: deploy-${{ inputs.project_id }}
+      cancel-in-progress: false
+
     permissions:
       # WIF が要求する OIDC トークンの発行に必要。これが唯一の資格情報である。
       id-token: write
       contents: read
 
     env:
+      # gcloud はこの 2 つを設定から読む。個々のコマンドに --project / --region を
+      # 書かない。**書き忘れたときに既定のプロジェクトへ静かに向く**のを防ぐ。
+      CLOUDSDK_CORE_PROJECT: ${{ inputs.project_id }}
+      CLOUDSDK_RUN_REGION: ${{ inputs.region }}
+      # リポジトリ名 pod-admin の正本は infra/envs/*/main.tf の
+      # module "artifact_registry" の name。
       IMAGE_BASE: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/pod-admin
       # イメージのタグはコミット SHA にする。動いているリビジョンから
       # コミットが一意に辿れる状態を保つため、latest のような可変タグは使わない。
@@ -52,11 +68,19 @@ jobs:
       - name: Artifact Registry への docker 認証
         run: gcloud auth configure-docker ${{ inputs.region }}-docker.pkg.dev --quiet
 
+      # レイヤーキャッシュが無いと、毎回 apt（日本語フォント約 57MB）・uv sync 2 回・
+      # npm ci・next build をやり直す。ここがデプロイ時間のほとんどを占める。
+      - uses: docker/setup-buildx-action@v3
+
       - name: API のイメージをビルドして push
-        run: |
-          docker build --target production \
-            -t "$IMAGE_BASE/api:$TAG" api
-          docker push "$IMAGE_BASE/api:$TAG"
+        uses: docker/build-push-action@v6
+        with:
+          context: api
+          target: production
+          push: true
+          tags: ${{ env.IMAGE_BASE }}/api:${{ env.TAG }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
 
       - name: API の公開 URL を取得
         id: api_url
@@ -64,54 +88,42 @@ jobs:
           # NEXT_PUBLIC_* はビルド時にバンドルへ焼き込まれるため、
           # 管理画面のビルドより先に API の URL が確定している必要がある。
           # ワークフローに URL を書かず、実物から引く。
-          url=$(gcloud run services describe pod-admin-api \
-            --project="${{ inputs.project_id }}" --region="${{ inputs.region }}" \
-            --format='value(status.url)')
+          # サービスは Terraform が先に作っているので、今回のデプロイ前でも取れる。
+          url=$(gcloud run services describe pod-admin-api --format='value(status.url)')
           test -n "$url"
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
       - name: 管理画面のイメージをビルドして push
-        run: |
-          docker build --target production \
-            --build-arg "NEXT_PUBLIC_API_URL=${{ steps.api_url.outputs.url }}/api/v1" \
-            -t "$IMAGE_BASE/web:$TAG" web
-          docker push "$IMAGE_BASE/web:$TAG"
+        uses: docker/build-push-action@v6
+        with:
+          context: web
+          target: production
+          push: true
+          tags: ${{ env.IMAGE_BASE }}/web:${{ env.TAG }}
+          build-args: NEXT_PUBLIC_API_URL=${{ steps.api_url.outputs.url }}/api/v1
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
 
       # ここから反映。順序は ADR-0028 が定めた「マイグレーション → API → フロント」。
       # 先にスキーマを進めておかないと、新しいコードが存在しない列を触る。
       - name: マイグレーションを実行
         run: |
-          gcloud run jobs update pod-admin-migrate \
-            --project="${{ inputs.project_id }}" --region="${{ inputs.region }}" \
-            --image="$IMAGE_BASE/api:$TAG"
-          gcloud run jobs execute pod-admin-migrate \
-            --project="${{ inputs.project_id }}" --region="${{ inputs.region }}" --wait
+          gcloud run jobs update pod-admin-migrate --image="$IMAGE_BASE/api:$TAG"
+          gcloud run jobs execute pod-admin-migrate --wait
 
       - name: API を反映
-        run: |
-          gcloud run deploy pod-admin-api \
-            --project="${{ inputs.project_id }}" --region="${{ inputs.region }}" \
-            --image="$IMAGE_BASE/api:$TAG"
+        run: gcloud run deploy pod-admin-api --image="$IMAGE_BASE/api:$TAG"
 
       - name: 管理画面を反映
-        run: |
-          gcloud run deploy pod-admin-web \
-            --project="${{ inputs.project_id }}" --region="${{ inputs.region }}" \
-            --image="$IMAGE_BASE/web:$TAG"
+        run: gcloud run deploy pod-admin-web --image="$IMAGE_BASE/web:$TAG"
 
       # ワーカーは API と同じイメージで動く。ここを忘れると、
       # **ワーカーだけが古いコードのまま動き続けて何も壊れない。**
       - name: ワーカーのイメージを揃える
-        run: |
-          gcloud run jobs update pod-admin-worker \
-            --project="${{ inputs.project_id }}" --region="${{ inputs.region }}" \
-            --image="$IMAGE_BASE/api:$TAG"
+        run: gcloud run jobs update pod-admin-worker --image="$IMAGE_BASE/api:$TAG"
 
       - name: 疎通確認
         run: |
-          api="${{ steps.api_url.outputs.url }}"
-          web=$(gcloud run services describe pod-admin-web \
-            --project="${{ inputs.project_id }}" --region="${{ inputs.region }}" \
-            --format='value(status.url)')
-          curl --fail --show-error --silent --max-time 60 "$api/health"
+          web=$(gcloud run services describe pod-admin-web --format='value(status.url)')
+          curl --fail --show-error --silent --max-time 60 "${{ steps.api_url.outputs.url }}/health"
           curl --fail --show-error --silent --max-time 60 --output /dev/null "$web"

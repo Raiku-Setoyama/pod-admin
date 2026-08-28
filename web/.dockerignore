@@ -1,23 +1,24 @@
-# ビルドに要らないものを送らない。とくに .git はこのリポジトリでは大きく、
-# CI のデプロイ時間にそのまま乗る。
+# ビルドコンテキストは web/ なので、リポジトリ直下の .git はもともと入らない。
+# ここで効くのは、ローカルで docker build したときに node_modules（600MB 超）や
+# 古い .next が送られる・混ざるのを止めることである。
+# CI は素のチェックアウトなのでどれも存在しない。
 node_modules/
 .next/
-out/
 coverage/
-playwright-report/
-test-results/
+*.tsbuildinfo
 
 # Environment
 .env
 .env.local
+.vercel/
 
 # Docker
 Dockerfile*
 docker-compose*.yml
 
-# Git
-.git/
-.gitignore
+# IDE
+.idea/
+.vscode/
 
 # Misc
 .DS_Store

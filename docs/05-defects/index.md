@@ -8,6 +8,7 @@
 | ID | 領域 | 現象 | 対象 | priority | status |
 |---|---|---|---|---|---|
 | [BUG-0001](BUG-0001.md) | shipment | 配送一覧のキーワード検索が、どんな入力でも 0 件になる | [REQ-0026](../01-requirements/REQ-0026.md) | must | done |
+| [BUG-0002](BUG-0002.md) | billing | 請求書PDFの発行が管理画面・メーカーポータルの双方で 500 エラーになる | [REQ-0030](../01-requirements/REQ-0030.md) | must | not-started |
 
 ## 不具合と要件の違い
 

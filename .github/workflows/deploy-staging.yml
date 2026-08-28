@@ -9,13 +9,8 @@ on:
     # 確認が取れたらこの行を消す。
     branches: [main, feat/REQ-0053-cicd]
   # 反映だけをやり直したいときのために手動でも起動できるようにする。
+  # **main 以外から起動しても GCP の認証で落ちる**（github-oidc の IAM 条件）。
   workflow_dispatch:
-
-concurrency:
-  # **途中で止めない。** マイグレーションの最中に打ち切ると、
-  # スキーマだけ進んでコードが古い状態で残る。後発は前のデプロイの完了を待つ。
-  group: deploy-staging
-  cancel-in-progress: false
 
 jobs:
   deploy:
