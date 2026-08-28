@@ -54,3 +54,24 @@ def test_settings_cors_origins() -> None:
 
     assert "http://localhost:3000" in settings.CORS_ORIGINS
     assert "http://localhost:8080" in settings.CORS_ORIGINS
+
+
+def test_generation_worst_case_seconds_matches_infra_copy() -> None:
+    """生成の最悪値が、Terraform に写した定数と一致することを固定する.
+
+    `infra/envs/staging/main.tf` の `local.generation_worst_case_seconds` は
+    この値の写しであり、そこから製造データ生成ワーカー（Cloud Run Job）の
+    タイムアウトを導出している。Terraform は Python を読めないので、
+    **ずれても何も壊れず、Job が生成の途中で殺されるという形でだけ現れる。**
+
+    `ILLUSTRATOR_VM_*` を変えてこのテストが落ちたら、infra 側の定数も直すこと。
+    """
+    from app.config import Settings
+
+    settings = Settings(
+        DATABASE_URL="postgresql+asyncpg://test:test@localhost:5432/testdb",
+        SECRET_KEY="test-secret-key",
+        _env_file=None,
+    )
+
+    assert settings.generation_worst_case_seconds == 921

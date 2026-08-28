@@ -28,6 +28,7 @@ PROJECT_CHECKS=(
   "bash -c 'cd api && uv run mypy .'"
   "bash -c 'cd web && npm run lint'"
   "bash -c 'cd web && npx tsc --noEmit'"
+  "bash scripts/terraform-check.sh"
   # テストは DB・インフラの準備が要るため対象外（REQ-0041 のスコープ外）。
   # "bash -c 'cd api && uv run pytest -q'"
   # "bash -c 'cd web && npm run test:run'"

@@ -91,3 +91,17 @@ Thumbs.db
 
 # Quality gate（scripts/quality-gate.sh がローカルに生成する。コミットしない）
 .quality-gate/
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfplan
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
