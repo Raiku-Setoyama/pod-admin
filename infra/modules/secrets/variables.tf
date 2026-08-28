@@ -25,6 +25,14 @@ variable "external_secrets" {
   DESC
   type        = map(string)
   default     = {}
+
+  validation {
+    # Secret Manager は空のペイロードを受け付けない
+    # （API が「Field [payload] is required」で 400 を返す）。
+    # 「値が無い」を空文字で表せないため、必ず何かを入れる。
+    condition     = alltrue([for v in values(var.external_secrets) : length(v) > 0])
+    error_message = "external_secrets のプレースホルダに空文字は使えません。Secret Manager が空のペイロードを拒否します。"
+  }
 }
 
 variable "accessor_members" {

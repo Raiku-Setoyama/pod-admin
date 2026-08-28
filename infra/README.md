@@ -94,3 +94,21 @@ gcloud run jobs execute pod-admin-migrate --region asia-northeast1 --wait
   `main.tf` の `locals` が導出する。先に殺されると、生成中の行がリース期限まで宙吊りになる
 - `local.generation_worst_case_seconds` は `api/app/config.py` の
   `Settings.generation_worst_case_seconds` の写しである。`ILLUSTRATOR_VM_*` を変えたら両方直す
+
+## SendGrid の鍵を入れる
+
+Terraform はシークレットの入れ物と `REPLACE_ME` というプレースホルダだけを作る。
+**Secret Manager は空のペイロードを受け付けない**ため、「未設定」を空文字で表せない。
+
+プレースホルダのままでもアプリは起動し、業務フローも壊れない
+（送信系はすべて例外を握って `False` を返す）。ログに認証エラーが残るだけである。
+
+実物の鍵はコマンドで足す。Cloud Run は `latest` を見るので、再デプロイは要らない。
+
+```bash
+printf '%s' "SG.xxxxx" | gcloud secrets versions add sendgrid-api-key \
+  --project=tosyo-api-stg --data-file=-
+```
+
+Terraform は追加したバージョンを `ignore_changes` で無視するので、
+以後の `apply` でプレースホルダに戻ることはない。

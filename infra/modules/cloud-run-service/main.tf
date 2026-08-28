@@ -6,6 +6,14 @@ resource "google_cloud_run_v2_service" "this" {
   labels              = var.labels
   deletion_protection = var.deletion_protection
 
+  # サービスレベルの scaling。**template 側の scaling とは別物である。**
+  # 使っていないが、API が既定値を実体化して返すため、宣言しないと
+  # 毎回「このブロックを消す」差分が出続ける（apply しても収束しない）。
+  scaling {
+    min_instance_count = var.min_instances
+    scaling_mode       = "AUTOMATIC"
+  }
+
   template {
     service_account                  = var.service_account_email
     timeout                          = "${var.timeout_seconds}s"

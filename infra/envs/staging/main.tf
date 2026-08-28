@@ -152,10 +152,14 @@ module "secrets" {
     "internal-api-secret" = random_password.internal_api_secret.result
   }
 
-  # SendGrid の鍵は人間が入れる。空のままでもアプリは起動し、
-  # メール送信だけが無効になる（api/app/dependencies.py）。
+  # SendGrid の鍵は人間が入れる（infra/README.md）。
+  #
+  # Secret Manager は空のペイロードを拒否するため、「未設定」をそのまま表せない。
+  # プレースホルダのままだと EmailService は構築されるが、送信は SendGrid の
+  # 認証エラーになる。**送信系はすべて例外を握って False を返す**ので
+  # （api/app/services/email_service.py）、業務フローは壊れず、ログに残るだけになる。
   external_secrets = {
-    "sendgrid-api-key" = ""
+    "sendgrid-api-key" = "REPLACE_ME"
   }
 
   accessor_members = local.data_plane_members
