@@ -1,0 +1,23 @@
+# ビルドに要らないものを送らない。とくに .git はこのリポジトリでは大きく、
+# CI のデプロイ時間にそのまま乗る。
+node_modules/
+.next/
+out/
+coverage/
+playwright-report/
+test-results/
+
+# Environment
+.env
+.env.local
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+
+# Git
+.git/
+.gitignore
+
+# Misc
+.DS_Store

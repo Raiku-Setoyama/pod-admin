@@ -25,3 +25,13 @@ output "cloudsql_connection_name" {
 output "gcs_bucket" {
   value = module.gcs.name
 }
+
+output "github_actions_workload_identity_provider" {
+  description = "デプロイ用ワークフローの workload_identity_provider に指定する値"
+  value       = module.github_oidc.provider_name
+}
+
+output "github_actions_service_account" {
+  description = "デプロイ用ワークフローの service_account に指定する値"
+  value       = module.service_accounts.emails["pod-admin-deployer"]
+}

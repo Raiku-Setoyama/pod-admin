@@ -28,3 +28,15 @@ resource "google_artifact_registry_repository" "this" {
     }
   }
 }
+
+# push できるのは CI だけにする。リポジトリ単位で付けるので、プロジェクト内の
+# 他のリポジトリには届かない。
+resource "google_artifact_registry_repository_iam_member" "writers" {
+  for_each = toset(var.writer_members)
+
+  project    = var.project_id
+  location   = google_artifact_registry_repository.this.location
+  repository = google_artifact_registry_repository.this.name
+  role       = "roles/artifactregistry.writer"
+  member     = each.value
+}

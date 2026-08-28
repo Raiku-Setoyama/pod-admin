@@ -1,0 +1,32 @@
+name: deploy-staging
+
+# main へのマージでステージングへ反映する（ADR-0028）。
+# 手順の実体は deploy.yml にある。
+
+on:
+  push:
+    # TODO(REQ-0053): マージ前に自動デプロイを実地確認するための一時的な指定。
+    # 確認が取れたらこの行を消す。
+    branches: [main, feat/REQ-0053-cicd]
+  # 反映だけをやり直したいときのために手動でも起動できるようにする。
+  workflow_dispatch:
+
+concurrency:
+  # **途中で止めない。** マイグレーションの最中に打ち切ると、
+  # スキーマだけ進んでコードが古い状態で残る。後発は前のデプロイの完了を待つ。
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      project_id: tosyo-api-stg
+      region: asia-northeast1
+      # 値の出どころは infra/envs/staging の terraform output。
+      # 機密ではない（識別子であって資格情報ではない）ため、そのまま書く。
+      workload_identity_provider: projects/644320531544/locations/global/workloadIdentityPools/github/providers/github
+      service_account: pod-admin-deployer@tosyo-api-stg.iam.gserviceaccount.com

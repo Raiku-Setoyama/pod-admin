@@ -1,0 +1,117 @@
+name: deploy
+
+# 環境ごとの差は入力だけにして、手順そのものは 1 か所に置く。
+# 本番用の呼び出し側は REQ-0054（カットオーバー）で足す。
+# **ここを複製すると、ステージングで直した手順が本番に伝わらなくなる**（ADR-0027 と同じ理由）。
+#
+# 認証は Workload Identity 連携で行う（ADR-0028）。鍵 JSON は存在しない。
+
+on:
+  workflow_call:
+    inputs:
+      project_id:
+        type: string
+        required: true
+      region:
+        type: string
+        required: true
+      workload_identity_provider:
+        description: terraform output github_actions_workload_identity_provider の値
+        type: string
+        required: true
+      service_account:
+        description: terraform output github_actions_service_account の値
+        type: string
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      # WIF が要求する OIDC トークンの発行に必要。これが唯一の資格情報である。
+      id-token: write
+      contents: read
+
+    env:
+      IMAGE_BASE: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/pod-admin
+      # イメージのタグはコミット SHA にする。動いているリビジョンから
+      # コミットが一意に辿れる状態を保つため、latest のような可変タグは使わない。
+      TAG: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ inputs.workload_identity_provider }}
+          service_account: ${{ inputs.service_account }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Artifact Registry への docker 認証
+        run: gcloud auth configure-docker ${{ inputs.region }}-docker.pkg.dev --quiet
+
+      - name: API のイメージをビルドして push
+        run: |
+          docker build --target production \
+            -t "$IMAGE_BASE/api:$TAG" api
+          docker push "$IMAGE_BASE/api:$TAG"
+
+      - name: API の公開 URL を取得
+        id: api_url
+        run: |
+          # NEXT_PUBLIC_* はビルド時にバンドルへ焼き込まれるため、
+          # 管理画面のビルドより先に API の URL が確定している必要がある。
+          # ワークフローに URL を書かず、実物から引く。
+          url=$(gcloud run services describe pod-admin-api \
+            --project="${{ inputs.project_id }}" --region="${{ inputs.region }}" \
+            --format='value(status.url)')
+          test -n "$url"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: 管理画面のイメージをビルドして push
+        run: |
+          docker build --target production \
+            --build-arg "NEXT_PUBLIC_API_URL=${{ steps.api_url.outputs.url }}/api/v1" \
+            -t "$IMAGE_BASE/web:$TAG" web
+          docker push "$IMAGE_BASE/web:$TAG"
+
+      # ここから反映。順序は ADR-0028 が定めた「マイグレーション → API → フロント」。
+      # 先にスキーマを進めておかないと、新しいコードが存在しない列を触る。
+      - name: マイグレーションを実行
+        run: |
+          gcloud run jobs update pod-admin-migrate \
+            --project="${{ inputs.project_id }}" --region="${{ inputs.region }}" \
+            --image="$IMAGE_BASE/api:$TAG"
+          gcloud run jobs execute pod-admin-migrate \
+            --project="${{ inputs.project_id }}" --region="${{ inputs.region }}" --wait
+
+      - name: API を反映
+        run: |
+          gcloud run deploy pod-admin-api \
+            --project="${{ inputs.project_id }}" --region="${{ inputs.region }}" \
+            --image="$IMAGE_BASE/api:$TAG"
+
+      - name: 管理画面を反映
+        run: |
+          gcloud run deploy pod-admin-web \
+            --project="${{ inputs.project_id }}" --region="${{ inputs.region }}" \
+            --image="$IMAGE_BASE/web:$TAG"
+
+      # ワーカーは API と同じイメージで動く。ここを忘れると、
+      # **ワーカーだけが古いコードのまま動き続けて何も壊れない。**
+      - name: ワーカーのイメージを揃える
+        run: |
+          gcloud run jobs update pod-admin-worker \
+            --project="${{ inputs.project_id }}" --region="${{ inputs.region }}" \
+            --image="$IMAGE_BASE/api:$TAG"
+
+      - name: 疎通確認
+        run: |
+          api="${{ steps.api_url.outputs.url }}"
+          web=$(gcloud run services describe pod-admin-web \
+            --project="${{ inputs.project_id }}" --region="${{ inputs.region }}" \
+            --format='value(status.url)')
+          curl --fail --show-error --silent --max-time 60 "$api/health"
+          curl --fail --show-error --silent --max-time 60 --output /dev/null "$web"

@@ -110,3 +110,8 @@ variable "db_deletion_protection" {
 variable "gcs_force_destroy" {
   type = bool
 }
+
+variable "github_repository" {
+  description = "デプロイを許可する GitHub リポジトリ（owner/repo）"
+  type        = string
+}

@@ -29,3 +29,5 @@ worker_max_items           = 20
 illustrator_vm_base_url = ""
 worker_schedule         = "*/5 * * * *"
 worker_schedule_paused  = true
+
+github_repository = "Raiku-Setoyama/pod-admin"
