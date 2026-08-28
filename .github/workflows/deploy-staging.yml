@@ -5,9 +5,7 @@ name: deploy-staging
 
 on:
   push:
-    # TODO(REQ-0053): マージ前に自動デプロイを実地確認するための一時的な指定。
-    # 確認が取れたらこの行を消す。
-    branches: [main, feat/REQ-0053-cicd]
+    branches: [main]
   # 反映だけをやり直したいときのために手動でも起動できるようにする。
   # **main 以外から起動しても GCP の認証で落ちる**（github-oidc の IAM 条件）。
   workflow_dispatch:
