@@ -14,11 +14,6 @@ variable "name" {
   type        = string
 }
 
-variable "database_version" {
-  type    = string
-  default = "POSTGRES_16"
-}
-
 variable "tier" {
   type = string
 }
@@ -31,6 +26,14 @@ variable "availability_type" {
 
 variable "disk_size_gb" {
   type = number
+}
+
+variable "disk_autoresize_limit" {
+  description = <<-DESC
+    自動拡張の上限（GB）。**0 は無制限であり、事故のとき歯止めが無くなる。**
+    ディスクは縮小できないため、一度膨らんだ容量の課金は戻らない。
+  DESC
+  type        = number
 }
 
 variable "deletion_protection" {
@@ -57,32 +60,9 @@ variable "pitr_enabled" {
   default     = false
 }
 
-variable "transaction_log_retention_days" {
-  type    = number
-  default = 7
-}
-
 variable "retained_backups" {
   type    = number
   default = 7
-}
-
-variable "backup_start_time_utc" {
-  description = "自動バックアップの開始時刻（UTC, HH:MM）"
-  type        = string
-  default     = "18:00"
-}
-
-variable "maintenance_day" {
-  description = "メンテナンス枠の曜日（1=月 ... 7=日）"
-  type        = number
-  default     = 7
-}
-
-variable "maintenance_hour_utc" {
-  description = "メンテナンス枠の時刻（UTC）。18 は JST 03:00"
-  type        = number
-  default     = 18
 }
 
 variable "database_flags" {

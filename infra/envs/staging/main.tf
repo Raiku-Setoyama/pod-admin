@@ -106,14 +106,15 @@ module "gcs" {
 module "cloud_sql" {
   source = "../../modules/cloud-sql"
 
-  project_id          = var.project_id
-  region              = var.region
-  name                = "pod-admin"
-  tier                = var.db_tier
-  disk_size_gb        = var.db_disk_size_gb
-  availability_type   = "ZONAL"
-  deletion_protection = var.db_deletion_protection
-  labels              = local.labels
+  project_id            = var.project_id
+  region                = var.region
+  name                  = "pod-admin"
+  tier                  = var.db_tier
+  disk_size_gb          = var.db_disk_size_gb
+  disk_autoresize_limit = var.db_disk_autoresize_limit
+  availability_type     = "ZONAL"
+  deletion_protection   = var.db_deletion_protection
+  labels                = local.labels
 
   database_name = "pod_admin"
   user_name     = "pod_admin"
@@ -311,7 +312,12 @@ module "worker_schedule" {
   job_name              = module.worker_job.name
   service_account_email = module.service_accounts.emails["pod-admin-scheduler"]
   schedule              = var.worker_schedule
-  paused                = var.worker_schedule_paused
+
+  # **VM が未設定なら必ず止める。** 空の URL のまま動かすと、
+  # run_generation が IllustratorVmError を投げ、待ち行列の行が次々に
+  # failed へ落ちる（api/app/services/manufacturing_data_service.py）。
+  # 2 つの設定が並んでいるだけでは、片方だけ変えた事故を防げない。
+  paused = var.worker_schedule_paused || var.illustrator_vm_base_url == ""
 
   depends_on = [module.worker_job]
 }

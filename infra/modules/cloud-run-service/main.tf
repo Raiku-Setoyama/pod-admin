@@ -7,17 +7,21 @@ resource "google_cloud_run_v2_service" "this" {
   deletion_protection = var.deletion_protection
 
   # サービスレベルの scaling。**template 側の scaling とは別物である。**
-  # 使っていないが、API が既定値を実体化して返すため、宣言しないと
-  # 毎回「このブロックを消す」差分が出続ける（apply しても収束しない）。
+  # こちらは「サービス全体の下限をリビジョン間で配分する」設定であり、
+  # インスタンス数の制御は template 側で行う（var.min_instances / var.max_instances）。
+  #
+  # 使わないのに宣言しているのは、API が既定値を実体化して返すためである。
+  # 宣言しないと毎回「このブロックを消す」差分が出続け、apply しても収束しない。
+  # **var.min_instances を渡してはならない。** 同じ変数が 2 つの別の意味を持つ。
   scaling {
-    min_instance_count = var.min_instances
+    min_instance_count = 0
     scaling_mode       = "AUTOMATIC"
   }
 
   template {
     service_account                  = var.service_account_email
     timeout                          = "${var.timeout_seconds}s"
-    max_instance_request_concurrency = var.concurrency
+    max_instance_request_concurrency = 80
     labels                           = var.labels
 
     scaling {

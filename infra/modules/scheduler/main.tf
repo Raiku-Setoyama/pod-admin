@@ -6,13 +6,15 @@ resource "google_cloud_scheduler_job" "this" {
   name        = var.name
   description = var.description
   schedule    = var.schedule
-  time_zone   = var.time_zone
+  time_zone   = "Asia/Tokyo"
   paused      = var.paused
 
-  attempt_deadline = "${var.attempt_deadline_seconds}s"
+  # Job の完了ではなく **起動 API の応答** を待つ時間なので、Job の
+  # タイムアウトと揃える必要はない。
+  attempt_deadline = "60s"
 
   retry_config {
-    retry_count = var.retry_count
+    retry_count = 1
   }
 
   http_target {

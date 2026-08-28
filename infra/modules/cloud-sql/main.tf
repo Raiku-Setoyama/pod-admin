@@ -1,8 +1,16 @@
+locals {
+  # 環境で変える理由がないもの。変える必要が出たら変数に引き上げる。
+  backup_start_time_utc          = "18:00" # JST 03:00
+  maintenance_day                = 7       # 日曜
+  maintenance_hour_utc           = 18      # JST 03:00
+  transaction_log_retention_days = 7
+}
+
 resource "google_sql_database_instance" "this" {
   project             = var.project_id
   name                = var.name
   region              = var.region
-  database_version    = var.database_version
+  database_version    = "POSTGRES_16"
   deletion_protection = var.deletion_protection
 
   settings {
@@ -11,8 +19,13 @@ resource "google_sql_database_instance" "this" {
     availability_type = var.availability_type
     disk_type         = "PD_SSD"
     disk_size         = var.disk_size_gb
-    disk_autoresize   = true
-    user_labels       = var.labels
+
+    # 自動拡張には必ず上限を付ける。**ディスクは拡張できても縮小できない。**
+    # 暴走したログや誤ったインポートで一度膨らむと、インスタンスを作り直すまで
+    # その容量の課金が続く（名前の再利用にも待ち時間がある）。
+    disk_autoresize       = true
+    disk_autoresize_limit = var.disk_autoresize_limit
+    user_labels           = var.labels
 
     ip_configuration {
       # パブリック IP を有効にするが、authorized_networks は空のままにする。
@@ -24,9 +37,9 @@ resource "google_sql_database_instance" "this" {
 
     backup_configuration {
       enabled                        = true
-      start_time                     = var.backup_start_time_utc
+      start_time                     = local.backup_start_time_utc
       point_in_time_recovery_enabled = var.pitr_enabled
-      transaction_log_retention_days = var.pitr_enabled ? var.transaction_log_retention_days : null
+      transaction_log_retention_days = var.pitr_enabled ? local.transaction_log_retention_days : null
       backup_retention_settings {
         retained_backups = var.retained_backups
         retention_unit   = "COUNT"
@@ -34,8 +47,8 @@ resource "google_sql_database_instance" "this" {
     }
 
     maintenance_window {
-      day          = var.maintenance_day
-      hour         = var.maintenance_hour_utc
+      day          = local.maintenance_day
+      hour         = local.maintenance_hour_utc
       update_track = "stable"
     }
 

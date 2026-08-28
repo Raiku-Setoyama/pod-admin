@@ -37,11 +37,6 @@ variable "max_instances" {
   type        = number
 }
 
-variable "concurrency" {
-  type    = number
-  default = 80
-}
-
 variable "timeout_seconds" {
   type    = number
   default = 300

@@ -2,22 +2,24 @@
 #
 # terraform-check.sh — infra/ の静的チェック（整形と構文・型の検証）。
 #
-# terraform が入っていない環境ではスキップする。quality-gate.sh の
-# コマンド存在判定は先頭の語しか見ないため、ここで自分で判定する。
+# **terraform が無ければ失敗する。** quality-gate.sh のコマンド存在判定は
+# 先頭の語（bash）しか見ないためここで自分で判定するが、「無ければ緑」に
+# すると、ローカルのゲートは何も検証せずに封をして push を通してしまう。
+# uv が無ければ赤くなるのと同じ扱いにして、ローカルと CI の「通過」を揃える。
 #
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
-if [ ! -d infra ]; then
-  echo "infra/ が無いためスキップ"
-  exit 0
+if ! command -v terraform >/dev/null 2>&1; then
+  echo "terraform がインストールされていません（brew install terraform）" >&2
+  exit 1
 fi
 
-if ! command -v terraform >/dev/null 2>&1; then
-  echo "terraform 未インストールのためスキップ"
-  exit 0
-fi
+# プロバイダを環境ディレクトリごとに落とし直さない。
+# 1 環境で約 40MB あり、環境が増えるほど CI もローカルも無駄に膨らむ。
+export TF_PLUGIN_CACHE_DIR="${TF_PLUGIN_CACHE_DIR:-$HOME/.terraform.d/plugin-cache}"
+mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
 failed=0
 

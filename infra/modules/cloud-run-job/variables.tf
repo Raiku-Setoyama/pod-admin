@@ -16,11 +16,6 @@ variable "command" {
   default     = null
 }
 
-variable "args" {
-  type    = list(string)
-  default = null
-}
-
 variable "cpu" {
   type    = string
   default = "1"

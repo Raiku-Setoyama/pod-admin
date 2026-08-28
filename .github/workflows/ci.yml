@@ -50,8 +50,16 @@ jobs:
 
   infra:
     runs-on: ubuntu-latest
+    env:
+      # プロバイダは約 40MB ある。lock ファイルが変わるまで使い回す。
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.tfplugins
     steps:
       - uses: actions/checkout@v4
+      - run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.tfplugins
+          key: tf-plugins-${{ hashFiles('infra/envs/*/.terraform.lock.hcl') }}
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.13.1

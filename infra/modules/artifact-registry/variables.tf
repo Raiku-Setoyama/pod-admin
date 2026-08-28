@@ -27,9 +27,3 @@ variable "delete_older_than_days" {
   type        = number
   default     = 30
 }
-
-variable "writer_members" {
-  description = "push を許可する IAM メンバー（CI のデプロイ用 SA など）"
-  type        = list(string)
-  default     = []
-}

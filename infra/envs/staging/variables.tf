@@ -20,6 +20,11 @@ variable "db_disk_size_gb" {
   type = number
 }
 
+variable "db_disk_autoresize_limit" {
+  description = "ディスク自動拡張の上限（GB）。0 は無制限"
+  type        = number
+}
+
 variable "db_max_connections" {
   description = <<-DESC
     Cloud SQL の max_connections。明示的に固定する。
@@ -27,6 +32,17 @@ variable "db_max_connections" {
     プールを設計すると本番で枯渇する。
   DESC
   type        = number
+
+  validation {
+    # 接続数の予算を人間の暗算に任せない。
+    # api は max_instances 個まで並ぶ。worker と migrate は Job なので 1 実行ずつ。
+    # 残りは管理接続（psql・Cloud SQL 自身）の予備として空けておく。
+    condition = (
+      (var.api_max_instances + 2) * (var.db_pool_size + var.db_max_overflow)
+      <= var.db_max_connections - 5
+    )
+    error_message = "接続数が max_connections に収まりません。(api_max_instances + 2) × (db_pool_size + db_max_overflow) が db_max_connections - 5 を超えています。"
+  }
 }
 
 variable "api_max_instances" {
