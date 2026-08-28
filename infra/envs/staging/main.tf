@@ -223,8 +223,17 @@ locals {
     SENDGRID_FROM_EMAIL = var.sendgrid_from_email
     CONTACT_EMAIL       = var.contact_email
 
+    # **Cloud Run は 1 サービスに 2 つの URL を割り当てる**（旧形式の
+    # `<service>-<hash>-<region>.a.run.app` と、新形式の
+    # `<service>-<project number>.<region>.run.app`）。どちらも公開されていて等しく届くので、
+    # 片方だけを許可すると、もう片方で開いた利用者はログインすら通らない
+    # （プリフライトが 400 "Disallowed CORS origin" で落ち、画面には何も出ない）。
+    # `uri` は 1 つしか返さないので `urls` を使う。
+    #
     # CORS_ORIGINS は list[str] なので JSON で渡す（pydantic-settings の仕様）。
-    CORS_ORIGINS           = jsonencode([module.web.uri])
+    CORS_ORIGINS = jsonencode(module.web.urls)
+
+    # 一方こちらはメール本文に載る。**宛先は 1 つに定める**ので uri のままにする。
     ADMIN_BASE_URL         = module.web.uri
     MANUFACTURER_LOGIN_URL = "${module.web.uri}/manufacturer-login"
   }
