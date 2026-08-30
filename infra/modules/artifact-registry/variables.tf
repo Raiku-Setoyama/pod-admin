@@ -11,6 +11,12 @@ variable "name" {
   type        = string
 }
 
+variable "description" {
+  description = "リポジトリの説明。汎用モジュールなので利用側が渡す"
+  type        = string
+  default     = ""
+}
+
 variable "labels" {
   type    = map(string)
   default = {}

@@ -1,0 +1,48 @@
+name: deploy-prod
+
+# 本番（tosyo-api-504104）へ反映する。手順の実体は deploy.yml にある。
+#
+# **契機は手動実行だけ**である（ADR-0028「本番は人間の承認を挟む」）。
+# main への push では動かない。ステージングだけが自動で追従する。
+#
+# **main 以外から起動しても GCP の認証で落ちる**（github-oidc の IAM 条件。ADR-0031）。
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: '本番に反映します。確認のため deploy-prod と入力してください'
+        required: true
+        type: string
+
+jobs:
+  # Actions の一覧で deploy-staging の隣に並ぶため、取り違えが起こりうる。
+  # **その事故は「反映されない」では済まない。** deploy.yml は最初に
+  # migrate Job を流すので、本番のスキーマが動く。
+  #
+  # 承認者を機械的に増やしたくなったら、このジョブを GitHub Environment の
+  # 承認付きジョブに差し替える。**deploy.yml 側には入れない**
+  # （リポジトリの設定画面が正本になり、Terraform の管理下から外れるため）。
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 入力の確認
+        run: |
+          if [ "${{ inputs.confirm }}" != "deploy-prod" ]; then
+            echo "確認の入力が一致しません。本番へ反映するには deploy-prod と入力してください。" >&2
+            exit 1
+          fi
+
+  deploy:
+    needs: guard
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      project_id: tosyo-api-504104
+      region: asia-northeast1
+      # 値の出どころは infra/envs/prod の terraform output。
+      # 機密ではない（識別子であって資格情報ではない）ため、そのまま書く。
+      workload_identity_provider: projects/858634860577/locations/global/workloadIdentityPools/github/providers/github
+      service_account: pod-admin-deployer@tosyo-api-504104.iam.gserviceaccount.com

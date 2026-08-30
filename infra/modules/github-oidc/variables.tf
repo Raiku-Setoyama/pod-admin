@@ -22,12 +22,21 @@ variable "pool_id" {
   default     = "github"
 }
 
+variable "allowed_workflow" {
+  description = <<-DESC
+    トークンの発行を許可するワークフローファイルのパス。
+    **同じリポジトリの別のワークフローを締め出すのがここの役目である。**
+    再利用ワークフローを uses: で呼ぶ場合は、**呼ばれた側**を指定する。
+  DESC
+  type        = string
+  default     = ".github/workflows/deploy.yml"
+}
+
 variable "allowed_ref" {
   description = <<-DESC
-    トークンの発行を許可する git の ref。**リポジトリ条件だけでは足りない。**
-    同じリポジトリの別のワークフロー（例: .github/workflows/claude.yml は
-    issue コメントを契機に id-token: write で動く）も同じ条件を満たすため、
-    ここで実行の出どころまで絞る。
+    トークンの発行を許可する git の ref。
+    **これ単独では絞りにならない**（main.tf の attribute_condition を参照）。
+    allowed_workflow と組にして job_workflow_ref を作るために持つ。
   DESC
   type        = string
   default     = "refs/heads/main"
@@ -36,7 +45,13 @@ variable "allowed_ref" {
 variable "impersonated_service_account_ids" {
   description = <<-DESC
     このリポジトリの Actions が名乗れるサービスアカウント。
-    projects/<project>/serviceAccounts/<email> 形式の ID を入れる。
+    キーは呼び出し側が静的に書ける名前、値は
+    projects/<project>/serviceAccounts/<email> 形式の ID。
+
+    **set ではなく map で受ける。** 値はサービスアカウントを作ってからでないと
+    決まらないため、set にすると for_each のキーが plan の時点で確定しない。
+    既に作り終えた環境では通ってしまい、**まだ何も無い環境（新しく作る本番）
+    でだけ plan が落ちる。**
   DESC
-  type        = set(string)
+  type        = map(string)
 }
