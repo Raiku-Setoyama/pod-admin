@@ -7,10 +7,13 @@ locals {
 }
 
 resource "google_sql_database_instance" "this" {
-  project             = var.project_id
-  name                = var.name
-  region              = var.region
-  database_version    = "POSTGRES_16"
+  project = var.project_id
+  name    = var.name
+  region  = var.region
+  # **移送元（Railway）が 17 なので 17 にする。**
+  # PostgreSQL は上位メジャーのダンプを下位に流し込めない。16 のままだと
+  # カットオーバー当日に restore が通らない（REQ-0054 のリハーサルで判明）。
+  database_version    = "POSTGRES_17"
   deletion_protection = var.deletion_protection
 
   settings {
