@@ -133,6 +133,81 @@ terraform output -raw github_actions_service_account
 2. `terraform plan -detailed-exitcode` が差分なしを返すことを確認する
 3. その結果を添えて Pull Request を出す
 
+## データの移送（カットオーバー）
+
+`scripts/migrate-data.sh` が移送の道具である。**当日その場で手順を組み立てない。**
+
+**前日までに `docker pull postgres:17-alpine` を済ませる**（400MB 超。当日に引くと待ち時間になる）。
+
+### 1. 移送元のダンプを取る（**人間が手元で行う**）
+
+Railway の Postgres には TCP プロキシが無く、外から接続できない。
+**ダンプの取得は依頼者が手元で行い、ファイルを受け渡す**（REQ-0054 で決めた）。
+このリポジトリから移送元へ接続する経路は存在しない。
+
+```bash
+./scripts/migrate-data.sh dump "$RAILWAY_DATABASE_URL" prod.sql
+```
+
+**`pg_dump` を手で叩かず、この script を通す。** 必要なオプションが決まっており、
+**手で打つとパスワードが `ps` に出る**（script は接続情報を環境変数へ分解する）。
+`psql` / `pg_dump` が入っていない環境では docker で動く。
+
+やむを得ず直接叩く場合、**次の 3 つは必須である。**
+
+| オプション | 無いとどうなるか |
+|---|---|
+| `--no-owner` | 移送先に Railway のロールが無く、所有者の付け替えで restore が落ちる |
+| `--no-acl` | 同上。権限の付与先が存在しない |
+| `--format=plain` | `restore` と `counts-dump` がテキスト形式を前提にしている |
+
+そのときも `PGPASSWORD` などに逃がし、URL をコマンド行に置かないこと。
+
+### 2. 移送先へ流し込む
+
+```bash
+cloud-sql-proxy --port 5434 tosyo-api-504104:asia-northeast1:pod-admin &
+
+./scripts/migrate-data.sh counts-dump prod.sql   > src.txt   # 移送元の件数（DB に繋がない）
+./scripts/migrate-data.sh reset   "$DST_URL"                 # **破壊的**
+./scripts/migrate-data.sh restore "$DST_URL" prod.sql        # **破壊的**
+./scripts/migrate-data.sh counts  "$DST_URL"     > dst.txt
+./scripts/migrate-data.sh compare src.txt dst.txt            # 差があれば異常終了
+```
+
+**移送元の件数はダンプそのものから数える**（`counts-dump`）。移送元に接続できない
+からでもあるが、そのほうが正確でもある。理由は `migrate-data.sh` の
+`cmd_counts_dump` のコメントを参照。
+
+- **`reset` は必ず実行する。** 移送先には既にスキーマが入っており
+  （REQ-0054 PR 1 で migrate Job を流したため）、`pg_dump` の `CREATE TABLE` が衝突する。
+  「今どうなっているか」で分岐せず、常に同じ状態から始める
+- **破壊的な操作は「許可した宛先」でしか動かない。** Cloud SQL Auth Proxy 越し
+  （ループバック）で、かつ繋がった先が `pod_admin/pod_admin` であることを
+  **サーバに問い合わせて**確かめ、最後に人間へ確認を求める。
+  移送元の Railway は `railway/postgres` なので、ホスト名でも IP でも必ず止まる。
+  **除外ではなく許可にしてある** — 除外は空振りしたときに通ってしまい、
+  空文字を渡すと `PG*` の既定接続（`railway run` の下では移送元そのもの）に落ちる
+- **突合は `compare` にやらせる。** 枠の終わりに 2 画面を見比べる作業にしない
+  （`counts-dump` と `counts` の出力が一致することは検証済み）
+- `alembic_version` はダンプに含まれるので、移送後の migrate Job は no-op になる。
+  **それでも流す。** スキーマが揃っていることの確認を兼ねる
+- `restore` は `--single-transaction` で流し、最後に `VACUUM ANALYZE` する。
+  **統計が無いまま動作確認に入ると、「壊れている」のか「統計がまだ無い」のかを
+  区別できない。** その確認が、後戻りできない手順 8 の判断材料になる
+
+ファイルは旧バケット（個人プロジェクト `lively-transit-334610`）から複製する。
+**`gcloud storage rsync` は使えない**（`key.json` のサービスアカウントは
+オブジェクトを読めるが `storage.buckets.get` を持たない）。一度ローカルへ降ろす。
+
+```bash
+CLOUDSDK_CONFIG=$(mktemp -d) gcloud auth activate-service-account --key-file=../key.json
+gcloud storage cp -r gs://pod-admin-prod/prod /tmp/stage/     # 旧 → ローカル（読み取りのみ）
+gcloud storage rsync -r /tmp/stage gs://tosyo-pod-admin-prod  # ローカル → 新
+```
+
+**旧バケットを宛先にしない。** 約 30MB なので、当日の差分取り込みも全件やり直してよい。
+
 ## Terraform が管理しないもの
 
 | もの | 誰がやるか | なぜ |

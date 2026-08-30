@@ -68,7 +68,7 @@ Slack で流れた話も、合意した要件も、見送ったものも、す�
 | [REQ-0054](REQ-0054.md) | common | 本番環境を Railway / Vercel から GCP へ移行する | must | not-started | |
 | [REQ-0055](REQ-0055.md) | common | 製造データ生成VMを会社組織のGCPプロジェクトへ移し、認証なしでインターネットから到達できない状態にする | must | not-started | |
 | [REQ-0056](REQ-0056.md) | common | SQLAlchemy のモデル定義と実際のDBスキーマのズレを解消する | undecided | not-started | |
-| [REQ-0058](REQ-0058.md) | billing | 請求書PDFの支払期日ラベルの横に出る不要な文字「z」を消す | undecided | not-started | |
+| [REQ-0060](REQ-0060.md) | billing | 請求書PDFの支払期日ラベルの横に出る不要な文字「z」を消す | undecided | not-started | |
 
 ## priority — 採否・約束の度合い
 

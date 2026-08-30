@@ -23,7 +23,7 @@ module "stack" {
   github_repository = "Raiku-Setoyama/pod-admin"
 
   # **GCS_PREFIX になる。** 移行元（Railway）の GCS_PREFIX も prod なので、
-  # 旧バケットから rsync したオブジェクトのパスがそのまま通る。ここを変えると、
+  # 旧バケットから複製したオブジェクトのパスがそのまま通る。ここを変えると、
   # DB に残った file_path が実体を指さなくなる。
   env = "prod"
 

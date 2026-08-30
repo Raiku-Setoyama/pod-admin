@@ -120,7 +120,7 @@ http://34.84.121.166:8000/docs  → HTTP 200
 - `Settings.async_database_url` は `postgresql://` を前置換するだけ → **Cloud SQL の Unix ソケット URL がそのまま通る**
 - `alembic/env.py` も `settings.async_database_url` を使う → migrate Job で同じ設定が効く
 - `file_storage.py` の `file_path` は**バックエンド非依存の相対キー**（docstring に明記）→ **バケット名を変えても DB の書き換えが不要**
-- GCS バケットは約 30MB → `gcloud storage rsync` で一瞬
+- GCS バケットは約 30MB → 複製は一瞬（`rsync` は権限不足で使えない。9.1 を参照）
 
 ---
 
@@ -440,7 +440,7 @@ asyncpg へ渡す。asyncpg は `/` 始まりの host を Unix ソケットデ�
 
 - Railway プロジェクトの停止・削除
 - Vercel プロジェクトの停止・削除
-- `gs://pod-admin-prod`（旧バケット）の削除（rsync 完了とバックアップ確認の後）
+- `gs://pod-admin-prod`（旧バケット）の削除（複製完了とバックアップ確認の後）
 - Cloud Logging のログベースアラート（5xx 率、ワーカーの失敗）
 - Cloud Monitoring のアップタイムチェック（`/health`）
 - Cloud SQL バックアップからの復旧リハーサル
@@ -454,7 +454,9 @@ asyncpg へ渡す。asyncpg は `/` 始まりの host を Unix ソケットデ�
 1. 外部販売サイト運営者へ、**新 API URL とメンテナンス枠**を通知して合意を取る
 2. `envs/prod` を apply（Cloud SQL / GCS / Secret Manager / Cloud Run を空の状態で構築）
 3. 本番イメージをビルドして Artifact Registry へ push
-4. `gcloud storage rsync -r gs://pod-admin-prod gs://tosyo-pod-admin-prod`（初回・全量）
+4. 旧バケットからファイルを複製する（初回・全量）。**`rsync` は使えない** —
+   `key.json` のサービスアカウントは `storage.buckets.get` を持たないので、
+   `gcloud storage cp -r` で一度ローカルへ降ろす（`infra/README.md`）
 5. Railway の `pg_dump` をリハーサルし、Cloud SQL への restore を一度通しておく
 
 ### 9.2 当日（メンテナンス枠）
@@ -464,7 +466,7 @@ asyncpg へ渡す。asyncpg は `/` 始まりの host を Unix ソケットデ�
 | 1 | メンテナンス告知。外部販売サイト側の送信を停止してもらう | ○ |
 | 2 | Railway API を停止（新規書き込みを止める） | ○ |
 | 3 | `pg_dump --no-owner --no-acl`（Railway）→ Cloud SQL へ restore | ○ |
-| 4 | `gcloud storage rsync -r`（差分のみ。30MB なので数秒） | ○ |
+| 4 | ファイルの複製（30MB なので全件やり直してよい。`infra/README.md`） | ○ |
 | 5 | migrate Job を実行（既に head なら no-op。整合確認を兼ねる） | ○ |
 | 6 | Cloud Run api / web をデプロイ（シークレット・環境変数を確定） | ○ |
 | 7 | スモークテスト（`/health`、ログイン、受注一覧、請求書 PDF、外部 API v1/v2 の疎通） | ○ |
