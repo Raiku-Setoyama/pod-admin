@@ -67,6 +67,7 @@ dev = [
     "types-pyyaml>=6.0.12",
     # HTTP client for testing
     "httpx>=0.28.0",
+    "pypdf>=6.16.2",
 ]
 
 [build-system]
