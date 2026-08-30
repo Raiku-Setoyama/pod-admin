@@ -8,6 +8,7 @@
 #   dump     <PGURL> <OUT>        pg_dump を取る（読み取りのみ）
 #   reset    <PGURL>              public スキーマを作り直す（**破壊的**）
 #   restore  <PGURL> <DUMP>       dump を流し込む（**破壊的**）
+#   counts-dump <DUMP>            ダンプファイルから行数を数える（DB に繋がない）
 #   compare  <SRC> <DST>          counts の出力 2 つを突合する（差があれば異常終了）
 #
 # ## 移送元を壊さないための作り
@@ -39,7 +40,9 @@ readonly ALLOWED_DB=pod_admin
 readonly ALLOWED_USER=pod_admin
 
 # 行番号で切り出すと、ヘッダを書き換えるたびに黙ってずれる（実際ずれていた）。
-usage() { sed -n '/^#   counts/,/^#   compare/p' "$0" >&2; exit 2; }
+# 終端を特定のサブコマンド名にもしない。**そのコマンドを最後に置き続ける約束**が
+# 生まれ、あとから足した人のぶんが黙って usage から消える。空コメント行で閉じる。
+usage() { sed -n '/^#   counts /,/^#$/p' "$0" | sed '$d' >&2; exit 2; }
 
 die() { echo "$*" >&2; exit 1; }
 
@@ -149,12 +152,108 @@ cmd_counts() {
 # 「移行前後で各件数が一致する」（REQ-0054 の受入基準）を人間の目視で終わらせない。
 # **差があれば異常終了する。** メンテナンス枠の終わりに 2 画面を見比べる作業にしない。
 cmd_compare() {
-  local src="${1:?usage: compare <SRC> <DST>}" dst="${2:?usage: compare <SRC> <DST>}"
+  [ $# -eq 2 ] || usage
+  local src="$1" dst="$2"
   if diff -u "$src" "$dst"; then
     echo "✅ 全テーブルの件数が一致（$(grep -c . "$src") テーブル）"
   else
     die "❌ 件数が一致しません。移送は完了していません。"
   fi
+}
+
+# **移送元の件数をダンプそのものから数える。**
+#
+# 移送元に繋がずに済むのが要点である。カットオーバーでは依頼者が手元で
+# pg_dump を取るので（REQ-0054）、こちらから Railway へ接続する経路は無い。
+#
+# ただし **これだけでは「移送できた」ことの証明にならない。**
+# src と dst の両方がこのダンプから派生してしまうため、compare が確かめるのは
+# 「ダンプ → 移送先」の一段だけになり、**「移送元 → ダンプ」で落ちたものは
+# 両側から等しく消えて一致と報告される**（`-t` / `-T` を付けて取ると起きる）。
+# そこで、**ダンプの外にある正本**＝アプリのモデル定義と突き合わせる。
+#
+# reset は破壊的で後戻りできない。**その手前に立つ唯一の関門がここ**なので、
+# 形式の異常（不完全・データのみ・INSERT 形式）もここで落とす。
+cmd_counts_dump() {
+  [ $# -eq 1 ] || usage
+  local dump="$1"
+  [ -r "$dump" ] || die "読めません: $dump"
+  python3 - "$dump" "$(dirname "$0")/../../api/app/models" <<'PYEOF'
+import pathlib, re, sys
+
+dump = sys.argv[1]
+
+# ダンプの外にある正本。**ここを手で並べない。**
+# 一覧を手書きすると、モデルが増えたときに書き漏らし、
+# その 1 テーブルが落ちても「一致」と報告される（このリポジトリは
+# api/alembic/env.py で同じ失敗をしている）。
+models = pathlib.Path(sys.argv[2])
+expected = {m.group(1) for f in models.glob("*.py")
+            for m in re.finditer(r'__tablename__\s*=\s*"([^"]+)"', f.read_text(encoding="utf-8"))}
+if not expected:
+    sys.exit(f"モデル定義が読めません: {models}")
+expected.add("alembic_version")  # モデルではないが移送の対象
+
+# **完結しているか**を先に見る。転送で切れたダンプと、-t/-T で意図的に
+# 減らされたダンプは症状が同じ（テーブルが足りない）なので、ここで区別する。
+with open(dump, "rb") as f:
+    try:
+        f.seek(-4096, 2)
+    except OSError:
+        f.seek(0)
+    if b"PostgreSQL database dump complete" not in f.read():
+        sys.exit("ダンプが完結していません（転送が途中で切れています）。取り直してください。")
+
+counts, table, crlf, creates, headers = {}, None, False, 0, 0
+with open(dump, "rb") as f:
+    for raw in f:
+        if raw.endswith(b"\r\n"):
+            crlf = True
+        line = raw.decode("utf-8", "surrogateescape").rstrip("\r\n")
+        if table is None:
+            if line.startswith("CREATE TABLE "):
+                creates += 1
+            elif line.startswith("COPY ") and line.endswith("FROM stdin;"):
+                headers += 1
+                m = re.match(r'COPY (?:([A-Za-z_][A-Za-z0-9_]*)\.)?"?([A-Za-z_][A-Za-z0-9_]*)"?\s*\(.*\) FROM stdin;', line)
+                if not m:
+                    # 解釈できない形は落とす。**黙って 1 テーブル消えるより良い。**
+                    sys.exit(f"COPY ヘッダを解釈できません: {line}")
+                schema, table = m.group(1) or "public", m.group(2)
+                if table in counts:
+                    sys.exit(f"テーブル名が重複しています（{schema}.{table}）。public 以外のスキーマが混ざっていませんか？")
+                counts[table] = 0
+        elif line == r"\.":
+            # データ中の `\` は `\\` に逃がされるので、2 文字の `\.` だけの行は
+            # 終端にしかならない（COPY のテキスト形式の仕様）。
+            table = None
+        else:
+            counts[table] += 1
+
+if table is not None:
+    sys.exit(f"ダンプが途中で終わっています（{table} の COPY が閉じていません）。")
+
+# **形式の異常は reset の手前で落とす。** ここを通すと、移送先を壊してから
+# 「実は流し込めないダンプだった」と判ることになる。
+if not counts:
+    if headers == 0 and creates == 0:
+        sys.exit("COPY も CREATE TABLE もありません。--format=plain のダンプですか？")
+    sys.exit("データがありません（--schema-only で取っていませんか？）。")
+if creates == 0:
+    sys.exit("CREATE TABLE がありません（--data-only で取っていませんか？）。")
+if crlf:
+    sys.exit("改行コードが CRLF です。**転送の途中で書き換えられた合図なので信用しない。**"
+             " LF のまま受け渡して取り直してください。")
+
+# **ダンプの外の正本と突き合わせる。** これが無いと、-t / -T で
+# テーブルごと落ちたダンプが「一致」と報告される。
+missing = expected - counts.keys()
+if missing:
+    sys.exit(f"ダンプに無いテーブル: {sorted(missing)}。-t / -T が付いていませんか？")
+
+for t in sorted(counts):
+    print(f"{t}|{counts[t]}")
+PYEOF
 }
 
 cmd_dump() {
@@ -195,11 +294,11 @@ cmd_restore() {
 [ $# -ge 2 ] || usage
 sub="$1"; shift
 
-# compare だけは DB に繋がない（counts の出力ファイル 2 つを比べるだけ）。
-if [ "$sub" = compare ]; then
-  cmd_compare "$@"
-  exit 0
-fi
+# この 2 つは DB に繋がない（ファイルを読むだけ）。
+case "$sub" in
+  compare)     cmd_compare "$@"; exit 0 ;;
+  counts-dump) cmd_counts_dump "$@"; exit 0 ;;
+esac
 
 PGURL="$1"; shift
 
@@ -217,7 +316,7 @@ export PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
 # あとから破壊的なサブコマンドを足した人が呼び忘れても何も起きない。
 case "$sub" in
   reset|restore) assert_writable_target ;;
-  counts|dump)   ;;   # 読み取りのみ。移送元（Railway）に対して使う
+  counts|dump)   ;;   # 読み取りのみ。移送元に対しても使える
   *)             usage ;;
 esac
 

@@ -139,16 +139,45 @@ terraform output -raw github_actions_service_account
 
 **前日までに `docker pull postgres:16-alpine` を済ませる**（411MB。当日に引くと待ち時間になる）。
 
+### 1. 移送元のダンプを取る（**人間が手元で行う**）
+
+Railway の Postgres には TCP プロキシが無く、外から接続できない。
+**ダンプの取得は依頼者が手元で行い、ファイルを受け渡す**（REQ-0054 で決めた）。
+このリポジトリから移送元へ接続する経路は存在しない。
+
+```bash
+./scripts/migrate-data.sh dump "$RAILWAY_DATABASE_URL" prod.sql
+```
+
+**`pg_dump` を手で叩かず、この script を通す。** 必要なオプションが決まっており、
+**手で打つとパスワードが `ps` に出る**（script は接続情報を環境変数へ分解する）。
+`psql` / `pg_dump` が入っていない環境では docker で動く。
+
+やむを得ず直接叩く場合、**次の 3 つは必須である。**
+
+| オプション | 無いとどうなるか |
+|---|---|
+| `--no-owner` | 移送先に Railway のロールが無く、所有者の付け替えで restore が落ちる |
+| `--no-acl` | 同上。権限の付与先が存在しない |
+| `--format=plain` | `restore` と `counts-dump` がテキスト形式を前提にしている |
+
+そのときも `PGPASSWORD` などに逃がし、URL をコマンド行に置かないこと。
+
+### 2. 移送先へ流し込む
+
 ```bash
 cloud-sql-proxy --port 5434 tosyo-api-504104:asia-northeast1:pod-admin &
 
-./scripts/migrate-data.sh counts  "$SRC_URL" > src.txt    # 移送元。読み取りのみ
-./scripts/migrate-data.sh dump    "$SRC_URL" prod.sql     # 読み取りのみ
-./scripts/migrate-data.sh reset   "$DST_URL"              # **破壊的**
-./scripts/migrate-data.sh restore "$DST_URL" prod.sql     # **破壊的**
-./scripts/migrate-data.sh counts  "$DST_URL" > dst.txt
-./scripts/migrate-data.sh compare src.txt dst.txt         # 差があれば異常終了
+./scripts/migrate-data.sh counts-dump prod.sql   > src.txt   # 移送元の件数（DB に繋がない）
+./scripts/migrate-data.sh reset   "$DST_URL"                 # **破壊的**
+./scripts/migrate-data.sh restore "$DST_URL" prod.sql        # **破壊的**
+./scripts/migrate-data.sh counts  "$DST_URL"     > dst.txt
+./scripts/migrate-data.sh compare src.txt dst.txt            # 差があれば異常終了
 ```
+
+**移送元の件数はダンプそのものから数える**（`counts-dump`）。移送元に接続できない
+からでもあるが、そのほうが正確でもある。理由は `migrate-data.sh` の
+`cmd_counts_dump` のコメントを参照。
 
 - **`reset` は必ず実行する。** 移送先には既にスキーマが入っており
   （REQ-0054 PR 1 で migrate Job を流したため）、`pg_dump` の `CREATE TABLE` が衝突する。
@@ -160,6 +189,7 @@ cloud-sql-proxy --port 5434 tosyo-api-504104:asia-northeast1:pod-admin &
   **除外ではなく許可にしてある** — 除外は空振りしたときに通ってしまい、
   空文字を渡すと `PG*` の既定接続（`railway run` の下では移送元そのもの）に落ちる
 - **突合は `compare` にやらせる。** 枠の終わりに 2 画面を見比べる作業にしない
+  （`counts-dump` と `counts` の出力が一致することは検証済み）
 - `alembic_version` はダンプに含まれるので、移送後の migrate Job は no-op になる。
   **それでも流す。** スキーマが揃っていることの確認を兼ねる
 - `restore` は `--single-transaction` で流し、最後に `VACUUM ANALYZE` する。
