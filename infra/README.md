@@ -2,7 +2,7 @@
 
 POD Admin の GCP リソースをコードで管理する。設計の詳細は
 `docs/superpowers/specs/2026-08-27-gcp-migration-design.md`、
-判断の記録は `docs/02-decisions/ADR-0026`〜`ADR-0028`。
+判断の記録は `docs/02-decisions/ADR-0026`〜`ADR-0028`、`ADR-0030`、`ADR-0031`。
 
 ## 構成
 
@@ -44,38 +44,73 @@ Cloud Run のサービスと Job は、**Google 公開のサンプルイメー�
 Terraform はイメージのタグを `ignore_changes` で無視するので、
 デプロイのたびに差分が出ることはない。
 
-### 3. イメージを作って入れる
+### 3. 最初のイメージを入れる
+
+**2 回目以降は手で入れない。** `main` にマージすれば
+`.github/workflows/deploy-staging.yml` が入れる（下記「デプロイ」）。
+ここが要るのは、ワークフローがまだ無い環境を立ち上げる初回だけである。
 
 ```bash
 cd envs/staging
 REGISTRY=$(terraform output -raw artifact_registry_url)
 API_URL=$(terraform output -raw next_public_api_url)
+TAG=$(git rev-parse HEAD)
 gcloud auth configure-docker "${REGISTRY%%/*}"
 
-# API（と migrate / worker Job は同じイメージ）
+# API（migrate / worker Job も同じイメージ）
 docker buildx build --platform linux/amd64 --target production \
-  -t "$REGISTRY/api:latest" --push ../../../api
+  -t "$REGISTRY/api:$TAG" --push ../../../api
 
 # 管理画面。API の向き先はビルド時に焼き込まれる
 docker buildx build --platform linux/amd64 --target production \
   --build-arg "NEXT_PUBLIC_API_URL=$API_URL" \
-  -t "$REGISTRY/web:latest" --push ../../../web
+  -t "$REGISTRY/web:$TAG" --push ../../../web
 
-gcloud run deploy pod-admin-api --image "$REGISTRY/api:latest" --region asia-northeast1
-gcloud run deploy pod-admin-web --image "$REGISTRY/web:latest" --region asia-northeast1
-gcloud run jobs update pod-admin-migrate --image "$REGISTRY/api:latest" --region asia-northeast1
-gcloud run jobs update pod-admin-worker  --image "$REGISTRY/api:latest" --region asia-northeast1
-```
-
-### 4. マイグレーションを流す
-
-```bash
+# 順序は deploy.yml と同じ。マイグレーションが先（ADR-0028）
+gcloud run jobs update pod-admin-migrate --image "$REGISTRY/api:$TAG" --region asia-northeast1
 gcloud run jobs execute pod-admin-migrate --region asia-northeast1 --wait
+gcloud run deploy pod-admin-api --image "$REGISTRY/api:$TAG" --region asia-northeast1
+gcloud run deploy pod-admin-web --image "$REGISTRY/web:$TAG" --region asia-northeast1
+gcloud run jobs update pod-admin-worker --image "$REGISTRY/api:$TAG" --region asia-northeast1
 ```
+
+**タグに `latest` を使わない。** 動いているリビジョンからコミットが辿れなくなる。
 
 **API イメージの起動コマンドにマイグレーションは含まれていない。**
 複数インスタンスが同時に起動すると alembic が競合して起動そのものが壊れるため、
 独立した Job として流す（`api/Dockerfile` のコメントを参照）。
+
+## デプロイ
+
+`main` へのマージで GitHub Actions がステージングに反映する（ADR-0028）。
+手順の本体は `.github/workflows/deploy.yml`、呼び出し側は `deploy-staging.yml`。
+
+```
+build api → build web → migrate Job 実行 → api 反映 → web 反映 → worker のイメージを揃える → 疎通確認
+```
+
+- 認証は Workload Identity 連携。**鍵 JSON は存在しない**
+- イメージのタグはコミット SHA。動いているリビジョンからコミットが一意に辿れる
+- `NEXT_PUBLIC_API_URL` はワークフローに書かず、デプロイ済みの API から引く
+
+ワークフローに書く 2 つの値は `terraform output` から取れる。
+
+```bash
+cd envs/staging
+terraform output -raw github_actions_workload_identity_provider
+terraform output -raw github_actions_service_account
+```
+
+**`terraform plan` / `apply` は CI では動かさない**（ADR-0031）。
+差分確認に state と Secret Manager の読み取りが要り、それは DB パスワードを
+読める権限と等しいためである。CI がやるのは `fmt` と `validate` だけ
+（`scripts/terraform-check.sh`）。
+
+そのため運用は次の順になる。**Pull Request は適用済みの構成を記録するもの**である。
+
+1. 手元で `terraform apply` まで済ませる
+2. `terraform plan -detailed-exitcode` が差分なしを返すことを確認する
+3. その結果を添えて Pull Request を出す
 
 ## Terraform が管理しないもの
 
@@ -83,6 +118,7 @@ gcloud run jobs execute pod-admin-migrate --region asia-northeast1 --wait
 |---|---|---|
 | state バケット | `scripts/bootstrap-state-bucket.sh` | 鶏卵 |
 | Cloud Run のイメージタグ | デプロイ（CI / gcloud） | apply のたびに巻き戻るため |
+| `terraform apply` そのもの | 作業者の手元 | CI に state と機密の読み取り権限を渡さないため（ADR-0031） |
 | `sendgrid-api-key` の中身 | 人間（`gcloud secrets versions add`） | 値をリポジトリにも state にも置かない |
 | 予算アラート | プロジェクト所有者 | 請求先アカウントの権限が要る |
 

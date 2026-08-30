@@ -1,0 +1,25 @@
+name: deploy-staging
+
+# main へのマージでステージングへ反映する（ADR-0028）。
+# 手順の実体は deploy.yml にある。
+
+on:
+  push:
+    branches: [main]
+  # 反映だけをやり直したいときのために手動でも起動できるようにする。
+  # **main 以外から起動しても GCP の認証で落ちる**（github-oidc の IAM 条件）。
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      project_id: tosyo-api-stg
+      region: asia-northeast1
+      # 値の出どころは infra/envs/staging の terraform output。
+      # 機密ではない（識別子であって資格情報ではない）ため、そのまま書く。
+      workload_identity_provider: projects/644320531544/locations/global/workloadIdentityPools/github/providers/github
+      service_account: pod-admin-deployer@tosyo-api-stg.iam.gserviceaccount.com

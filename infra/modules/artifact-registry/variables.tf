@@ -27,3 +27,9 @@ variable "delete_older_than_days" {
   type        = number
   default     = 30
 }
+
+variable "writer_members" {
+  description = "イメージを push できる IAM メンバー（serviceAccount:... 形式）"
+  type        = list(string)
+  default     = []
+}

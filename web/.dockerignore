@@ -1,0 +1,24 @@
+# ビルドコンテキストは web/ なので、リポジトリ直下の .git はもともと入らない。
+# ここで効くのは、ローカルで docker build したときに node_modules（600MB 超）や
+# 古い .next が送られる・混ざるのを止めることである。
+# CI は素のチェックアウトなのでどれも存在しない。
+node_modules/
+.next/
+coverage/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.vercel/
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+
+# IDE
+.idea/
+.vscode/
+
+# Misc
+.DS_Store

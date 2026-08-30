@@ -62,6 +62,13 @@ module "service_accounts" {
       description   = "Cloud Scheduler がワーカー Job を起動するのに使う"
       project_roles = []
     }
+    "pod-admin-deployer" = {
+      display_name = "POD Admin deployer"
+      description  = "GitHub Actions がデプロイに使う（鍵 JSON は作らない。ADR-0028）"
+      # イメージの push はリポジトリ単位、実行 ID のなりすましは SA 単位で付ける。
+      # プロジェクト全体に要るのは Cloud Run の更新権限だけ。
+      project_roles = ["roles/run.admin"]
+    }
   }
 
   depends_on = [module.services]
@@ -71,6 +78,7 @@ locals {
   api_member       = module.service_accounts.members["pod-admin-api"]
   worker_member    = module.service_accounts.members["pod-admin-worker"]
   scheduler_member = module.service_accounts.members["pod-admin-scheduler"]
+  deployer_member  = module.service_accounts.members["pod-admin-deployer"]
 
   # DB とファイルとシークレットに触るのは api と worker だけ。
   data_plane_members = [local.api_member, local.worker_member]
@@ -84,7 +92,31 @@ module "artifact_registry" {
   name       = "pod-admin"
   labels     = local.labels
 
+  writer_members = [local.deployer_member]
+
   depends_on = [module.services]
+}
+
+module "github_oidc" {
+  source = "../../modules/github-oidc"
+
+  project_id        = var.project_id
+  github_repository = var.github_repository
+
+  impersonated_service_account_ids = [module.service_accounts.ids["pod-admin-deployer"]]
+
+  depends_on = [module.services]
+}
+
+# Cloud Run のリビジョンを作るには、そのリビジョンが名乗る実行 ID に対する
+# なりすまし権限が要る。**プロジェクト全体には付けない。**
+# 全体に付けると、あとから増えた権限の強い SA まで自動的に名乗れてしまう。
+resource "google_service_account_iam_member" "deployer_act_as" {
+  for_each = toset(["pod-admin-api", "pod-admin-web", "pod-admin-worker"])
+
+  service_account_id = module.service_accounts.ids[each.key]
+  role               = "roles/iam.serviceAccountUser"
+  member             = local.deployer_member
 }
 
 module "gcs" {
@@ -191,8 +223,17 @@ locals {
     SENDGRID_FROM_EMAIL = var.sendgrid_from_email
     CONTACT_EMAIL       = var.contact_email
 
+    # **Cloud Run は 1 サービスに 2 つの URL を割り当てる**（旧形式の
+    # `<service>-<hash>-<region>.a.run.app` と、新形式の
+    # `<service>-<project number>.<region>.run.app`）。どちらも公開されていて等しく届くので、
+    # 片方だけを許可すると、もう片方で開いた利用者はログインすら通らない
+    # （プリフライトが 400 "Disallowed CORS origin" で落ち、画面には何も出ない）。
+    # `uri` は 1 つしか返さないので `urls` を使う。
+    #
     # CORS_ORIGINS は list[str] なので JSON で渡す（pydantic-settings の仕様）。
-    CORS_ORIGINS           = jsonencode([module.web.uri])
+    CORS_ORIGINS = jsonencode(module.web.urls)
+
+    # 一方こちらはメール本文に載る。**宛先は 1 つに定める**ので uri のままにする。
     ADMIN_BASE_URL         = module.web.uri
     MANUFACTURER_LOGIN_URL = "${module.web.uri}/manufacturer-login"
   }
