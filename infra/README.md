@@ -133,6 +133,51 @@ terraform output -raw github_actions_service_account
 2. `terraform plan -detailed-exitcode` が差分なしを返すことを確認する
 3. その結果を添えて Pull Request を出す
 
+## データの移送（カットオーバー）
+
+`scripts/migrate-data.sh` が移送の道具である。**当日その場で手順を組み立てない。**
+
+**前日までに `docker pull postgres:16-alpine` を済ませる**（411MB。当日に引くと待ち時間になる）。
+
+```bash
+cloud-sql-proxy --port 5434 tosyo-api-504104:asia-northeast1:pod-admin &
+
+./scripts/migrate-data.sh counts  "$SRC_URL" > src.txt    # 移送元。読み取りのみ
+./scripts/migrate-data.sh dump    "$SRC_URL" prod.sql     # 読み取りのみ
+./scripts/migrate-data.sh reset   "$DST_URL"              # **破壊的**
+./scripts/migrate-data.sh restore "$DST_URL" prod.sql     # **破壊的**
+./scripts/migrate-data.sh counts  "$DST_URL" > dst.txt
+./scripts/migrate-data.sh compare src.txt dst.txt         # 差があれば異常終了
+```
+
+- **`reset` は必ず実行する。** 移送先には既にスキーマが入っており
+  （REQ-0054 PR 1 で migrate Job を流したため）、`pg_dump` の `CREATE TABLE` が衝突する。
+  「今どうなっているか」で分岐せず、常に同じ状態から始める
+- **破壊的な操作は「許可した宛先」でしか動かない。** Cloud SQL Auth Proxy 越し
+  （ループバック）で、かつ繋がった先が `pod_admin/pod_admin` であることを
+  **サーバに問い合わせて**確かめ、最後に人間へ確認を求める。
+  移送元の Railway は `railway/postgres` なので、ホスト名でも IP でも必ず止まる。
+  **除外ではなく許可にしてある** — 除外は空振りしたときに通ってしまい、
+  空文字を渡すと `PG*` の既定接続（`railway run` の下では移送元そのもの）に落ちる
+- **突合は `compare` にやらせる。** 枠の終わりに 2 画面を見比べる作業にしない
+- `alembic_version` はダンプに含まれるので、移送後の migrate Job は no-op になる。
+  **それでも流す。** スキーマが揃っていることの確認を兼ねる
+- `restore` は `--single-transaction` で流し、最後に `VACUUM ANALYZE` する。
+  **統計が無いまま動作確認に入ると、「壊れている」のか「統計がまだ無い」のかを
+  区別できない。** その確認が、後戻りできない手順 8 の判断材料になる
+
+ファイルは旧バケット（個人プロジェクト `lively-transit-334610`）から複製する。
+**`gcloud storage rsync` は使えない**（`key.json` のサービスアカウントは
+オブジェクトを読めるが `storage.buckets.get` を持たない）。一度ローカルへ降ろす。
+
+```bash
+CLOUDSDK_CONFIG=$(mktemp -d) gcloud auth activate-service-account --key-file=../key.json
+gcloud storage cp -r gs://pod-admin-prod/prod /tmp/stage/     # 旧 → ローカル（読み取りのみ）
+gcloud storage rsync -r /tmp/stage gs://tosyo-pod-admin-prod  # ローカル → 新
+```
+
+**旧バケットを宛先にしない。** 約 30MB なので、当日の差分取り込みも全件やり直してよい。
+
 ## Terraform が管理しないもの
 
 | もの | 誰がやるか | なぜ |
