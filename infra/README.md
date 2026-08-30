@@ -2,17 +2,29 @@
 
 POD Admin の GCP リソースをコードで管理する。設計の詳細は
 `docs/superpowers/specs/2026-08-27-gcp-migration-design.md`、
-判断の記録は `docs/02-decisions/ADR-0026`〜`ADR-0028`、`ADR-0030`、`ADR-0031`。
+判断の記録は `docs/02-decisions/ADR-0026`〜`ADR-0028`、`ADR-0030`〜`ADR-0032`。
 
 ## 構成
 
 ```
 infra/
-├── modules/       環境をまたいで共用する部品
+├── modules/
+│   ├── stack/     アプリ 1 環境ぶんの構成（下記）
+│   └── その他/     汎用の GCP ラッパー（cloud-run-service, cloud-sql, ...）
 ├── envs/
-│   └── staging/   ステージング（tosyo-api-stg）
+│   ├── staging/   ステージング（tosyo-api-stg）
+│   └── prod/      本番（tosyo-api-504104）
 └── scripts/       state バケットのブートストラップ
 ```
+
+**`modules/stack/` がアプリを知っている唯一の層である。** その下の `modules/*` は
+汎用の GCP ラッパーで、POD Admin のことを何も知らない。
+「api と worker と migrate が同じイメージで動く」「`CORS_ORIGINS` は JSON で渡す」
+といった知識はすべて `stack` に集める。
+
+**`envs/<env>/` は値だけを持つ。** そのため
+`diff infra/envs/staging/main.tf infra/envs/prod/main.tf` が、そのまま
+**「ステージングと本番の違い」の一覧**になる。ここを環境ごとに複製しない（ADR-0027）。
 
 **環境ごとにプロジェクトが分かれる。** そのためリソース名に環境サフィックスは付けない
 （`pod-admin-api` はステージングにも本番にも 1 つずつ存在する）。
@@ -25,7 +37,8 @@ infra/
 Terraform 自身の state 置き場は Terraform で作れない（鶏卵）ので、ここだけ手で作る。
 
 ```bash
-./scripts/bootstrap-state-bucket.sh tosyo-api-stg
+./scripts/bootstrap-state-bucket.sh tosyo-api-stg      # ステージング
+./scripts/bootstrap-state-bucket.sh tosyo-api-504104   # 本番
 ```
 
 **state には DB のパスワードが平文で入る。** バージョニングを有効にし、
@@ -34,7 +47,7 @@ Terraform 自身の state 置き場は Terraform で作れない（鶏卵）の�
 ### 2. apply する
 
 ```bash
-cd envs/staging
+cd envs/staging   # または envs/prod
 terraform init
 terraform apply
 ```
@@ -46,12 +59,11 @@ Terraform はイメージのタグを `ignore_changes` で無視するので、
 
 ### 3. 最初のイメージを入れる
 
-**2 回目以降は手で入れない。** `main` にマージすれば
-`.github/workflows/deploy-staging.yml` が入れる（下記「デプロイ」）。
-ここが要るのは、ワークフローがまだ無い環境を立ち上げる初回だけである。
+**2 回目以降は手で入れない。** 反映はワークフローがやる（下記「デプロイ」）。
+ここが要るのは、**Cloud Run のサービスがまだサンプルイメージで動いている初回だけ**である。
 
 ```bash
-cd envs/staging
+cd envs/staging   # または envs/prod
 REGISTRY=$(terraform output -raw artifact_registry_url)
 API_URL=$(terraform output -raw next_public_api_url)
 TAG=$(git rev-parse HEAD)
@@ -82,8 +94,17 @@ gcloud run jobs update pod-admin-worker --image "$REGISTRY/api:$TAG" --region as
 
 ## デプロイ
 
-`main` へのマージで GitHub Actions がステージングに反映する（ADR-0028）。
-手順の本体は `.github/workflows/deploy.yml`、呼び出し側は `deploy-staging.yml`。
+手順の本体は `.github/workflows/deploy.yml` にあり、環境ごとの呼び出し側から使う。
+**契機が環境で違う**（ADR-0028）。
+
+| 環境 | ワークフロー | 契機 |
+|---|---|---|
+| ステージング | `deploy-staging.yml` | `main` へのマージで**自動** |
+| 本番 | `deploy-prod.yml` | **手動実行のみ**（`deploy-prod` と入力して確認する） |
+
+**本番は `main` への push では動かない。** 取り違えの事故が「反映されない」で
+済まないため（`deploy.yml` は最初に migrate Job を流すので本番のスキーマが動く）、
+呼び出し側に確認の入力を置いている。
 
 ```
 build api → build web → migrate Job 実行 → api 反映 → web 反映 → worker のイメージを揃える → 疎通確認
@@ -96,7 +117,7 @@ build api → build web → migrate Job 実行 → api 反映 → web 反映 →
 ワークフローに書く 2 つの値は `terraform output` から取れる。
 
 ```bash
-cd envs/staging
+cd envs/staging   # または envs/prod
 terraform output -raw github_actions_workload_identity_provider
 terraform output -raw github_actions_service_account
 ```
@@ -143,8 +164,12 @@ Terraform はシークレットの入れ物と `REPLACE_ME` というプレー�
 
 ```bash
 printf '%s' "SG.xxxxx" | gcloud secrets versions add sendgrid-api-key \
-  --project=tosyo-api-stg --data-file=-
+  --project=tosyo-api-stg --data-file=-       # 本番は --project=tosyo-api-504104
 ```
+
+**本番では必ず実物を入れる。** ステージングと違い、配送通知とメーカー向けダイジェストが
+実際の宛先に届かなくなる。プレースホルダのままでも例外は握られるので、
+**画面上は成功したように見える。**
 
 Terraform は追加したバージョンを `ignore_changes` で無視するので、
 以後の `apply` でプレースホルダに戻ることはない。

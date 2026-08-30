@@ -1,12 +1,13 @@
 name: deploy
 
 # 環境ごとの差は入力だけにして、手順そのものは 1 か所に置く。
-# 本番用の呼び出し側は REQ-0054（カットオーバー）で足す。
+# 呼び出し側は deploy-staging.yml（main へのマージで自動）と deploy-prod.yml（手動）。
 # **ここを複製すると、ステージングで直した手順が本番に伝わらなくなる**（ADR-0027 と同じ理由）。
 #
 # 認証は Workload Identity 連携で行う（ADR-0028）。鍵 JSON は存在しない。
-# **借りられるのは main の実行だけ**で、その制約は GCP 側の IAM 条件が持つ
-# （infra/modules/github-oidc）。ワークフローの書き方では守られない。
+# **借りられるのは「main 上のこのファイルの実行」だけ**で、その制約は
+# GCP 側の IAM 条件（job_workflow_ref）が持つ（infra/modules/github-oidc、ADR-0033）。
+# **ワークフローの書き方では守られない。**
 
 on:
   workflow_call:
@@ -48,7 +49,7 @@ jobs:
       # 書かない。**書き忘れたときに既定のプロジェクトへ静かに向く**のを防ぐ。
       CLOUDSDK_CORE_PROJECT: ${{ inputs.project_id }}
       CLOUDSDK_RUN_REGION: ${{ inputs.region }}
-      # リポジトリ名 pod-admin の正本は infra/envs/*/main.tf の
+      # リポジトリ名 pod-admin の正本は infra/modules/stack/main.tf の
       # module "artifact_registry" の name。
       IMAGE_BASE: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/pod-admin
       # イメージのタグはコミット SHA にする。動いているリビジョンから

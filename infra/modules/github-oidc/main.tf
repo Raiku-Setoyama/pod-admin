@@ -1,3 +1,8 @@
+locals {
+  # GitHub の job_workflow_ref クレームと同じ形（owner/repo/パス@ref）。
+  job_workflow_ref = "${var.github_repository}/${var.allowed_workflow}@${var.allowed_ref}"
+}
+
 # GitHub Actions を GCP に認証させるための連携（ADR-0028）。
 # **サービスアカウントの鍵 JSON は作らない。** GitHub が実行のたびに発行する
 # 短命なトークンを GCP 側で検証し、その場でサービスアカウントの権限を貸す。
@@ -17,25 +22,28 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   description                        = "GitHub Actions OIDC"
 
   attribute_mapping = {
-    "google.subject"       = "assertion.sub"
-    "attribute.repository" = "assertion.repository"
+    "google.subject"             = "assertion.sub"
+    "attribute.repository"       = "assertion.repository"
+    "attribute.job_workflow_ref" = "assertion.job_workflow_ref"
   }
 
   # **絞りは 2 段階とも必要である。**
   #
-  # 1. リポジトリ — これが無いと、任意の GitHub リポジトリから同じ権限を借りられる。
-  #    GitHub の OIDC トークンは全世界共通の発行者から出るため、
-  #    「誰が持ってきたトークンか」をここで絞らないと事実上の公開になる（ADR-0028）
-  # 2. ref — **リポジトリ条件だけでは足りない。** 同じリポジトリの他のワークフローも
-  #    同じ条件を満たす。実際 .github/workflows/claude.yml は issue コメントを契機に
-  #    id-token: write で動くので、そこからデプロイ用 SA を名乗れてしまう。
-  #    main に限れば、経路は「人間がマージする」1 本になる（ADR-0031）
+  # 1. リポジトリ — 無いと任意の GitHub リポジトリから借りられる（ADR-0028）
+  # 2. **job_workflow_ref — どのワークフローの実行かまで絞る**
   #
-  # ワークフロー側の書き方（push の対象ブランチなど）では守れない。
-  # **ブランチに push できる者がその定義ごと差し替えられる**からである。
+  # 2 が ref ではなく job_workflow_ref なのには理由がある。**ref では防げない。**
+  # issue_comment / issues を契機に動くワークフロー（.github/workflows/claude.yml は
+  # id-token: write を持つ）では、GitHub が ref に**既定ブランチ**を入れる。
+  # マージは起きていないのに `refs/heads/main` になるので、
+  # `assertion.ref == 'refs/heads/main'` は素通しになる（ADR-0033）。
+  #
+  # job_workflow_ref は「owner/repo/パス@ref」の 1 つのクレームに
+  # リポジトリ・ワークフローファイル・ref の 3 つが入る。再利用ワークフローを
+  # uses: で呼んだジョブでは、**呼ばれた側**（deploy.yml）の値になる。
   attribute_condition = join(" && ", [
     "assertion.repository == '${var.github_repository}'",
-    "assertion.ref == '${var.allowed_ref}'",
+    "assertion.job_workflow_ref == '${local.job_workflow_ref}'",
   ])
 
   oidc {
@@ -49,5 +57,5 @@ resource "google_service_account_iam_member" "impersonators" {
 
   service_account_id = each.value
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.this.name}/attribute.repository/${var.github_repository}"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.this.name}/attribute.job_workflow_ref/${local.job_workflow_ref}"
 }

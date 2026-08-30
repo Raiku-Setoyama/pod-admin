@@ -3,12 +3,14 @@ resource "google_artifact_registry_repository" "this" {
   location      = var.region
   repository_id = var.name
   format        = "DOCKER"
-  description   = "POD Admin のコンテナイメージ"
-  labels        = var.labels
 
-  docker_config {
-    immutable_tags = false
-  }
+  # **docker_config は宣言しない。** immutable_tags の既定は false で、
+  # GCP の API は既定のときこのブロックを返さない。宣言すると、
+  # **作りたての環境でだけ**「1 件 change」が出て 2 回 apply が要る
+  # （state に入るまで差分が消えない）。タグはコミット SHA で使い回さないので、
+  # immutable_tags を true にする実益も無い。
+  description = var.description
+  labels      = var.labels
 
   # 古いイメージを溜め込まない。keep が delete より優先されるので、直近 10 個は
   # 経過日数にかかわらず残る。
