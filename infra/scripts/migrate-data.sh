@@ -280,6 +280,35 @@ cmd_dump() {
   echo "取得: $out ($(wc -c < "$out" | tr -d ' ') bytes)"
 }
 
+# **件数が合っていてもアプリは動かない。**
+#
+# 移送元のコード世代が古ければ、ダンプのスキーマも古い。移送先では新しい
+# コードが動くので、存在しない列を触って 500 になる。**実際に踏んだ** —
+# 本番で manufacturing_data.lease_expires_at が無く、受注一覧が落ちた
+# （REQ-0054）。**そのとき件数の突合は通っていた。** 件数は関係ないからである。
+#
+# 手順書に「migrate Job を流す」と書くだけでは、飛ばした人を止められない。
+# 流し込んだ直後に、機械が気づいて言う。
+assert_schema_at_head() {
+  local head db_rev
+  head=$(python3 "$(dirname "$0")/alembic-head.py" "$(dirname "$0")/../../api/alembic/versions" 2>/dev/null || echo "")
+  db_rev=$(pg psql -Atc "SELECT version_num FROM alembic_version" 2>/dev/null || echo "")
+
+  case "$head" in
+    "")      echo "警告: alembic のヘッドを判定できませんでした。手動で確認してください。" >&2 ;;
+    MULTI:*) echo "警告: alembic のヘッドが複数あります（${head#MULTI:}）。本番の起動が壊れます。マージマイグレーションが要ります。" >&2 ;;
+    "$db_rev") echo "スキーマはコードに追いついています（${db_rev}）。" ;;
+    *)
+      echo "" >&2
+      echo "**このままではアプリが 500 になります。**" >&2
+      echo "  流し込んだスキーマ: ${db_rev:-（不明）}" >&2
+      echo "  コードが要求する  : ${head}" >&2
+      echo "  → migrate Job を実行してください（カットオーバー手順 5）:" >&2
+      echo "     gcloud run jobs execute pod-admin-migrate --project=<PROJECT> --region=<REGION> --wait" >&2
+      ;;
+  esac
+}
+
 cmd_reset() {
   # **カットオーバーの直前に必ず実行する。** PR 1 で migrate Job を流したので
   # 移送先にはスキーマが入っており、pg_dump の CREATE TABLE が衝突する。
@@ -317,6 +346,7 @@ cmd_restore() {
     END
     \$\$;"
   echo "流し込みと VACUUM ANALYZE が完了。"
+  assert_schema_at_head
 }
 
 [ $# -ge 2 ] || usage
