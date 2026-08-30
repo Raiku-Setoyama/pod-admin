@@ -137,7 +137,7 @@ terraform output -raw github_actions_service_account
 
 `scripts/migrate-data.sh` が移送の道具である。**当日その場で手順を組み立てない。**
 
-**前日までに `docker pull postgres:16-alpine` を済ませる**（411MB。当日に引くと待ち時間になる）。
+**前日までに `docker pull postgres:17-alpine` を済ませる**（400MB 超。当日に引くと待ち時間になる）。
 
 ### 1. 移送元のダンプを取る（**人間が手元で行う**）
 

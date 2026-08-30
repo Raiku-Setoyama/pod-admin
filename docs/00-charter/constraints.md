@@ -14,7 +14,7 @@ updated: 2026-08-06
 |---|---|---|
 | フロントエンド | Next.js 16 / React 19 / TypeScript 5 / Tailwind CSS 4 / Radix UI / React Hook Form + Zod / SWR | `web/package.json` |
 | バックエンド | FastAPI / SQLAlchemy 2（async + asyncpg）/ Alembic / Pydantic 2 | `api/pyproject.toml` |
-| データベース | PostgreSQL 16 | 部分ユニークインデックス（NULLS NOT DISTINCT, PG15+）を利用 |
+| データベース | PostgreSQL 17（本番・ステージング）/ 16（ローカル開発） | 部分ユニークインデックス（NULLS NOT DISTINCT, PG15+）を利用。**本番の実測は 17.11**（REQ-0054 で確認） |
 | 認証 | JWT（python-jose, HS256）/ passlib + bcrypt | ADR-0001 |
 | 帳票（PDF） | WeasyPrint + Jinja2 | ADR-0014 |
 | メール送信 | SendGrid | ADR-0014 |

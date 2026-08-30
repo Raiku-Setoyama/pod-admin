@@ -25,14 +25,15 @@
 #
 # ## macOS には psql が無い
 #
-# あればそれを使い、無ければ docker の postgres:16-alpine で実行する。
-# **当日に初めて pull すると 411MB の取得が待ち時間になる。**
-# 前日までに `docker pull postgres:16-alpine` を済ませておく。
+# あればそれを使い、無ければ docker の postgres:17-alpine で実行する。
+# **当日に初めて pull すると 400MB 超の取得が待ち時間になる。**
+# 前日までに `docker pull postgres:17-alpine` を済ませておく。
 set -euo pipefail
 
 # 移送先の Cloud SQL に合わせる。正本は infra/modules/cloud-sql/main.tf の
-# database_version（POSTGRES_16）。**client を server より古くしない。**
-readonly PG_IMAGE="postgres:16-alpine"
+# database_version（POSTGRES_17）。**client を server より古くしない。**
+# 17 系のダンプは `\restrict` を含み、**psql 16 では解釈できない。**
+readonly PG_IMAGE="postgres:17-alpine"
 
 # 破壊的な操作を許可する宛先。Terraform が決めている値と揃える
 # （infra/modules/stack/main.tf の cloud_sql: database_name / user_name）。
@@ -302,7 +303,19 @@ cmd_restore() {
   # **統計を作ってから引き渡す。** 直後の動作確認（カットオーバー手順 7）が
   # 後戻りできない手順 8 の判断材料になる。統計が無いと素の全表走査になり、
   # 「移送が壊れている」のか「統計がまだ無い」のかを操作者が区別できない。
-  pg psql -v ON_ERROR_STOP=1 -q -c "VACUUM ANALYZE;"
+  #
+  # public のテーブルだけを対象にする。**素の `VACUUM ANALYZE` はシステム
+  # カタログにも触れにいって WARNING を出す**（pg_parameter_acl など、
+  # 移送に使う権限では触れない）。当日の出力に警告を混ぜない。
+  pg psql -v ON_ERROR_STOP=1 -q -c "
+    DO \$\$
+    DECLARE t record;
+    BEGIN
+      FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+        EXECUTE format('ANALYZE public.%I', t.tablename);
+      END LOOP;
+    END
+    \$\$;"
   echo "流し込みと VACUUM ANALYZE が完了。"
 }
 
