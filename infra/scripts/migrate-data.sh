@@ -67,6 +67,21 @@ for k, v in (("PGHOST", p.hostname), ("PGPORT", p.port),
         print(f"export {k}={shlex.quote(str(v))}")
 PYEOF
 )"
+  # **ホストが取れなければ、ここで止める。**
+  # 空のまま進むと libpq が既定の Unix ソケットへ落ち、
+  # 「/var/run/postgresql/.s.PGSQL.5432 が無い」という**接続先と無関係な
+  # エラー**になる。原因（URL が空 / ホストが空）が読み取れない。
+  #
+  # Railway の DATABASE_PUBLIC_URL は、TCP プロキシを有効化していないと
+  # `postgresql://user:pass@:/railway` のようにホストとポートが空で返る。
+  if [ -z "${PGHOST-}" ]; then
+    die "接続先のホストがありません。渡した URL を確認してください。
+  - 変数が空ではないか（例: \$RAILWAY_DATABASE_URL が未設定）
+  - ホストが空の URL ではないか（例: postgresql://user:pass@:/railway）
+    Railway の DATABASE_PUBLIC_URL は TCP プロキシを有効化するまでこの形になる
+  - 内部向けの URL ではないか（postgres.railway.internal は外から解決できない）"
+  fi
+
   # cloud-sql-proxy はホスト側で待ち受ける。**コンテナの中の 127.0.0.1 は
   # コンテナ自身を指す**ので、docker を使うときだけ名前を差し替える。
   case "${PGHOST-}" in
@@ -96,10 +111,10 @@ pg() {
 # URL の見た目では区別できないためである。
 assert_writable_target() {
   # 1. Cloud SQL へは Auth Proxy 経由でしか触らない。ループバック以外は宛先にしない
-  case "${PGHOST-}" in
+  # ホストが空の場合は parse_pgurl が既に落としている。
+  case "$PGHOST" in
     127.0.0.1|localhost|::1) ;;
-    "") die "拒否: 接続先が空です。破壊的な操作に既定接続（PG* 環境変数）は使えません。" ;;
-    *)  die "拒否: 接続先 ${PGHOST} は Cloud SQL Auth Proxy ではありません。" ;;
+    *) die "拒否: 接続先 ${PGHOST} は Cloud SQL Auth Proxy ではありません。" ;;
   esac
 
   # 2. 実際に繋がった先の身元を確かめる。**移送元の Railway は railway/postgres
