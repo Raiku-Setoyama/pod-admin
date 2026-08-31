@@ -75,6 +75,16 @@ logs/
 # Uploads (runtime generated)
 api/uploads/
 
+# データベースのダンプ。**本番の個人情報とパスワードハッシュが入る。**
+# このリポジトリは公開されているので、絶対にコミットしない（REQ-0054）。
+#
+# **意図的に広くしてある。** 追跡したい .sql ができたら、下の例のように
+# `!` で個別に戻すこと（このファイルの冒頭が記録しているとおり、
+# パスを固定しないと黙って追跡対象外になる事故が起きる）。
+*.sql
+*.dump
+!api/alembic/**/*.sql
+
 # Credentials / secrets (never commit)
 key.json
 *-key.json

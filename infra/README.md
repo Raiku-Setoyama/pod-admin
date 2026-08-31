@@ -146,7 +146,7 @@ Railway の Postgres には TCP プロキシが無く、外から接続できな
 このリポジトリから移送元へ接続する経路は存在しない。
 
 ```bash
-./scripts/migrate-data.sh dump "$RAILWAY_DATABASE_URL" prod.sql
+./scripts/migrate-data.sh dump "$RAILWAY_DATABASE_URL" ~/pod-admin-dump/prod.sql
 ```
 
 **`pg_dump` を手で叩かず、この script を通す。** 必要なオプションが決まっており、
@@ -168,9 +168,10 @@ Railway の Postgres には TCP プロキシが無く、外から接続できな
 ```bash
 cloud-sql-proxy --port 5434 tosyo-api-504104:asia-northeast1:pod-admin &
 
-./scripts/migrate-data.sh counts-dump prod.sql   > src.txt   # 移送元の件数（DB に繋がない）
+DUMP=~/pod-admin-dump/prod.sql   # **リポジトリの外**
+./scripts/migrate-data.sh counts-dump "$DUMP"    > src.txt   # 移送元の件数（DB に繋がない）
 ./scripts/migrate-data.sh reset   "$DST_URL"                 # **破壊的**
-./scripts/migrate-data.sh restore "$DST_URL" prod.sql        # **破壊的**
+./scripts/migrate-data.sh restore "$DST_URL" "$DUMP"         # **破壊的**
 ./scripts/migrate-data.sh counts  "$DST_URL"     > dst.txt
 ./scripts/migrate-data.sh compare src.txt dst.txt            # 差があれば異常終了
 ```

@@ -274,6 +274,22 @@ PYEOF
 
 cmd_dump() {
   local out="${1:?usage: dump <PGURL> <OUT>}"
+
+  # **リポジトリの中に書かせない。**
+  # ダンプには顧客の個人情報とパスワードハッシュが入る。リポジトリは公開で、
+  # api/ 配下は Dockerfile が COPY . . でイメージへ持っていく。
+  # .gitignore と .dockerignore で塞いではあるが、**そこへ置かせないほうが確実**である
+  # （実際に api/prod.sql が置かれ、どちらの除外も無い状態だった。REQ-0054）。
+  local repo out_dir
+  repo=$(cd "$(dirname "$0")/../.." && pwd -P)
+  out_dir=$(cd "$(dirname "$out")" 2>/dev/null && pwd -P) \
+    || die "出力先のディレクトリがありません: $(dirname "$out")"
+  case "$out_dir/" in
+    "$repo"/*|"$repo/") die "拒否: リポジトリの中にダンプを書けません（${out}）。
+  顧客の個人情報とパスワードハッシュが入るため、外に出してください。
+  例: ~/pod-admin-dump/prod.sql" ;;
+  esac
+
   # --no-owner / --no-acl: 移送先に Railway のロールは存在しない。
   #   付けないと restore が所有者の付け替えで落ちる。
   pg pg_dump --no-owner --no-acl --format=plain > "$out"
