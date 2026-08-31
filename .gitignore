@@ -105,3 +105,9 @@ override.tf.json
 *_override.tf.json
 .terraformrc
 terraform.rc
+
+# データベースのダンプ。**本番の個人情報とパスワードハッシュが入る。**
+# このリポジトリは公開されているので、絶対にコミットしない（REQ-0054）。
+*.sql
+*.dump
+!api/alembic/**/*.sql
