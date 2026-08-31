@@ -46,3 +46,9 @@ docs/
 # Misc
 .DS_Store
 Thumbs.db
+
+# データベースのダンプ。**Dockerfile は COPY . . で丸ごと持っていく。**
+# .gitignore で GitHub への流出は止まるが、**イメージのレイヤーには入る。**
+# 顧客の個人情報とパスワードハッシュがレジストリに残る（REQ-0054）。
+*.sql
+*.dump
