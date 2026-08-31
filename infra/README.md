@@ -209,6 +209,115 @@ gcloud storage rsync -r /tmp/stage gs://tosyo-pod-admin-prod  # ローカル →
 
 **旧バケットを宛先にしない。** 約 30MB なので、当日の差分取り込みも全件やり直してよい。
 
+## 製造データ生成を手動で動かす
+
+**どちらの環境も、受注を入れただけでは製造データは作られない。** ワーカーの
+Cloud Scheduler を止めてあるためである。**生成を見たいときは、その都度ワーカーを
+1 回起動する。**
+
+```bash
+# ステージング（**URL の上書きが要る**。下記「なぜ環境で違うのか」を参照）
+gcloud run jobs execute pod-admin-worker \
+  --project tosyo-api-stg --region asia-northeast1 \
+  --update-env-vars ILLUSTRATOR_VM_BASE_URL=http://34.84.121.166:8000 --wait
+
+# 本番（**上書きは要らない**）
+gcloud run jobs execute pod-admin-worker \
+  --project tosyo-api-504104 --region asia-northeast1 --wait
+```
+
+起動すると、その環境の `pending` を古い順に処理して終了する（`WORKER_MAX_ITEMS` 件まで）。
+**自分が入れた受注の分だけとは限らない。** 溜まっている行がまとめて処理される。
+
+### なぜ環境で違うのか
+
+| | `ILLUSTRATOR_VM_BASE_URL` | 上書き |
+|---|---|---|
+| 本番 | Terraform で設定済み | **要らない** |
+| ステージング | **空**（REQ-0053 の決定） | **要る** |
+
+ステージングを VM に繋ぎっぱなしにしないのは、illustrator-vm が 1 件ずつの直列処理で、
+**繋いだまま Scheduler が回ると本番の生成を 5 分ごとに待たせる**ためである。
+`--update-env-vars` は **その 1 回の実行にだけ**効き、Job の定義には残らない（ADR-0034）。
+
+**上書きを忘れると、生成は静かに `failed` に落ちる**（`illustrator-vm is not configured`）。
+`manufacturing_data.error_message` に理由が残るので、そこを見る。
+
+恒久的に繋ぐかどうかは、illustrator-vm を会社組織へ移送したあとに判断する（REQ-0055）。
+
+### 叩く前に見るもの
+
+```bash
+# illustrator-vm は 1 件ずつ。空でないなら、その分だけ本番の生成を待たせる
+curl -s http://34.84.121.166:8000/health
+```
+
+## 製造データ生成の疎通確認（REQ-0061）
+
+**カットオーバーの手順 11 まで、生成は一度も動かない。** ワーカーの Cloud Scheduler を
+止めてあるためである（`worker_schedule_paused`）。**戻れなくなる手順 8 より前に、
+生成が通ることをここで確かめる。**
+
+### 流す前に必ず数える
+
+以下の `psql` は、**「データの移送」節と同じ経路で叩く**（Cloud SQL Auth Proxy を立て、
+macOS には psql が無いので `postgres:17-alpine` を使う）。接続先の確かめ方も同じである。
+
+```bash
+# その環境の待ち行列。**自分が作った行だけとは限らない**
+psql -Atc "SELECT status, count(*) FROM manufacturing_data
+           WHERE status IN ('pending','generating') GROUP BY status"
+```
+
+VM の混み具合は「製造データ生成を手動で動かす」節の「叩く前に見るもの」で確かめる。
+
+### 手順
+
+```bash
+# 1. 専用の受注元を足す（実データのキャッシュに触れないため。本番のみ）
+#    キャッシュキーは (order_source_id, product_code, size, variant)
+psql -c "INSERT INTO order_sources (id, code, api_key, name, phone, postal_code,
+         address_prefecture, address_city, is_active)
+         VALUES (gen_random_uuid(), 'SMOKE_REQ0061', '<APIキー>', '[REQ-0061]疎通確認',
+         '03-0000-0061', '150-0001', '東京都', '渋谷区神宮前1-2-3', true)"
+
+# 2. v2 受注を 1 件入れる（tshirt は position が必須。design 1 レイヤーで足りる）
+curl -X POST "$API/api/v2/orders" -H "X-API-Key: $KEY" -H "Content-Type: application/json" -d '{
+  "order_number": "9990061",
+  "customer": {"name":"REQ-0061 疎通確認","postal_code":"150-0001",
+    "address_prefecture":"東京都","address_city":"渋谷区神宮前1-2-3","phone":"03-0000-0061"},
+  "items": [{"uid":"9990611","product_type":"tshirt","product_name":"[REQ-0061] 疎通確認用Tシャツ",
+    "price":0,"quantity":1,"size":"M","position":"正面","color":"白",
+    "product_code":"SMOKE-REQ0061-TSHIRT-M",
+    "source_images":[{"layer_type":"design","url":"<公開httpsのPNG>"}]}]}'
+
+# 3. ワーカーを 1 回だけ起動する（コマンドは「製造データ生成を手動で動かす」節）。
+#    **Scheduler は止めたままにする**
+
+# 4. ready になり、その環境のバケットに入ったことを確認する
+psql -Atc "SELECT status, output_filename, file_size, file_path FROM manufacturing_data
+           WHERE product_code='SMOKE-REQ0061-TSHIRT-M'"
+gcloud storage ls -l gs://<環境のバケット>/<prefix>/manufacturing_data/
+
+# 5. 発注資料 ZIP に生成物が入っていることを確認する
+#    **成果物を直接ダウンロードする管理画面のエンドポイントは無い。**
+#    /orders/{id}/manufacturing-data は v1 用の別系統で、v2 の行は 404 になる
+curl -o docs.zip "$API/api/v1/manufacturers/<メーカーID>/order-documents?order_item_ids=<明細ID>" \
+  -H "Authorization: Bearer $TOKEN" && unzip -l docs.zip
+```
+
+### 片付け
+
+**DB はカットオーバーの `reset`（DROP SCHEMA）で消えるが、GCS の生成物は消えない。**
+
+```bash
+psql -c "DELETE FROM manufacturing_data WHERE product_code='SMOKE-REQ0061-TSHIRT-M'"
+psql -c "DELETE FROM orders WHERE order_number='9990061'"
+psql -c "DELETE FROM order_sources WHERE code='SMOKE_REQ0061'"
+psql -c "DELETE FROM users WHERE email='req0061-smoke@example.com'"
+gcloud storage rm gs://<環境のバケット>/<prefix>/manufacturing_data/<生成物>
+```
+
 ## Terraform が管理しないもの
 
 | もの | 誰がやるか | なぜ |
