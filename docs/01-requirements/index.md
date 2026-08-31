@@ -69,7 +69,7 @@ Slack で流れた話も、合意した要件も、見送ったものも、す�
 | [REQ-0055](REQ-0055.md) | common | 製造データ生成VMを会社組織のGCPプロジェクトへ移し、認証なしでインターネットから到達できない状態にする | must | not-started | |
 | [REQ-0056](REQ-0056.md) | common | SQLAlchemy のモデル定義と実際のDBスキーマのズレを解消する | undecided | not-started | |
 | [REQ-0060](REQ-0060.md) | billing | 請求書PDFの支払期日ラベルの横に出る不要な文字「z」を消す | undecided | not-started | |
-| [REQ-0061](REQ-0061.md) | common | Railway を停止する前に、GCP のステージングと本番の両方で製造データが生成できることを確認する | must | not-started | |
+| [REQ-0061](REQ-0061.md) | common | Railway を停止する前に、GCP のステージングと本番の両方で製造データが生成できることを確認する | must | done | |
 
 ## priority — 採否・約束の度合い
 
