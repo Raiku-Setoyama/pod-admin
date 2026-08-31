@@ -209,6 +209,49 @@ gcloud storage rsync -r /tmp/stage gs://tosyo-pod-admin-prod  # ローカル →
 
 **旧バケットを宛先にしない。** 約 30MB なので、当日の差分取り込みも全件やり直してよい。
 
+## 製造データ生成を手動で動かす
+
+**どちらの環境も、受注を入れただけでは製造データは作られない。** ワーカーの
+Cloud Scheduler を止めてあるためである。**生成を見たいときは、その都度ワーカーを
+1 回起動する。**
+
+```bash
+# ステージング（**URL の上書きが要る**。下記「なぜ環境で違うのか」を参照）
+gcloud run jobs execute pod-admin-worker \
+  --project tosyo-api-stg --region asia-northeast1 \
+  --update-env-vars ILLUSTRATOR_VM_BASE_URL=http://34.84.121.166:8000 --wait
+
+# 本番（**上書きは要らない**）
+gcloud run jobs execute pod-admin-worker \
+  --project tosyo-api-504104 --region asia-northeast1 --wait
+```
+
+起動すると、その環境の `pending` を古い順に処理して終了する（`WORKER_MAX_ITEMS` 件まで）。
+**自分が入れた受注の分だけとは限らない。** 溜まっている行がまとめて処理される。
+
+### なぜ環境で違うのか
+
+| | `ILLUSTRATOR_VM_BASE_URL` | 上書き |
+|---|---|---|
+| 本番 | Terraform で設定済み | **要らない** |
+| ステージング | **空**（REQ-0053 の決定） | **要る** |
+
+ステージングを VM に繋ぎっぱなしにしないのは、illustrator-vm が 1 件ずつの直列処理で、
+**繋いだまま Scheduler が回ると本番の生成を 5 分ごとに待たせる**ためである。
+`--update-env-vars` は **その 1 回の実行にだけ**効き、Job の定義には残らない（ADR-0034）。
+
+**上書きを忘れると、生成は静かに `failed` に落ちる**（`illustrator-vm is not configured`）。
+`manufacturing_data.error_message` に理由が残るので、そこを見る。
+
+恒久的に繋ぐかどうかは、illustrator-vm を会社組織へ移送したあとに判断する（REQ-0055）。
+
+### 叩く前に見るもの
+
+```bash
+# illustrator-vm は 1 件ずつ。空でないなら、その分だけ本番の生成を待たせる
+curl -s http://34.84.121.166:8000/health
+```
+
 ## 製造データ生成の疎通確認（REQ-0061）
 
 **カットオーバーの手順 11 まで、生成は一度も動かない。** ワーカーの Cloud Scheduler を
@@ -224,13 +267,9 @@ macOS には psql が無いので `postgres:17-alpine` を使う）。接続先�
 # その環境の待ち行列。**自分が作った行だけとは限らない**
 psql -Atc "SELECT status, count(*) FROM manufacturing_data
            WHERE status IN ('pending','generating') GROUP BY status"
-
-# illustrator-vm は 1 件ずつの直列処理。空でないなら本番の生成を待たせる
-curl -s http://34.84.121.166:8000/health
 ```
 
-ワーカーはキュー全体を古い順に浚う（`WORKER_MAX_ITEMS` 件まで）。
-**`pending` に他人の行があれば、それも処理される。**
+VM の混み具合は「製造データ生成を手動で動かす」節の「叩く前に見るもの」で確かめる。
 
 ### 手順
 
@@ -252,12 +291,8 @@ curl -X POST "$API/api/v2/orders" -H "X-API-Key: $KEY" -H "Content-Type: applica
     "product_code":"SMOKE-REQ0061-TSHIRT-M",
     "source_images":[{"layer_type":"design","url":"<公開httpsのPNG>"}]}]}'
 
-# 3. ワーカーを 1 回だけ起動する。**Scheduler は止めたままにする**
-#    ステージングは Terraform の URL が空なので、この実行にだけ上書きする（ADR-0034）
-gcloud run jobs execute pod-admin-worker --project tosyo-api-stg --region asia-northeast1 \
-  --update-env-vars ILLUSTRATOR_VM_BASE_URL=http://34.84.121.166:8000 --wait
-#    本番は Terraform に URL が入っているので上書きしない
-gcloud run jobs execute pod-admin-worker --project tosyo-api-504104 --region asia-northeast1 --wait
+# 3. ワーカーを 1 回だけ起動する（コマンドは「製造データ生成を手動で動かす」節）。
+#    **Scheduler は止めたままにする**
 
 # 4. ready になり、その環境のバケットに入ったことを確認する
 psql -Atc "SELECT status, output_filename, file_size, file_path FROM manufacturing_data
