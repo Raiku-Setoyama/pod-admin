@@ -64,8 +64,8 @@ Slack で流れた話も、合意した要件も、見送ったものも、す�
 | [REQ-0050](REQ-0050.md) | shipment | 配送一覧の 1 ページ表示件数と総件数を、実配送と準備中注文を通して正しくする | undecided | not-started | |
 | [REQ-0051](REQ-0051.md) | shipment | 複数の注文を含む実配送で、一覧に出す配送予定日と並び替えの基準を揃える | undecided | not-started | |
 | [REQ-0052](REQ-0052.md) | common | 非同期処理（製造データ生成・受注通知メール）をコンテナ実行基盤で完走する形に改める | must | done | |
-| [REQ-0053](REQ-0053.md) | common | インフラを Terraform で管理し、ステージング環境を GCP に構築する | must | not-started | |
-| [REQ-0054](REQ-0054.md) | common | 本番環境を Railway / Vercel から GCP へ移行する | must | not-started | |
+| [REQ-0053](REQ-0053.md) | common | インフラを Terraform で管理し、ステージング環境を GCP に構築する | must | done | |
+| [REQ-0054](REQ-0054.md) | common | 本番環境を Railway / Vercel から GCP へ移行する | must | done | |
 | [REQ-0055](REQ-0055.md) | common | 製造データ生成VMを会社組織のGCPプロジェクトへ移し、認証なしでインターネットから到達できない状態にする | must | not-started | |
 | [REQ-0056](REQ-0056.md) | common | SQLAlchemy のモデル定義と実際のDBスキーマのズレを解消する | undecided | not-started | |
 | [REQ-0060](REQ-0060.md) | billing | 請求書PDFの支払期日ラベルの横に出る不要な文字「z」を消す | undecided | not-started | |
