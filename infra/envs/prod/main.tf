@@ -65,13 +65,15 @@ module "stack" {
   # 生成 1 件に 30〜360 秒かかる処理では釣り合わない。
   worker_schedule = "*/5 * * * *"
 
-  # **カットオーバーが終わるまで止めておく**（手順 11 で有効にする）。
-  # 移送前に動かすと、まだ移していない受注に対して製造データを作りにいく。
+  # 有効。**止めるときも、コンソールではなくここを true にする**
+  # （コンソールで止めても次の apply が黙って動かし直す）。
   #
+  # **止まる経路はもう 1 つある。** modules/stack の
+  # `paused = worker_schedule_paused || illustrator_vm_base_url == ""` なので、
+  # 下の URL を空にすると、この行が false のままでも Scheduler は止まる。
   # **戻すのを忘れても何もエラーにならない。** 製造データが黙って作られなく
-  # なるだけである。手順 11 を消化したら、コンソールではなくここを false にして
-  # apply する（コンソールで解除しても次の apply が黙って止め直す）。
-  worker_schedule_paused = true
+  # なるだけである。REQ-0055 で URL を張り替えるときに踏みやすい。
+  worker_schedule_paused = false
 
   # 個人プロジェクト（lively-transit-334610）にある VM を当面そのまま使う。
   # 内部 IP に張り替えるのは REQ-0055。
