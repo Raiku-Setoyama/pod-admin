@@ -149,6 +149,16 @@ Railway の Postgres には TCP プロキシが無く、外から接続できな
 ./scripts/migrate-data.sh dump "$RAILWAY_DATABASE_URL" ~/pod-admin-dump/prod.sql
 ```
 
+**`railway ssh` を経由して取ったダンプは改行が CRLF になる**（擬似端末が割り当てられるため）。
+**取り直しても同じになる**ので、`normalize` で直してから渡す。
+
+```bash
+./scripts/migrate-data.sh normalize ~/pod-admin-dump/prod.sql ~/pod-admin-dump/prod-lf.sql
+```
+
+以降は `prod-lf.sql` のほうを使う。`counts-dump` は CRLF を拒否するが、
+**そのエラーメッセージがこのコマンドを名指しする**ので、覚えておく必要はない。
+
 **`pg_dump` を手で叩かず、この script を通す。** 必要なオプションが決まっており、
 **手で打つとパスワードが `ps` に出る**（script は接続情報を環境変数へ分解する）。
 `psql` / `pg_dump` が入っていない環境では docker で動く。
@@ -168,7 +178,12 @@ Railway の Postgres には TCP プロキシが無く、外から接続できな
 ```bash
 cloud-sql-proxy --port 5434 tosyo-api-504104:asia-northeast1:pod-admin &
 
-DUMP=~/pod-admin-dump/prod.sql   # **リポジトリの外**
+# 移送先の接続 URL は Secret Manager から組み立てる。**手で書かない。**
+# Terraform が書いた database-url は Cloud Run 用の unix ソケット形式なので、
+# そのままでは proxy 越しに使えない。組み替えは dst-url がやる。
+DST_URL=$(./scripts/migrate-data.sh dst-url tosyo-api-504104)
+
+DUMP=~/pod-admin-dump/prod-lf.sql   # **リポジトリの外**。normalize を通したほう
 ./scripts/migrate-data.sh counts-dump "$DUMP"    > src.txt   # 移送元の件数（DB に繋がない）
 ./scripts/migrate-data.sh reset   "$DST_URL"                 # **破壊的**
 ./scripts/migrate-data.sh restore "$DST_URL" "$DUMP"         # **破壊的**
@@ -195,7 +210,7 @@ DUMP=~/pod-admin-dump/prod.sql   # **リポジトリの外**
   **それでも流す。** スキーマが揃っていることの確認を兼ねる
 - `restore` は `--single-transaction` で流し、最後に `VACUUM ANALYZE` する。
   **統計が無いまま動作確認に入ると、「壊れている」のか「統計がまだ無い」のかを
-  区別できない。** その確認が、後戻りできない手順 8 の判断材料になる
+  区別できない。** その確認が、後戻りできない切替に進むかどうかの判断材料になる
 
 ファイルは旧バケット（個人プロジェクト `lively-transit-334610`）から複製する。
 **`gcloud storage rsync` は使えない**（`key.json` のサービスアカウントは
@@ -211,9 +226,16 @@ gcloud storage rsync -r /tmp/stage gs://tosyo-pod-admin-prod  # ローカル →
 
 ## 製造データ生成を手動で動かす
 
-**どちらの環境も、受注を入れただけでは製造データは作られない。** ワーカーの
-Cloud Scheduler を止めてあるためである。**生成を見たいときは、その都度ワーカーを
-1 回起動する。**
+**本番とステージングで前提が違う。**
+
+| | Cloud Scheduler | 受注を入れると |
+|---|---|---|
+| 本番 | **5 分間隔で動いている**（カットオーバーで有効化した） | **放っておけば作られる** |
+| ステージング | **止めてある** | 作られない。手で起動する |
+
+**本番で手で起動するのは、5 分を待たずに今すぐ流したいときだけである。**
+定期実行と重なった場合、後から入ったほうは advisory lock を取れずに
+`processed=0` で降りる（`api/app/worker.py`）。**壊れているのではない。**
 
 ```bash
 # ステージング（**URL の上書きが要る**。下記「なぜ環境で違うのか」を参照）
@@ -237,7 +259,8 @@ gcloud run jobs execute pod-admin-worker \
 | ステージング | **空**（REQ-0053 の決定） | **要る** |
 
 ステージングを VM に繋ぎっぱなしにしないのは、illustrator-vm が 1 件ずつの直列処理で、
-**繋いだまま Scheduler が回ると本番の生成を 5 分ごとに待たせる**ためである。
+**繋いだまま Scheduler が回ると本番の生成を 5 分ごとに待たせる**ためである
+（本番の Scheduler は現に 5 分間隔で動いている）。
 `--update-env-vars` は **その 1 回の実行にだけ**効き、Job の定義には残らない（ADR-0034）。
 
 **上書きを忘れると、生成は静かに `failed` に落ちる**（`illustrator-vm is not configured`）。
@@ -254,9 +277,11 @@ curl -s http://34.84.121.166:8000/health
 
 ## 製造データ生成の疎通確認（REQ-0061）
 
-**カットオーバーの手順 11 まで、生成は一度も動かない。** ワーカーの Cloud Scheduler を
-止めてあるためである（`worker_schedule_paused`）。**戻れなくなる手順 8 より前に、
-生成が通ることをここで確かめる。**
+カットオーバーの前、両環境とも Cloud Scheduler を止めていた時期に、
+**戻れなくなる切替（判断ポイント）より前に生成が通ることを確かめる**ために作った手順である。
+
+**本番の Scheduler は有効になったので、本番でこの手順を使うのは
+ワーカーそのものを疑うときだけになった。** ステージングでは今もそのまま使える。
 
 ### 流す前に必ず数える
 

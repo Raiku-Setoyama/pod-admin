@@ -10,6 +10,8 @@
 #   restore  <PGURL> <DUMP>       dump を流し込む（**破壊的**）
 #   counts-dump <DUMP>            ダンプファイルから行数を数える（DB に繋がない）
 #   compare  <SRC> <DST>          counts の出力 2 つを突合する（差があれば異常終了）
+#   normalize <DUMP> <OUT>        CRLF のダンプを LF に直す（DB に繋がない）
+#   dst-url  <PROJECT> [PORT]     移送先の接続 URL を Secret Manager から組み立てて出す
 #
 # ## 移送元を壊さないための作り
 #
@@ -258,8 +260,13 @@ if not counts:
 if creates == 0:
     sys.exit("CREATE TABLE がありません（--data-only で取っていませんか？）。")
 if crlf:
-    sys.exit("改行コードが CRLF です。**転送の途中で書き換えられた合図なので信用しない。**"
-             " LF のまま受け渡して取り直してください。")
+    # **「取り直してください」だけでは終わらない。** 移送元のダンプは railway ssh 越しに
+    # 取るしかなく、railway ssh は擬似端末を割り当てるので、取り直しても必ず CRLF になる。
+    # 出口を示さない拒否は、メンテナンス枠の中で無限ループになる（2026-09-01 に遭遇した）。
+    sys.exit("改行コードが CRLF です。**このままでは各行の最後の列に \\r が入ります。**"
+             " railway ssh は擬似端末を割り当てるので、取り直しても同じになります。"
+             " normalize で LF に直してから渡してください:\n"
+             "  ./scripts/migrate-data.sh normalize <DUMP> <OUT>")
 
 # **ダンプの外の正本と突き合わせる。** これが無いと、-t / -T で
 # テーブルごと落ちたダンプが「一致」と報告される。
@@ -269,6 +276,69 @@ if missing:
 
 for t in sorted(counts):
     print(f"{t}|{counts[t]}")
+PYEOF
+}
+
+# 移送先の接続 URL を Secret Manager から組み立てる。**DB には繋がない。**
+#
+# Terraform が書いた `database-url` は Cloud Run 用の unix ソケット形式なので、
+# そのままでは Auth Proxy 越しに使えない。パスワードだけを取り出して TCP に組み替える。
+#
+# **手で sed を書かない。** 非マッチのとき sed は入力をそのまま返すので、
+# パスワード欄に URL 全体が入った URL が黙って出来上がり、
+# 原因の分からない認証エラーになる。ここは urllib で解いて、解けなければ落とす。
+#
+# ユーザ名と DB 名は `ALLOWED_*` を使う。**手で書くと 3 つ目の写しになる**
+# （正本は modules/stack の cloud_sql.database_name / user_name）。
+cmd_dst_url() {
+  local project="${1:?usage: dst-url <PROJECT> [PORT]}"
+  local port="${2-5434}"
+  local raw
+  raw=$(gcloud secrets versions access latest --secret=database-url --project="$project") \
+    || die "database-url を読めませんでした（gcloud の認証とプロジェクトを確認してください）。"
+  DST_DB="$ALLOWED_DB" DST_USER="$ALLOWED_USER" DST_PORT="$port" \
+    python3 - "$raw" <<'PYEOF'
+import os, sys
+from urllib.parse import urlsplit, unquote, quote
+
+u = urlsplit(sys.argv[1])
+user, db = os.environ["DST_USER"], os.environ["DST_DB"]
+if u.username != user:
+    sys.exit(f"database-url のユーザが {u.username} です。期待しているのは {user} です。")
+if not u.password:
+    sys.exit("database-url からパスワードを取り出せませんでした。形式が変わっていませんか？")
+pw = quote(unquote(u.password), safe="")
+print(f"postgresql://{user}:{pw}@127.0.0.1:{os.environ['DST_PORT']}/{db}")
+PYEOF
+}
+
+# CRLF に書き換えられたダンプを LF に戻す。**DB には繋がない。**
+#
+# 直すのは行末の CRLF だけである。**素の `tr -d '\r'` は使わない** —
+# ファイル全体から CR を消すので、pg_dump が `\r`（2 文字）に逃がしていない
+# 場所（関数本体の dollar-quote など）の CR まで巻き込む。
+#
+# **行末以外に CR が残るなら、それは pty の書き換えでは説明できない。**
+# 転送の破損かもしれないので直さずに落とす。「一律に削ってよい」が成り立つのは、
+# CR がすべて LF の直前にある場合だけである。
+cmd_normalize() {
+  local src="${1:?usage: normalize <DUMP> <OUT>}"
+  local out="${2:?usage: normalize <DUMP> <OUT>}"
+  [ -f "$src" ] || die "ダンプがありません: $src"
+  python3 - "$src" "$out" <<'PYEOF'
+import sys
+
+src, out = sys.argv[1], sys.argv[2]
+data = open(src, "rb").read()
+fixed = data.replace(b"\r\n", b"\n")
+if b"\r" in fixed:
+    sys.exit("行末以外に CR があります。pty の書き換えでは説明できないので直しません。"
+             " 転送の破損を疑い、取り直してください。")
+if fixed == data:
+    print("CRLF はありません。そのまま使えます。")
+else:
+    open(out, "wb").write(fixed)
+    print(f"CRLF を LF に直しました（{len(data) - len(fixed)} バイト減）: {out}")
 PYEOF
 }
 
@@ -372,6 +442,8 @@ sub="$1"; shift
 case "$sub" in
   compare)     cmd_compare "$@"; exit 0 ;;
   counts-dump) cmd_counts_dump "$@"; exit 0 ;;
+  normalize)   cmd_normalize "$@"; exit 0 ;;
+  dst-url)     cmd_dst_url "$@"; exit 0 ;;
 esac
 
 PGURL="$1"; shift
