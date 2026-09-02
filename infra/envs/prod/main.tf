@@ -82,3 +82,21 @@ module "stack" {
   sendgrid_from_email = "noreply@rksyo.com"
   contact_email       = "raiku.setoyama@ironiwa.co.jp"
 }
+
+# 製造データ生成 VM を迎えるためのネットワーク（REQ-0055 の 1 本目）。
+#
+# **この時点では誰も使っていない。** VM はまだ個人プロジェクト
+# （lively-transit-334610）で動いており、Cloud Run も上の
+# `illustrator_vm_base_url` が指す外部 IP を見ている。
+#
+# 追加しかしないので**切り戻す対象が無い。** REQ-0054 の PR 1 で
+# 本番を空のまま先に作ったのと同じ理由で、当日その場で組み立てる作業を減らす。
+#
+# **envs が持つのは値だけ、という原則の唯一の例外である。**
+# stack の中に入れてトグルで切り替えない理由は ADR-0036。
+module "network" {
+  source = "../../modules/network"
+
+  project_id = local.project_id
+  region     = local.region
+}

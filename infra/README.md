@@ -10,6 +10,7 @@ POD Admin の GCP リソースをコードで管理する。設計の詳細は
 infra/
 ├── modules/
 │   ├── stack/     アプリ 1 環境ぶんの構成（下記）
+│   ├── network/   製造データ生成 VM を置く閉じた VPC（下記）
 │   └── その他/     汎用の GCP ラッパー（cloud-run-service, cloud-sql, ...）
 ├── envs/
 │   ├── staging/   ステージング（tosyo-api-stg）
@@ -17,12 +18,17 @@ infra/
 └── scripts/       state バケットのブートストラップ
 ```
 
-**`modules/stack/` がアプリを知っている唯一の層である。** その下の `modules/*` は
-汎用の GCP ラッパーで、POD Admin のことを何も知らない。
+**`modules/stack/` は「アプリ 1 環境ぶんの構成」を持つ層である。**
+その下の `modules/*` は汎用の GCP ラッパーで、POD Admin のことを何も知らない。
 「api と worker と migrate が同じイメージで動く」「`CORS_ORIGINS` は JSON で渡す」
 といった知識はすべて `stack` に集める。
 
-**`envs/<env>/` は値だけを持つ。** そのため
+**例外は `modules/network/` だけである。** 環境の一部ではあるがアプリの構成ではない
+（プロジェクト単位の土台である）ものは、`envs/<env>/` から直接呼んでよい。
+判断と、なぜ `stack` のトグルにしなかったかは **ADR-0036**。
+**同じ形のものが 3 つ目になったら、この原則のほうを見直す。**
+
+**`envs/<env>/` は値だけを持つ**（上の例外を除く）。そのため
 `diff infra/envs/staging/main.tf infra/envs/prod/main.tf` が、そのまま
 **「ステージングと本番の違い」の一覧**になる。ここを環境ごとに複製しない（ADR-0027）。
 
@@ -343,6 +349,74 @@ psql -c "DELETE FROM users WHERE email='req0061-smoke@example.com'"
 gcloud storage rm gs://<環境のバケット>/<prefix>/manufacturing_data/<生成物>
 ```
 
+## 製造データ生成 VM のネットワーク（REQ-0055）
+
+`modules/network/` が custom mode の VPC・サブネット 2 つ・ファイアウォール 2 本を作る。
+**本番だけが呼ぶ**（ADR-0036）。ステージングは `illustrator_vm_base_url = ""` で
+生成機能ごと止めているので、繋ぐ先が無い。
+
+| もの | 何のためか |
+|---|---|
+| VPC（custom mode） | auto mode は全リージョンにサブネットを作り、`default-allow-ssh` / `default-allow-rdp` を 0.0.0.0/0 で持ってくる |
+| サブネット（VM） | 外部 IP を持たない VM を置く |
+| サブネット（Cloud Run） | Direct VPC egress。**インスタンスごとに 1 アドレス使い、デプロイ中は新旧のリビジョンが同時に持つ** |
+| FW: run → illustrator | 生成 API を呼ぶ唯一の経路 |
+| FW: IAP → illustrator | 運用の入口（RDP と、VM 単体の疎通確認） |
+
+**名前と CIDR の正本は `modules/network/main.tf` の `locals` である。** ここには写さない。
+
+**Cloud NAT はまだ無い。** 外部 IP を持たない VM の下り（Adobe のライセンス確認・
+Windows Update・Ops Agent）には必須だが、**NAT ゲートウェイは VM が 1 台も無くても課金される**
+ので、VM と同じ PR で作る。
+
+**タグを付け忘れた VM には、どちらの規則も効かない。** 到達できないだけなので壊れ方は静かである。
+VM を作るときは `modules/network` の `illustrator_target_tag` 出力から渡し、**値を直書きしない。**
+
+### `default` VPC は消す
+
+**`compute.googleapis.com` を有効にすると、GCP が `default` VPC を勝手に作る。**
+全リージョンにサブネットが生え、次の規則が最初から付いてくる。
+
+```
+default-allow-rdp   INGRESS  0.0.0.0/0  （適用先の指定なし）  tcp:3389
+default-allow-ssh   INGRESS  0.0.0.0/0  （適用先の指定なし）  tcp:22
+```
+
+**REQ-0055 が個人プロジェクトで消そうとしているものと同じ形である。**
+本番では 2026-09-02 に削除した（当時 VM は 1 台も無く、空だった）。
+
+```bash
+for r in default-allow-icmp default-allow-internal default-allow-rdp default-allow-ssh; do
+  gcloud compute firewall-rules delete "$r" --project=tosyo-api-504104 --quiet
+done
+gcloud compute networks delete default --project=tosyo-api-504104 --quiet
+```
+
+**Terraform では表せない。** 自動生成されたものを「無い状態」に保つ記述が書けないので、
+`terraform plan` は消し忘れを検出しない。**compute API を有効にした環境では、毎回これを確認する。**
+
+### 外部 IP を持たない VM に入る
+
+外部 IP が無いので RDP も直接は繋がらない。IAP TCP forwarding でトンネルを掘る。
+`roles/iap.tunnelResourceAccessor`（または Owner）が要る。
+
+```bash
+# 生成 API の生死を確かめる（Cloud Run を経由しないので、切替前でも VM 単体を検証できる）
+gcloud compute start-iap-tunnel illustrator-vm 8000 \
+  --local-host-port=localhost:18000 --zone=asia-northeast1-a --project=tosyo-api-504104 &
+curl -s localhost:18000/health
+
+# RDP（Windows のログインと Adobe のサインイン確認）
+gcloud compute start-iap-tunnel illustrator-vm 3389 \
+  --local-host-port=localhost:13389 --zone=asia-northeast1-a --project=tosyo-api-504104
+# 別途 Microsoft Remote Desktop で localhost:13389 へ接続する
+gcloud compute reset-windows-password illustrator-vm \
+  --zone=asia-northeast1-a --project=tosyo-api-504104 --user=admin
+```
+
+**`reset-windows-password` は既存の管理者パスワードを作り直す。**
+Adobe のサインイン状態には影響しないが、以前のパスワードは使えなくなる。
+
 ## Terraform が管理しないもの
 
 | もの | 誰がやるか | なぜ |
@@ -352,6 +426,7 @@ gcloud storage rm gs://<環境のバケット>/<prefix>/manufacturing_data/<生�
 | `terraform apply` そのもの | 作業者の手元 | CI に state と機密の読み取り権限を渡さないため（ADR-0031） |
 | `sendgrid-api-key` の中身 | 人間（`gcloud secrets versions add`） | 値をリポジトリにも state にも置かない |
 | 予算アラート | プロジェクト所有者 | 請求先アカウントの権限が要る |
+| `default` VPC の削除 | 人間（プロジェクトごとに一度きり） | **compute API を有効にした瞬間に GCP が自動生成する。** Terraform の管理外なので、作られたことに気づいて消すしかない（下記） |
 
 ## 設定の依存関係で気をつけること
 
