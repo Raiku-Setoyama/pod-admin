@@ -2,7 +2,7 @@
 id: CONSTRAINTS
 title: 技術制約・前提
 status: draft
-updated: 2026-08-06
+updated: 2026-09-03
 ---
 
 <!-- 選択の余地がない前提条件。ADR で覆された場合はここも更新すること。 -->
@@ -30,15 +30,19 @@ updated: 2026-08-06
 | システム | 連携方式 | 制約 |
 |---|---|---|
 | 外部販売サイト（受注元） | 受注取り込み・照会 REST API（`X-API-Key` 認証、v1/v2） | APIキーは `order_sources` テーブル駆動（現状は平文保存） |
-| illustrator-vm（製造データ生成） | 非同期ジョブ型 REST（process / status / download） | 認証は任意ヘッダ、直列処理、成果物は約72時間で削除。完了後すぐDL・自前保存が前提 |
+| illustrator-vm（製造データ生成） | 非同期ジョブ型 REST（process / status / download） | **VPC 内の Windows VM。認証は無く、到達できるのはワーカーの Direct VPC egress と IAP だけ**（REQ-0055）。直列処理、成果物は約72時間で削除。完了後すぐDL・自前保存が前提 |
 | SendGrid | メール送信 API | 障害時は握りつぶし、業務処理は継続（ADR-0014） |
 | Google Cloud Storage | ファイル永続化 | `GCS_BUCKET` 未設定時はローカル保存にフォールバック（ADR-0010） |
 | 内部バッチ（cron） | GitHub Actions → 内部 REST（`X-Internal-Secret`） | メーカー日次ダイジェスト（15分間隔トリガ、ADR-0015） |
 
 ## インフラ・運用
 
-- 本番 API: Railway。デプロイは `api/` で `railway up`（環境変数変更の自動再デプロイは不可）。手順は `api/DEPLOY.md`。
-- フロントエンド: Vercel（CORS 許可オリジンに `https://pod-admin-beige.vercel.app`）。
+- 本番・ステージングとも **GCP**（`tosyo-api-504104` / `tosyo-api-stg`）。API と管理画面は Cloud Run、
+  DB は Cloud SQL、ファイルは GCS。インフラは Terraform（`infra/`）で管理し、
+  **`apply` は作業者の手元で実行する**（CI に state と機密を渡さない。ADR-0031）。
+- デプロイは GitHub Actions（Workload Identity 連携。ADR-0028）。**Railway と Vercel は 2026-09-01 に切り替え済み**（REQ-0054）。
+- 製造データ生成の VM も Terraform 管理下にある（`infra/modules/illustrator-vm/`）。
+  **作り直さない運用である**（ディスク上の Adobe ライセンス認証を保つため）。
 - Alembic マイグレーションは単一ヘッドを維持する（多重ヘッドは本番起動 crash の原因）。
 - 開発環境は Docker Compose（api / web / db / e2e）。
 

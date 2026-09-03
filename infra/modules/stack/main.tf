@@ -238,7 +238,6 @@ locals {
     DB_POOL_SIZE    = tostring(var.db_pool_size)
     DB_MAX_OVERFLOW = tostring(var.db_max_overflow)
 
-    ILLUSTRATOR_VM_BASE_URL = var.illustrator_vm_base_url
 
     SENDGRID_FROM_EMAIL = var.sendgrid_from_email
     CONTACT_EMAIL       = var.contact_email
@@ -358,11 +357,20 @@ module "worker_job" {
   env_vars = merge(local.app_env_vars, {
     WORKER_MAX_RUNTIME_SECONDS = tostring(var.worker_max_runtime_seconds)
     WORKER_MAX_ITEMS           = tostring(var.worker_max_items)
+
+    # **ここにしか置かない。** api と migrate は VM を呼ばないので、渡すと
+    # アプリ側の「illustrator-vm is not configured」ガードを効かないほうへ倒す。
+    # 将来 api から同期生成を足した人が受け取るのは、その正しいエラーではなく、
+    # VPC の外から私設アドレスへ繋ごうとして 300 秒のタイムアウトを使い切る沈黙になる。
+    ILLUSTRATOR_VM_BASE_URL = var.illustrator_vm_base_url
   })
   secret_env_vars    = local.app_secret_env_vars
   cloudsql_instances = [module.cloud_sql.connection_name]
 
   invoker_members = [local.scheduler_member]
+
+  # **ワーカーだけが illustrator-vm を呼ぶ。** api / web / migrate は VPC に繋がない。
+  vpc_egress = var.worker_vpc_egress
 
   depends_on = [module.secrets]
 }

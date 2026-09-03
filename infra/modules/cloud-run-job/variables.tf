@@ -74,3 +74,19 @@ variable "invoker_members" {
   type        = list(string)
   default     = []
 }
+
+variable "vpc_egress" {
+  description = <<-DESC
+    Direct VPC egress で参加するネットワーク。null なら VPC に繋がない。
+    **インスタンスごとにこのサブネットの IP を 1 つ使う。**
+
+    **network と subnetwork を 1 つの型にまとめてある。** 2 つの変数に分けると
+    片方だけ渡した状態が表現できてしまい、**subnetwork だけ渡すと黙って
+    既定の網を指す**（plan にも apply にも何も出ない）。型で不可能にしている。
+  DESC
+  type = object({
+    network    = string
+    subnetwork = string
+  })
+  default = null
+}

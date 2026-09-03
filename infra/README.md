@@ -11,6 +11,7 @@ infra/
 ├── modules/
 │   ├── stack/     アプリ 1 環境ぶんの構成（下記）
 │   ├── network/   製造データ生成 VM を置く閉じた VPC（下記）
+│   ├── illustrator-vm/  製造データ生成 VM そのもの（本番だけ）
 │   └── その他/     汎用の GCP ラッパー（cloud-run-service, cloud-sql, ...）
 ├── envs/
 │   ├── staging/   ステージング（tosyo-api-stg）
@@ -23,10 +24,12 @@ infra/
 「api と worker と migrate が同じイメージで動く」「`CORS_ORIGINS` は JSON で渡す」
 といった知識はすべて `stack` に集める。
 
-**例外は `modules/network/` だけである。** 環境の一部ではあるがアプリの構成ではない
-（プロジェクト単位の土台である）ものは、`envs/<env>/` から直接呼んでよい。
-判断と、なぜ `stack` のトグルにしなかったかは **ADR-0036**。
-**同じ形のものが 3 つ目になったら、この原則のほうを見直す。**
+**例外は `modules/network/` と `modules/illustrator-vm/` の 2 つである。**
+環境の一部ではあるがアプリの構成ではない（プロジェクト単位の土台である）ものは、
+`envs/<env>/` から直接呼んでよい。判断と、なぜ `stack` のトグルにしなかったかは **ADR-0036**。
+
+**この 2 つは 1 つに統合する**（ADR-0037・REQ-0055 の PR 3）。
+`illustrator-vm` の必須入力は両方とも `network` から来るので、実際には 1 つの単位である。
 
 **`envs/<env>/` は値だけを持つ**（上の例外を除く）。そのため
 `diff infra/envs/staging/main.tf infra/envs/prod/main.tf` が、そのまま
@@ -365,9 +368,21 @@ gcloud storage rm gs://<環境のバケット>/<prefix>/manufacturing_data/<生�
 
 **名前と CIDR の正本は `modules/network/main.tf` の `locals` である。** ここには写さない。
 
-**Cloud NAT はまだ無い。** 外部 IP を持たない VM の下り（Adobe のライセンス確認・
-Windows Update・Ops Agent）には必須だが、**NAT ゲートウェイは VM が 1 台も無くても課金される**
-ので、VM と同じ PR で作る。
+**Cloud NAT が VM のサブネットだけを NAT する。** 外部 IP を持たない VM の下り
+（Adobe のライセンス確認・Windows Update・Ops Agent）に要る。
+**NAT ゲートウェイは VM が 1 台も無くても課金される**ので、VM と同じ PR で作った。
+
+VM 本体は `modules/illustrator-vm/` にある。**stop/start で運用し、delete/recreate しない** —
+理由はそのファイルの冒頭にある。`deletion_protection = true` とイメージの
+`ignore_changes` がそれを守っている。
+
+**どうしても作り直すときは、`deletion_protection` を false にする apply を先に通す。**
+`-replace` は削除保護に阻まれる。**その前に、いま動いているディスクの
+イメージかスナップショットを取る**（Adobe の認証はそこにしかない。REQ-0062）。
+
+**VPC に入っているのはワーカー Job だけで、`ILLUSTRATOR_VM_BASE_URL` もワーカーにしか渡さない。**
+理由の正本は `modules/stack/variables.tf` の `worker_vpc_egress` の説明。
+`egress` は `PRIVATE_RANGES_ONLY` なので、SendGrid と Cloud SQL は公衆網のままである。
 
 **タグを付け忘れた VM には、どちらの規則も効かない。** 到達できないだけなので壊れ方は静かである。
 VM を作るときは `modules/network` の `illustrator_target_tag` 出力から渡し、**値を直書きしない。**

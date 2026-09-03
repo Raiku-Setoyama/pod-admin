@@ -14,6 +14,22 @@ resource "google_cloud_run_v2_job" "this" {
       timeout         = "${var.timeout_seconds}s"
       max_retries     = var.max_retries
 
+      # Direct VPC egress。**VPC の中にしか居ないものを呼ぶときだけ設定する。**
+      #
+      # egress は PRIVATE_RANGES_ONLY にする。ALL_TRAFFIC にすると
+      # SendGrid や Cloud SQL（パブリック IP）まで VPC 経由になり、
+      # そちら側に NAT が要る。private だけ通せば公衆網は今までの経路のままである。
+      dynamic "vpc_access" {
+        for_each = var.vpc_egress == null ? [] : [1]
+        content {
+          egress = "PRIVATE_RANGES_ONLY"
+          network_interfaces {
+            network    = var.vpc_egress.network
+            subnetwork = var.vpc_egress.subnetwork
+          }
+        }
+      }
+
       dynamic "volumes" {
         for_each = length(var.cloudsql_instances) == 0 ? [] : [1]
         content {
