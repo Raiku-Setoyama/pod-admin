@@ -138,6 +138,42 @@ resource "google_compute_firewall" "iap_to_illustrator" {
   }
 }
 
-# **Cloud NAT はここに無い。** 外部 IP を持たない VM の下りには必須だが、
-# **NAT ゲートウェイは VM が 1 台も無くても課金される。**
-# 使う相手（VM）と同じ PR で作る。REQ-0055 の PR 2。
+# 外部 IP を持たない VM の下り経路。
+#
+# **これが無いと Adobe のライセンス確認・Windows Update・Ops Agent が出られない。**
+# 設計書のフェーズ 5 はここに触れていないが、外部 IP を外す以上は必須である
+# （Illustrator は定期的にライセンスをオンラインで確認する）。
+#
+# **PR 1 では作らなかった。** ゲートウェイは VM が 1 台も無くても課金されるので、
+# 使う相手と同じ PR で作る。
+resource "google_compute_router" "this" {
+  project = var.project_id
+  region  = var.region
+  name    = "pod-admin-router"
+  network = google_compute_network.this.id
+}
+
+resource "google_compute_router_nat" "this" {
+  project = var.project_id
+  region  = var.region
+  name    = "pod-admin-nat"
+  router  = google_compute_router.this.name
+
+  nat_ip_allocate_option = "AUTO_ONLY"
+
+  # **VM のサブネットだけを NAT する。** 全サブネットを対象にすると、
+  # Cloud Run の Direct VPC egress（PRIVATE_RANGES_ONLY で公衆網には出ない想定）が
+  # 設定ミスで ALL_TRAFFIC になったときに、黙って NAT 経由で外へ出てしまう。
+  # 対象を絞っておけば、その事故は疎通しないという形で表に出る。
+  source_subnetwork_ip_ranges_to_nat = "LIST_OF_SUBNETWORKS"
+
+  subnetwork {
+    name                    = google_compute_subnetwork.illustrator.id
+    source_ip_ranges_to_nat = ["ALL_IP_RANGES"]
+  }
+
+  log_config {
+    enable = true
+    filter = "ERRORS_ONLY"
+  }
+}

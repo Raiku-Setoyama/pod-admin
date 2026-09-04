@@ -8,6 +8,15 @@
 locals {
   project_id = "tosyo-api-504104"
   region     = "asia-northeast1"
+
+  # 製造データ生成 VM の内部 IP。**ここが唯一の出所である。**
+  # 下の module "illustrator_vm" が予約し、module "stack" が宛先として読む。
+  # 2 か所に書くと、片方だけ変えても apply は成功し、Cloud Run が
+  # 誰も応答しない番地を指したまま生成が静かに止まる。
+  #
+  # **module の出力を経由しない。** そうすると stack 全体が VM の作成待ちに
+  # 直列化する。local なら plan の時点で確定するので、依存の辺が増えない。
+  illustrator_vm_internal_ip = "10.20.0.10"
 }
 
 provider "google" {
@@ -75,9 +84,17 @@ module "stack" {
   # なるだけである。REQ-0055 で URL を張り替えるときに踏みやすい。
   worker_schedule_paused = false
 
-  # 個人プロジェクト（lively-transit-334610）にある VM を当面そのまま使う。
-  # 内部 IP に張り替えるのは REQ-0055。
-  illustrator_vm_base_url = "http://34.84.121.166:8000"
+  # **移送後の VM の内部 IP**（REQ-0055）。到達できるのは pod-admin-run
+  # サブネットからだけである。移送前は個人プロジェクトの外部 IP
+  # `http://34.84.121.166:8000` を指していた。
+  illustrator_vm_base_url = "http://${local.illustrator_vm_internal_ip}:8000"
+
+  # **ワーカーだけを VPC に入れる。** 理由は modules/stack/variables.tf が正本。
+  # egress は PRIVATE_RANGES_ONLY なので、SendGrid と Cloud SQL は公衆網のままである。
+  worker_vpc_egress = {
+    network    = module.network.network_name
+    subnetwork = module.network.run_subnet_id
+  }
 
   sendgrid_from_email = "noreply@rksyo.com"
   contact_email       = "raiku.setoyama@ironiwa.co.jp"
@@ -99,4 +116,30 @@ module "network" {
 
   project_id = local.project_id
   region     = local.region
+}
+
+# 製造データ生成 VM（REQ-0055 の 2 本目）。
+#
+# **この時点では Cloud Run はまだ旧 VM を見ている。** 上の
+# `illustrator_vm_base_url` を張り替えるのは、この VM で生成が通ることを
+# 確かめたあとである。**旧 VM が本番を捌いたまま検証できる**（ADR-0035 と同じ形）。
+module "illustrator_vm" {
+  source = "../../modules/illustrator-vm"
+
+  project_id = local.project_id
+  region     = local.region
+  env        = "prod"
+
+  subnetwork_id = module.network.illustrator_subnet_id
+
+  # **文字列を直書きしない。** 規則の側とずれても apply は通ってしまい、
+  # 「到達できない」という静かな形でしか表に出ない。
+  network_tag = module.network.illustrator_target_tag
+
+  internal_ip = local.illustrator_vm_internal_ip
+
+  # 移送元（lively-transit-334610 の illustrator-vm-preview）の**停止したディスク**から
+  # 作り、このプロジェクトへコピーしたもの。停止して作ったので、
+  # Illustrator のインストールと Adobe のサインイン状態が途中で写っていない。
+  source_image = "projects/${local.project_id}/global/images/illustrator-vm-20260902"
 }

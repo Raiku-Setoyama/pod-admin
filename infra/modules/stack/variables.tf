@@ -178,3 +178,19 @@ variable "contact_email" {
   type    = string
   default = ""
 }
+
+variable "worker_vpc_egress" {
+  description = <<-DESC
+    ワーカー Job を Direct VPC egress で参加させるネットワーク。null なら繋がない。
+
+    **繋ぐのはワーカーだけである。** illustrator-vm を呼ぶのは `generate()` だけで、
+    それを実行するのはワーカー Job だけである
+    （api の `regenerate` は行を pending に戻すだけで VM を呼ばない）。
+    **この非対称の正本はここである。**
+  DESC
+  type = object({
+    network    = string
+    subnetwork = string
+  })
+  default = null
+}

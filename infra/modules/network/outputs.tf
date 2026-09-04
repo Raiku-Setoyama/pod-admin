@@ -1,3 +1,8 @@
+output "network_name" {
+  description = "Cloud Run の Direct VPC egress は network と subnetwork の両方を要る（省略すると default 網を指す）"
+  value       = google_compute_network.this.name
+}
+
 output "illustrator_subnet_id" {
   description = "VM を置くサブネット。PR 2 で google_compute_instance に渡す"
   value       = google_compute_subnetwork.illustrator.id
