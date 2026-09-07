@@ -71,6 +71,7 @@ Slack で流れた話も、合意した要件も、見送ったものも、す�
 | [REQ-0060](REQ-0060.md) | billing | 請求書PDFの支払期日ラベルの横に出る不要な文字「z」を消す | undecided | not-started | |
 | [REQ-0061](REQ-0061.md) | common | Railway を停止する前に、GCP のステージングと本番の両方で製造データが生成できることを確認する | must | done | |
 | [REQ-0062](REQ-0062.md) | common | 製造データ生成 VM のディスクを、作り直せない資産として守る | undecided | not-started | |
+| [REQ-0063](REQ-0063.md) | common | 製造データ生成 VM の死活監視と自動復旧を、外部 IP に依存しない形で作り直す | undecided | not-started | |
 
 ## priority — 採否・約束の度合い
 
