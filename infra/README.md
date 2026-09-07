@@ -246,12 +246,12 @@ gcloud storage rsync -r /tmp/stage gs://tosyo-pod-admin-prod  # ローカル →
 定期実行と重なった場合、後から入ったほうは advisory lock を取れずに
 `processed=0` で降りる（`api/app/worker.py`）。**壊れているのではない。**
 
-```bash
-# ステージング（**URL の上書きが要る**。下記「なぜ環境で違うのか」を参照）
-gcloud run jobs execute pod-admin-worker \
-  --project tosyo-api-stg --region asia-northeast1 \
-  --update-env-vars ILLUSTRATOR_VM_BASE_URL=http://34.84.121.166:8000 --wait
+**ステージングから生成は動かせない**（REQ-0055 の移送後）。移送先の VM は
+`tosyo-api-stg` から見て別プロジェクトの VPC の中にあり、外部 IP も、ピアリングも、
+共有 VPC も無い。**URL を上書きしても到達しない。**
+恒久的に繋ぐかどうかは未判断である（ADR-0034）。
 
+```bash
 # 本番（**上書きは要らない**）
 gcloud run jobs execute pod-admin-worker \
   --project tosyo-api-504104 --region asia-northeast1 --wait
@@ -279,9 +279,11 @@ gcloud run jobs execute pod-admin-worker \
 
 ### 叩く前に見るもの
 
+VM は外部 IP を持たないので、IAP トンネル越しに見る（下記「外部 IP を持たない VM に入る」）。
+
 ```bash
 # illustrator-vm は 1 件ずつ。空でないなら、その分だけ本番の生成を待たせる
-curl -s http://34.84.121.166:8000/health
+curl -sS --fail localhost:18000/health
 ```
 
 ## 製造データ生成の疎通確認（REQ-0061）
@@ -387,6 +389,132 @@ VM 本体は `modules/illustrator-vm/` にある。**stop/start で運用し、d
 **タグを付け忘れた VM には、どちらの規則も効かない。** 到達できないだけなので壊れ方は静かである。
 VM を作るときは `modules/network` の `illustrator_target_tag` 出力から渡し、**値を直書きしない。**
 
+### VM の中のアプリを更新する
+
+**Windows 側の手順の正本は `illustrator-vm/scripts/setup_windows/README.md`
+「コード更新時の再起動手順」である。ここには写さない。**
+ここに書くのは **pod-admin 側で先にやること**と、**移送で変わった入口**だけである。
+
+#### なぜワーカーを止めるのか
+
+VM が応答しない間に pod-admin のワーカーが動くと、`generate()` の例外ハンドラが
+製造データの行を `failed` にする（`api/app/services/manufacturing_data_service.py`）。
+
+**ワーカーは `failed` を拾い直さない。** `claim_next_generation` は `pending` しか取らず、
+`reclaim_expired_leases()` が戻すのはリースの切れた `generating` だけである。
+復旧の道はあるが、**どちらも自動ではない。**
+
+- 管理画面から `POST /manufacturing-data/{id}/retry`（**1 件ずつ**。一括は無い）
+- 同じキャッシュキーで受注が入り直せば `_resolve_or_create()` が `pending` に戻す
+
+被害は **1 回の起動あたり最大 20 件**である（`worker_max_items`。`worker_max_runtime_seconds`
+は 600 秒）。**一瞬の瞬断では落ちない** — `IllustratorVmClient` が接続エラーと 503 を
+3 回まで再試行する。効いてくるのは、再起動のように数分単位で止まるときである。
+
+#### 窓に入る前（本番は動いたまま）
+
+**止めなくてよいことは、止める前に済ませる。**
+
+```bash
+# トンネルは 2 本とも先に開ける（PID を控えて、あとで確実に閉じる）
+gcloud compute start-iap-tunnel illustrator-vm 3389 \
+  --local-host-port=localhost:13389 --zone=asia-northeast1-a --project=tosyo-api-504104 &
+RDP_TUNNEL=$!
+gcloud compute start-iap-tunnel illustrator-vm 8000 \
+  --local-host-port=localhost:18000 --zone=asia-northeast1-a --project=tosyo-api-504104 &
+API_TUNNEL=$!
+```
+
+**接続できないときは、まず VM ではなくトンネルを疑う。** IAP のトンネルは
+ラップトップのスリープで落ちる。手順の詳細は下記「外部 IP を持たない VM に入る」。
+
+RDP で入り、**作業ツリーが汚れていないことと、いまの版**を控えておく。
+**戻り先を知らないまま更新しない。**
+
+```powershell
+cd C:\illustrator-vm
+git status          # 誰かが VM 上で直接直していないか
+git rev-parse HEAD  # 戻り先。控える
+```
+
+#### 窓（ここから生成が待つ）
+
+**`terraform apply` を並行して走らせないこと。** 下の `pause` は Terraform の管理下にある値
+（`modules/scheduler` の `paused`）に対する差分であり、**誰かが `envs/prod` で apply すると
+黙って ENABLED に戻る。** 移送のときは、それを利用して最後に戻した。
+
+```bash
+gcloud scheduler jobs pause pod-admin-worker \
+  --location=asia-northeast1 --project=tosyo-api-504104
+```
+
+**止めただけでは、走っているワーカーは止まらない。** 起動済みの実行は最大 600 秒
+処理を続けるので、**空になるまで待つ。**
+
+```bash
+gcloud run jobs executions list --job=pod-admin-worker \
+  --region=asia-northeast1 --project=tosyo-api-504104 \
+  --filter="status.completionTime=null" --format="value(name)"
+# 何も出なくなるまで待つ
+```
+
+そのうえで **VM 側の待ち行列が空になったこと**を確かめる。VM は 1 件ずつの直列処理なので、
+`pending_count` が 0 でないかぎり、まだ処理し切っていない。
+
+```bash
+curl -sS --fail localhost:18000/health   # queue.pending_count と active_jobs が 0
+```
+
+ここで **`illustrator-vm` リポジトリの手順**（`git pull` → `Stop-ScheduledTask` →
+python 停止 → `Start-ScheduledTask`）を実行する。**pull に `install_service.ps1` や
+`setup_*.ps1` 自体の変更が含まれていたら、タスクの再起動だけでは足りない**
+（向こうの README を参照）。
+
+#### 窓を出る
+
+**起動しただけでは、Illustrator が描けるかは分からない。** `/health` を見て、
+実際に 1 件生成を通す。**`/` の `version` は当てにならない**（文字列が直書きされており、
+`git pull` では動かない）。
+
+```bash
+curl -sS --fail localhost:18000/health   # config_loaded と worker_running が true
+```
+
+生成の確認は、**トンネル越しに VM へ直接ジョブを投げるのが速い**（pod-admin の DB にも
+GCS にも触れない）。REQ-0055 の段階 3 で使った方法である。
+pod-admin を通した端から端までの確認をしたいときは「製造データ生成の疎通確認」の節。
+
+```bash
+gcloud scheduler jobs resume pod-admin-worker \
+  --location=asia-northeast1 --project=tosyo-api-504104
+gcloud scheduler jobs describe pod-admin-worker \
+  --location=asia-northeast1 --project=tosyo-api-504104 --format="value(state)"  # ENABLED
+kill $RDP_TUNNEL $API_TUNNEL
+```
+
+**窓の間に落ちた行がないかを数える。** 落ちていたら 1 件ずつ `retry` を叩く
+（自動では戻らない）。
+
+```sql
+SELECT id, product_code, error_message FROM manufacturing_data
+WHERE status = 'failed' AND updated_at > '<窓に入った時刻>';
+```
+
+#### 移送で落ちた運用ポリシー
+
+**イメージはディスクを運ぶが、VM に付いたリソースポリシーは運ばない。**
+旧 VM（`lively-transit-334610`）に付いていたもののうち、**移送先には 1 つも無い。**
+
+| 旧 VM に付いていたもの | 実測（2026-09-07） | 扱い |
+|---|---|---|
+| `illustrator-vm-daily-snapshot` | 日次・14 日保持・03:00 JST。**旧ディスクに付いていた** | REQ-0062 |
+| Uptime Check `illustrator-api-health` ＋ 自動再起動 | 外部 IP 前提。**そのままは移せない** | REQ-0063 |
+| `illustrator-vm-nightly-restart` | 毎晩 03:50→03:55 の stop/start | **戻さない**（`illustrator-vm` の Issue #5） |
+
+死活監視の作り直しは REQ-0063、スナップショットは REQ-0062 が追う。
+**この表は「何が旧環境にあったか」の記録であり、現状の宣言ではない。**
+いま何があるかは `terraform plan` と `gcloud compute resource-policies list` が正本である。
+
 ### `default` VPC は消す
 
 **`compute.googleapis.com` を有効にすると、GCP が `default` VPC を勝手に作る。**
@@ -416,21 +544,42 @@ gcloud compute networks delete default --project=tosyo-api-504104 --quiet
 `roles/iap.tunnelResourceAccessor`（または Owner）が要る。
 
 ```bash
-# 生成 API の生死を確かめる（Cloud Run を経由しないので、切替前でも VM 単体を検証できる）
+# 生成 API の生死を確かめる（Cloud Run を経由しないので、VM 単体を検証できる）
 gcloud compute start-iap-tunnel illustrator-vm 8000 \
   --local-host-port=localhost:18000 --zone=asia-northeast1-a --project=tosyo-api-504104 &
-curl -s localhost:18000/health
+curl -sS --fail localhost:18000/health
 
-# RDP（Windows のログインと Adobe のサインイン確認）
+# RDP
 gcloud compute start-iap-tunnel illustrator-vm 3389 \
   --local-host-port=localhost:13389 --zone=asia-northeast1-a --project=tosyo-api-504104
 # 別途 Microsoft Remote Desktop で localhost:13389 へ接続する
-gcloud compute reset-windows-password illustrator-vm \
-  --zone=asia-northeast1-a --project=tosyo-api-504104 --user=admin
 ```
 
-**`reset-windows-password` は既存の管理者パスワードを作り直す。**
-Adobe のサインイン状態には影響しないが、以前のパスワードは使えなくなる。
+**繋がらないとき、まず疑うのはトンネルであって VM ではない。**
+IAP のトンネルはラップトップのスリープで落ちる。
+`&` で背景に置いたものは、用が済んだら `kill` する（残ると次回 `address already in use` になる）。
+
+#### `reset-windows-password` を安易に叩かない
+
+**これは自動ログオンを壊す。** `setup_autologon.ps1` は自動ログオン用のパスワードを
+**レジストリに平文で持っている**ので、GCP 側でリセットすると
+**アカウント側だけが変わってレジストリが古いまま**になり、**次の再起動でログオンに失敗する。**
+
+サーバーは AtLogOn のタスクでしか起動しないため、**誰かが RDP でログインするまで
+上がってこない。** `illustrator-vm` の Issue #5 に、夜間再起動と組み合わさって
+9 時間 23 分のダウンになった実測がある。
+
+**しかも悪循環になる** — 入るためにリセットする → それで自動ログオンがまた失効する。
+
+やむを得ずリセットしたら、**同じ RDP セッションのうちに再設定する。**
+
+```powershell
+cd C:\illustrator-vm\scripts\setup_windows
+.\setup_autologon.ps1
+```
+
+移送先の VM で自動ログオンは**働いている**。イメージから起こした直後、人が一度も
+RDP せずに生成 API が 1 分ほどで `healthy` になった（REQ-0055）。**この状態を壊さないこと。**
 
 ## Terraform が管理しないもの
 
