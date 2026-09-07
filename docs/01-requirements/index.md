@@ -72,6 +72,7 @@ Slack で流れた話も、合意した要件も、見送ったものも、す�
 | [REQ-0061](REQ-0061.md) | common | Railway を停止する前に、GCP のステージングと本番の両方で製造データが生成できることを確認する | must | done | |
 | [REQ-0062](REQ-0062.md) | common | 製造データ生成 VM のディスクを、作り直せない資産として守る | undecided | not-started | |
 | [REQ-0063](REQ-0063.md) | common | 製造データ生成 VM の死活監視と自動復旧を、外部 IP に依存しない形で作り直す | undecided | not-started | |
+| [REQ-0064](REQ-0064.md) | purchase-order | 製造データ生成の失敗を「VM に届かない」と「入力が悪い」で分け、前者は自動で再試行する | undecided | not-started | |
 
 ## priority — 採否・約束の度合い
 
