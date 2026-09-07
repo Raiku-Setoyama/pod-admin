@@ -425,12 +425,23 @@ curl -s localhost:18000/health   # queue.current_job_id が null、active_jobs �
 **外部 IP は無い。RDP も IAP トンネル経由である。**
 
 ```bash
-gcloud compute reset-windows-password illustrator-vm \
-  --zone=asia-northeast1-a --project=tosyo-api-504104 --user=admin
-
 gcloud compute start-iap-tunnel illustrator-vm 3389 \
   --local-host-port=localhost:13389 --zone=asia-northeast1-a --project=tosyo-api-504104
 # Microsoft Remote Desktop で localhost:13389 へ接続する
+```
+
+**`gcloud compute reset-windows-password` を安易に叩かないこと。**
+`setup_autologon.ps1` は自動ログオン用のパスワードを**レジストリに平文で持っている**ので、
+GCP 側でパスワードをリセットすると**アカウント側だけが変わってレジストリが古いまま**になり、
+**次回の再起動で自動ログオンが失敗する。** サーバーは AtLogOn のタスクでしか起動しないため、
+**誰かが RDP でログインするまで上がってこない**（`illustrator-vm` リポジトリの Issue #5 で、
+夜間再起動と組み合わさって毎朝 9 時間半のダウンとして実際に起きた）。
+
+やむを得ずリセットしたら、**同じ RDP セッションのうちに `setup_autologon.ps1` を再実行する。**
+
+```powershell
+cd C:\illustrator-vm\scripts\setup_windows
+.\setup_autologon.ps1
 ```
 
 #### Windows 側（正本は illustrator-vm リポジトリ）
@@ -474,11 +485,23 @@ curl -s localhost:18000/health    # config_loaded / worker_running が true か
 **`illustrator-vm` リポジトリの `test_prod.py` は旧 VM の外部 IP を直書きしている。**
 そのままでは通らない（別リポジトリの Issue として起票済み）。
 
-#### 監視は無い
+#### 移送で落ちた運用ポリシー
 
-**移送によって、VM の死活監視と自動復旧は前提を失った**（REQ-0063）。
-`illustrator-vm/infra/setup_monitoring.sh` が作る Uptime Check は公開 URL に対するもので、
-外部 IP を外した VM には到達できない。**落ちても誰も気づかない。**
+**イメージはディスクを運ぶだけで、VM に付いていたポリシーは運ばない。**
+旧 VM（`lively-transit-334610`）には次の 3 つが付いていたが、**移送先には無い。**
+
+| 旧プロジェクトにあったもの | 移送先 | 扱い |
+|---|---|---|
+| `illustrator-vm-daily-snapshot`（日次スナップショット） | **無し** | REQ-0062。**新規ではなく復旧である** |
+| Uptime Check `illustrator-api-health` ＋ 自動再起動 | **無し** | REQ-0063。外部 IP 前提なので、そのままは移せない |
+| `illustrator-vm-nightly-restart`（毎晩 03:50→03:55 の stop/start） | **無し** | **意図的に戻さない。** 自動ログオンの失効と組み合わさって毎朝 9 時間半のダウンを起こしていた（Issue #5） |
+
+**落ちても誰も気づかない状態である。** 死活監視は REQ-0063 で作り直す。
+
+なお、移送先の VM で自動ログオンは**働いている**。イメージから起こした直後、
+人が一度も RDP せずに生成 API が 1 分ほどで `healthy` になった
+（サーバーは AtLogOn のタスクでしか起動しない）。**この状態を壊さないために、
+上記のパスワードリセットの注意を守ること。**
 
 ### `default` VPC は消す
 
