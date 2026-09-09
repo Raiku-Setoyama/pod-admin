@@ -109,7 +109,7 @@ class TestFindAllOrderedItemsDetail:
 
         given: 複数メーカーに紐づく発注明細がDBに存在する
         when: find_all_ordered_items_detail メソッドをフィルターなしで呼び出す
-        then: 全メーカーの発注明細が返される（shipped以外の全ステータス）
+        then: 全メーカーの発注明細が返される（明細ステータスによる除外はしない）
         """
         # find_all_ordered_items_detail メソッドが存在することを確認
         assert hasattr(repo, 'find_all_ordered_items_detail'), \

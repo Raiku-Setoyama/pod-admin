@@ -396,8 +396,12 @@ class OrderRepository:
     ) -> Sequence[Row[Any]]:
         """全メーカー横断の受注明細を詳細情報付きで取得
 
+        メーカー別の一覧（find_ordered_items_by_manufacturer_detail）と同じく
+        OrderItem.status で絞り込み、注文ステータスによる除外は行わない。
+        発送完了になった注文の明細も納入済みの明細として残る（REQ-0065）。
+
         Args:
-            status: ステータスフィルター（None の場合は shipped 以外の全て）
+            status: ステータスフィルター（OrderItem.statusでフィルタ、None の場合は全て）
             ordered_from: 発注日From
             ordered_to: 発注日To
             product_type: 商品タイプ
@@ -407,7 +411,7 @@ class OrderRepository:
             expected_delivery_to: 納品予定日To
 
         Returns:
-            受注明細のタプルリスト（OrderItem, order_number, ordered_at, customer_name, cost, status, manufacturer_id, manufacturer_name, lead_time_days）
+            受注明細のタプルリスト（OrderItem, order_number, ordered_at, customer_name, cost, item_status, manufacturer_id, manufacturer_name, lead_time_days）
         """
         from app.models.manufacturer import Manufacturer
         from app.models.product import Product
@@ -419,7 +423,7 @@ class OrderRepository:
                 Order.ordered_at,
                 Order.customer_name,
                 Product.cost,
-                Order.status,
+                OrderItem.status,
                 Manufacturer.id.label("manufacturer_id"),
                 Manufacturer.name.label("manufacturer_name"),
                 Manufacturer.lead_time_days,
@@ -429,12 +433,9 @@ class OrderRepository:
             .join(Manufacturer, Product.manufacturer_id == Manufacturer.id)
         )
 
-        # ステータスフィルター
+        # ステータスフィルター（OrderItem.statusでフィルタ）
         if status:
-            query = query.where(Order.status == status)
-        else:
-            # デフォルトは shipped 以外の全ステータス
-            query = query.where(Order.status != OrderStatus.SHIPPED.value)
+            query = query.where(OrderItem.status == status)
 
         # メーカーIDフィルター
         if manufacturer_id:

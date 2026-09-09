@@ -221,11 +221,12 @@ export function getOrderFilterStatusOptions(): StatusOption<OrderStatus | Shipme
 }
 
 /**
- * 発注詳細フィルター用（shipped を除いた OrderStatus）。
- * メーカー別発注詳細（明細ステータスで絞り込み）と全メーカー横断一覧
- * （注文ステータスで絞り込み）の両方で使う。値は両者で共通。
+ * 発注一覧フィルター用（OrderItemStatus の全て）。
+ * メーカー別発注詳細と全メーカー横断一覧の両方で使い、どちらも明細ステータスで
+ * 絞り込む。発送完了は注文単位のステータスなので選択肢に出さない
+ * （発送完了になった注文の明細は「納品済み」のまま残る）。
  */
-export function getManufacturerOrderFilterStatusOptions(): StatusOption<OrderStatus>[] {
+export function getManufacturerOrderFilterStatusOptions(): StatusOption<OrderItemStatus>[] {
   return [
     { value: "all", label: "全てのステータス" },
     { value: "preparing_order", label: ORDER_STATUS_LABELS.preparing_order },

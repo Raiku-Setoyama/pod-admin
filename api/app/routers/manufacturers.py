@@ -112,13 +112,15 @@ async def get_all_manufacturer_order_items(
     """全メーカー横断の受注明細一覧を取得
 
     全メーカーの発注明細を横断的に一覧表示します。
-    デフォルトでは shipped 以外の全ステータスを返します。
+    メーカー別一覧と同じく明細（OrderItem）単位のステータスで扱い、
+    注文が発送完了になった明細も除外せず返します。
 
     Args:
         ordered_from: 発注日From
         ordered_to: 発注日To
         product_type: 商品タイプフィルター
-        status: ステータスフィルター（ordered, manufacturing, delivered）
+        status: 明細ステータスフィルター
+            （preparing_order, ordered, manufacturing, delivered, cancelled）
         search: キーワード検索（注文番号、製品番号、商品名）
         manufacturer_id: メーカーIDフィルター
         expected_delivery_from: 納品予定日From
