@@ -173,7 +173,8 @@ class AllManufacturerOrderItemResponse(BaseModel):
     thumbnail_image_url: str | None
     ordered_at: datetime
     customer_name: str
-    status: str  # Order.status (ordered, manufacturing, delivered)
+    # OrderItem.status（明細単位のステータス）。発送完了になった注文の明細も delivered のまま残る
+    status: str
     manufacturer_id: str
     manufacturer_name: str
     lead_time_days: int  # メーカーのリードタイム（日数）

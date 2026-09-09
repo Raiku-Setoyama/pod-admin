@@ -9,6 +9,8 @@ FEAT-0018: 全メーカー分の発注明細を一覧で確認できる「すべ
 - AC-009: メーカーIDフィルターに対応する
 - AC-010: 認証なしの場合401が返る
 - AC-011: 発注明細が0件の場合、空配列とtotal=0が返される
+
+REQ-0065: 明細単位のステータスで表示・絞り込みし、発送完了後の明細も残す
 """
 
 import json
@@ -173,32 +175,33 @@ async def test_all_orders(
 ) -> AsyncIterator[dict[str, Any]]:
     """複数メーカーの発注明細を作成するフィクスチャ
 
-    以下のデータを作成:
+    以下のデータを作成（注文ステータス / 明細ステータス）:
     メーカーA:
-    - ordered ステータス: 注文番号 ORD-{prefix}-AAA, 商品名 キーホルダーA
-    - ordered ステータス: 注文番号 ORD-{prefix}-BBB, 商品名 Tシャツ特大
-    - manufacturing ステータス: 注文番号 ORD-{prefix}-CCC, 商品名 キーホルダーB
+    - ordered / ordered: 注文番号 ORD-{prefix}-AAA, 商品名 キーホルダーA
+    - ordered / ordered: 注文番号 ORD-{prefix}-BBB, 商品名 Tシャツ特大
+    - manufacturing / manufacturing: 注文番号 ORD-{prefix}-CCC, 商品名 キーホルダーB
     メーカーB:
-    - ordered ステータス: 注文番号 ORD-{prefix}-DDD, 商品名 ステッカー大
-    - delivered ステータス: 注文番号 ORD-{prefix}-EEE, 商品名 ステッカー小
-    - shipped ステータス: 注文番号 ORD-{prefix}-FFF, 商品名 ステッカー中（除外対象）
+    - ordered / ordered: 注文番号 ORD-{prefix}-DDD, 商品名 ステッカー大
+    - delivered / delivered: 注文番号 ORD-{prefix}-EEE, 商品名 ステッカー小
+    - shipped / delivered: 注文番号 ORD-{prefix}-FFF, 商品名 ステッカー中
+      （明細は shipped を取らない。発送完了後も納入済みの明細として残る）
     """
     unique_prefix = str(uuid4())[:8]
 
     test_data = [
-        # (status, order_suffix, product_name, uid_suffix, product_id)
-        ("ordered", "AAA", "キーホルダーA", "001", test_product_a["id"]),
-        ("ordered", "BBB", "Tシャツ特大", "002", test_product_a["id"]),
-        ("manufacturing", "CCC", "キーホルダーB", "003", test_product_a["id"]),
-        ("ordered", "DDD", "ステッカー大", "004", test_product_b["id"]),
-        ("delivered", "EEE", "ステッカー小", "005", test_product_b["id"]),
-        ("shipped", "FFF", "ステッカー中", "006", test_product_b["id"]),
+        # (order_status, item_status, order_suffix, product_name, uid_suffix, product_id)
+        ("ordered", "ordered", "AAA", "キーホルダーA", "001", test_product_a["id"]),
+        ("ordered", "ordered", "BBB", "Tシャツ特大", "002", test_product_a["id"]),
+        ("manufacturing", "manufacturing", "CCC", "キーホルダーB", "003", test_product_a["id"]),
+        ("ordered", "ordered", "DDD", "ステッカー大", "004", test_product_b["id"]),
+        ("delivered", "delivered", "EEE", "ステッカー小", "005", test_product_b["id"]),
+        ("shipped", "delivered", "FFF", "ステッカー中", "006", test_product_b["id"]),
     ]
 
     orders = []
     order_items = []
 
-    for i, (status, suffix, product_name, uid_suffix, product_id) in enumerate(test_data):
+    for i, (status, item_status, suffix, product_name, uid_suffix, product_id) in enumerate(test_data):
         order_number = f"ORD-{unique_prefix}-{suffix}"
         uid = f"UID-{unique_prefix}-{uid_suffix}"
         order_id = str(uuid4())
@@ -243,11 +246,11 @@ async def test_all_orders(
             text("""
                 INSERT INTO order_items (
                     id, order_id, uid, product_id, product_name, product_type,
-                    price, quantity, created_at, updated_at
+                    price, quantity, status, created_at, updated_at
                 )
                 VALUES (
                     :id, :order_id, :uid, :product_id, :product_name, :product_type,
-                    :price, :quantity, NOW(), NOW()
+                    :price, :quantity, :status, NOW(), NOW()
                 )
             """),
             {
@@ -259,6 +262,7 @@ async def test_all_orders(
                 "product_type": product_type,
                 "price": 1000,
                 "quantity": 1,
+                "status": item_status,
             }
         )
 
@@ -273,7 +277,7 @@ async def test_all_orders(
             "order_id": order_id,
             "uid": uid,
             "product_name": product_name,
-            "status": status,
+            "status": item_status,
         })
 
     await db_session.commit()
@@ -309,7 +313,7 @@ class TestAllManufacturerOrderItemsAPI:
         when: GET /api/v1/manufacturers/all-order-items を管理者トークンで呼び出す
         then: ステータス200で全メーカーの発注明細一覧が返される。
               各明細にmanufacturer_nameが含まれる。
-              shipped以外の5件が返される。
+              REQ-0065: 発送完了になった注文の明細も除外されず、6件すべてが返される。
         """
         unique_prefix = test_all_orders["unique_prefix"]
 
@@ -322,8 +326,8 @@ class TestAllManufacturerOrderItemsAPI:
         assert response.status_code == 200
         data = response.json()
 
-        # shipped 以外の5件が返される
-        assert data["total"] == 5
+        # 発送完了の注文の明細も含めた6件が返される
+        assert data["total"] == 6
 
         # 各明細に manufacturer_id と manufacturer_name が含まれる
         for item in data["items"]:
@@ -336,9 +340,10 @@ class TestAllManufacturerOrderItemsAPI:
         assert test_all_orders["manufacturer_a_name"] in manufacturer_names
         assert test_all_orders["manufacturer_b_name"] in manufacturer_names
 
-        # shipped のアイテムが含まれていないことを確認
-        product_names = [item["product_name"] for item in data["items"]]
-        assert "ステッカー中" not in product_names
+        # 発送完了になった注文の明細も、納入済みの明細として含まれる
+        by_name = {item["product_name"]: item for item in data["items"]}
+        assert "ステッカー中" in by_name
+        assert by_name["ステッカー中"]["status"] == "delivered"
 
     @pytest.mark.asyncio
     async def test_api_filters_by_status_ordered(
@@ -490,7 +495,7 @@ class TestAllManufacturerOrderItemsAPI:
     ) -> None:
         """AC-011: 発注明細が0件の場合、空配列とtotal=0が返される
 
-        given: 発注明細が存在しない（またはすべてshippedステータス）
+        given: 発注明細が存在しない
         when: GET /api/v1/manufacturers/all-order-items を呼び出す
         then: items=[], total=0, total_quantity=0, total_amount=0 が返される
 
@@ -574,3 +579,251 @@ class TestAllManufacturerOrderItemsAPI:
         assert data["total"] >= 1
         assert data["total_quantity"] >= 1
         assert data["total_amount"] >= 1
+
+
+# ===========================================================================
+# REQ-0065: 明細単位のステータスで表示・絞り込みする
+# ===========================================================================
+
+@pytest.fixture
+async def test_mixed_manufacturer_order(
+    db_session: AsyncSession,
+    test_order_source: dict[str, Any],
+    test_product_a: dict[str, Any],
+    test_product_b: dict[str, Any],
+    test_manufacturer_a: dict[str, Any],
+    test_manufacturer_b: dict[str, Any],
+) -> AsyncIterator[dict[str, Any]]:
+    """2 メーカーにまたがる 1 注文を作るフィクスチャ
+
+    メーカーA の明細は納入済み、メーカーB の明細は製造中。
+    注文ステータスは導出ルール（1つでも manufacturing があれば manufacturing）に従い
+    manufacturing になる。明細単位で見れば A は納入済みである。
+    """
+    unique_prefix = str(uuid4())[:8]
+    order_id = str(uuid4())
+    order_number = f"ORD-{unique_prefix}-MIXED"
+
+    await db_session.execute(
+        text("""
+            INSERT INTO orders (
+                id, order_number, order_source_id, product_name, quantity,
+                customer_name, customer_email, customer_phone, customer_postal_code,
+                customer_address_prefecture, customer_address_city, status, ordered_at,
+                total_price, created_at, updated_at
+            )
+            VALUES (
+                :id, :order_number, :order_source_id, 'まとめ買い', 2,
+                '顧客M', 'customer-mixed@example.com', '090-0000-0000', '100-0001',
+                '東京都', '千代田区', 'manufacturing', :ordered_at, 2000, NOW(), NOW()
+            )
+        """),
+        {
+            "id": order_id,
+            "order_number": order_number,
+            "order_source_id": test_order_source["id"],
+            "ordered_at": datetime.now(),
+        }
+    )
+
+    items = [
+        # (product_id, product_type, uid_suffix, item_status)
+        (test_product_a["id"], "tshirt", "A", "delivered"),
+        (test_product_b["id"], "sticker", "B", "manufacturing"),
+    ]
+    for product_id, product_type, uid_suffix, item_status in items:
+        await db_session.execute(
+            text("""
+                INSERT INTO order_items (
+                    id, order_id, uid, product_id, product_name, product_type,
+                    price, quantity, status, created_at, updated_at
+                )
+                VALUES (
+                    :id, :order_id, :uid, :product_id, :product_name, :product_type,
+                    1000, 1, :status, NOW(), NOW()
+                )
+            """),
+            {
+                "id": str(uuid4()),
+                "order_id": order_id,
+                "uid": f"UID-{unique_prefix}-{uid_suffix}",
+                "product_id": product_id,
+                "product_name": f"まとめ買い商品{uid_suffix}",
+                "product_type": product_type,
+                "status": item_status,
+            }
+        )
+
+    await db_session.commit()
+
+    yield {
+        "unique_prefix": unique_prefix,
+        "order_number": order_number,
+        "manufacturer_a_id": test_manufacturer_a["id"],
+        "manufacturer_b_id": test_manufacturer_b["id"],
+    }
+
+
+class TestAllManufacturerOrderItemsUsesItemStatus:
+    """REQ-0065: 一覧・絞り込みが明細単位のステータスで行われる"""
+
+    @pytest.mark.asyncio
+    async def test_shipped_order_items_remain_as_delivered(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, Any],
+        test_all_orders: dict[str, Any],
+    ) -> None:
+        """受入基準 1・3: 発送完了になった注文の明細が「納品済」で絞り込める
+
+        given: 注文が発送完了になり、その明細は納入済みのまま残っている
+        when: status=delivered で絞り込む
+        then: 発送完了になった注文の明細も返される
+        """
+        unique_prefix = test_all_orders["unique_prefix"]
+
+        response = await client.get(
+            "/api/v1/manufacturers/all-order-items",
+            params={"status": "delivered", "search": unique_prefix},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # ステッカー小（注文 delivered）とステッカー中（注文 shipped）の 2 件
+        product_names = {item["product_name"] for item in data["items"]}
+        assert product_names == {"ステッカー小", "ステッカー中"}
+        assert data["total"] == 2
+        for item in data["items"]:
+            assert item["status"] == "delivered"
+
+    @pytest.mark.asyncio
+    async def test_item_status_is_returned_per_item(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, Any],
+        test_mixed_manufacturer_order: dict[str, Any],
+    ) -> None:
+        """受入基準 2: 注文ではなく明細のステータスが返る
+
+        given: 1 注文の中にメーカーAの納入済み明細とメーカーBの製造中明細がある
+               （注文ステータスは manufacturing）
+        when: 絞り込みなしで一覧を取得する
+        then: 明細ごとに delivered / manufacturing が返る
+        """
+        unique_prefix = test_mixed_manufacturer_order["unique_prefix"]
+
+        response = await client.get(
+            "/api/v1/manufacturers/all-order-items",
+            params={"search": unique_prefix},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        statuses = {item["uid"]: item["status"] for item in data["items"]}
+        assert statuses == {
+            f"UID-{unique_prefix}-A": "delivered",
+            f"UID-{unique_prefix}-B": "manufacturing",
+        }
+
+    @pytest.mark.asyncio
+    async def test_filters_mixed_order_by_item_status(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, Any],
+        test_mixed_manufacturer_order: dict[str, Any],
+    ) -> None:
+        """受入基準 4: 複数メーカーにまたがる注文で、明細ごとに独立して絞り込める
+
+        given: 注文ステータスが manufacturing の注文に、納入済みの明細が含まれる
+        when: status=delivered で絞り込む
+        then: その納入済み明細だけが返る（注文ステータスでは弾かれない）
+        """
+        unique_prefix = test_mixed_manufacturer_order["unique_prefix"]
+
+        response = await client.get(
+            "/api/v1/manufacturers/all-order-items",
+            params={"status": "delivered", "search": unique_prefix},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["total"] == 1
+        assert data["items"][0]["uid"] == f"UID-{unique_prefix}-A"
+        assert data["items"][0]["status"] == "delivered"
+
+    @pytest.mark.asyncio
+    async def test_filters_cancelled_items(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, Any],
+        db_session: AsyncSession,
+        test_order_source: dict[str, Any],
+        test_product_a: dict[str, Any],
+    ) -> None:
+        """受入基準 3: キャンセル済みの明細が「キャンセル済」で絞り込める
+
+        given: キャンセルされた注文と、その明細（キャンセル済み）がある
+        when: status=cancelled で絞り込む
+        then: その明細が返る
+        """
+        unique_prefix = str(uuid4())[:8]
+        order_id = str(uuid4())
+
+        await db_session.execute(
+            text("""
+                INSERT INTO orders (
+                    id, order_number, order_source_id, product_name, quantity,
+                    customer_name, customer_email, customer_phone, customer_postal_code,
+                    customer_address_prefecture, customer_address_city, status, ordered_at,
+                    total_price, created_at, updated_at
+                )
+                VALUES (
+                    :id, :order_number, :order_source_id, 'キャンセル品', 1,
+                    '顧客C', 'customer-cancel@example.com', '090-0000-0000', '100-0001',
+                    '東京都', '千代田区', 'cancelled', :ordered_at, 1000, NOW(), NOW()
+                )
+            """),
+            {
+                "id": order_id,
+                "order_number": f"ORD-{unique_prefix}-CANCEL",
+                "order_source_id": test_order_source["id"],
+                "ordered_at": datetime.now(),
+            }
+        )
+        await db_session.execute(
+            text("""
+                INSERT INTO order_items (
+                    id, order_id, uid, product_id, product_name, product_type,
+                    price, quantity, status, created_at, updated_at
+                )
+                VALUES (
+                    :id, :order_id, :uid, :product_id, 'キャンセル品', 'tshirt',
+                    1000, 1, 'cancelled', NOW(), NOW()
+                )
+            """),
+            {
+                "id": str(uuid4()),
+                "order_id": order_id,
+                "uid": f"UID-{unique_prefix}-X",
+                "product_id": test_product_a["id"],
+            }
+        )
+        await db_session.commit()
+
+        response = await client.get(
+            "/api/v1/manufacturers/all-order-items",
+            params={"status": "cancelled", "search": unique_prefix},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["total"] == 1
+        assert data["items"][0]["status"] == "cancelled"

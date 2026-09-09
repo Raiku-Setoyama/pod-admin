@@ -192,11 +192,14 @@ class ManufacturerOrderService:
     ) -> AllManufacturerOrderItemListResponse:
         """全メーカー横断の受注明細一覧を取得
 
+        ステータスは明細（OrderItem）単位で扱う。注文が発送完了になっても
+        明細は納入済みのまま一覧に残る（REQ-0065）。
+
         Args:
             ordered_from: 発注日From
             ordered_to: 発注日To
             product_type: 商品タイプ
-            status: ステータスフィルター（None の場合は shipped 以外の全て）
+            status: ステータスフィルター（OrderItem.statusでフィルタ、None の場合は全て）
             search: キーワード検索（注文番号・製品番号・商品名）
             manufacturer_id: メーカーIDフィルター
             expected_delivery_from: 納品予定日From
@@ -217,7 +220,7 @@ class ManufacturerOrderService:
         total_quantity = 0
         total_amount = 0
 
-        for order_item, order_number, ordered_at, customer_name, _cost, order_status, mfr_id, mfr_name, lead_time_days in rows:
+        for order_item, order_number, ordered_at, customer_name, _cost, item_status, mfr_id, mfr_name, lead_time_days in rows:
             items.append(
                 AllManufacturerOrderItemResponse(
                     id=order_item.id,
@@ -236,7 +239,7 @@ class ManufacturerOrderService:
                     thumbnail_image_url=order_item.thumbnail_image_url,
                     ordered_at=ordered_at,
                     customer_name=customer_name,
-                    status=order_status,
+                    status=item_status,
                     manufacturer_id=mfr_id,
                     manufacturer_name=mfr_name,
                     lead_time_days=lead_time_days,

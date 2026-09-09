@@ -205,7 +205,8 @@ export interface AllManufacturerOrderItem {
   thumbnail_image_url: string | null;
   ordered_at: string;
   customer_name: string;
-  status: OrderStatus;
+  // 明細単位のステータス。注文が発送完了になっても明細は delivered のまま残る
+  status: OrderItemStatus;
   manufacturer_id: string;
   manufacturer_name: string;
   lead_time_days: number;  // メーカーのリードタイム（日数）
