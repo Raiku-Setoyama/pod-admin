@@ -355,26 +355,21 @@ async def get_current_manufacturer(
     authorization: Annotated[str | None, Header()] = None,
     manufacturer_repo: ManufacturerRepository = Depends(get_manufacturer_repository),
 ) -> Manufacturer:
-    """Get current authenticated manufacturer from Bearer token."""
-    import logging
-    logger = logging.getLogger(__name__)
+    """Get current authenticated manufacturer from Bearer token.
 
+    **認証の失敗はログに残さない。** 残していたのはトークンの断片とデコード済みの
+    payload（メーカー ID を含む）であり、ログの閲覧権限しか持たない相手に
+    認証情報が渡る。失敗の理由は呼び出し元に 401 として返っており、
+    調査に要る情報はアクセスログの経路・時刻・結果で足りる。
+    """
     if not authorization:
-        logger.error("No authorization header provided")
         raise UnauthorizedError("Authorization header required")
 
     if not authorization.startswith("Bearer "):
-        logger.error(f"Invalid authorization format: {authorization[:20]}...")
         raise UnauthorizedError("Invalid authorization header format")
 
-    token = authorization[7:]
-    logger.info(f"Token received (first 20 chars): {token[:20]}...")
-
-    payload = decode_token(token)
-    logger.info(f"Decoded payload: {payload}")
-
-    if not payload or not payload.get("manufacturer_id"):
-        logger.error(f"Invalid payload or missing manufacturer_id. Payload: {payload}")
+    payload = decode_token(authorization[7:])
+    if not payload:
         raise UnauthorizedError("Invalid manufacturer token")
 
     manufacturer_id = payload.get("manufacturer_id")
@@ -383,7 +378,6 @@ async def get_current_manufacturer(
     manufacturer = await manufacturer_repo.find_by_id(manufacturer_id)
 
     if not manufacturer or not manufacturer.is_active:
-        logger.error(f"Manufacturer not found or disabled: {manufacturer_id}")
         raise UnauthorizedError("Manufacturer not found or disabled")
 
     return manufacturer

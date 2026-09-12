@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
+from app.logging_config import configure_logging
 from app.routers import (
     auth,
     chat,
@@ -30,6 +31,10 @@ from app.utils.exceptions import AppException
 # 中断された製造データ生成の復旧は、API の起動時ではなくワーカー（app/worker.py）が行う。
 # API は複数インスタンスが同時に起動しうるので、起動フックで復旧を走らせると、
 # 別インスタンスが生成中の行まで巻き戻してしまう。
+
+# **ルータを取り込む前に呼ぶ。** 取り込みの過程で出るログも同じ書式に乗せるため。
+# これが無いと、アプリの logger.info は本番のどこにも出ない（logging_config 参照）。
+configure_logging()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

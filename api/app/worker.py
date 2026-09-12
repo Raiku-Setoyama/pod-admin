@@ -36,6 +36,7 @@ from sqlalchemy import text
 import app.models  # noqa: F401  # 全モデルをマッパー登録に載せる（docstring 参照）
 from app.config import settings
 from app.database import get_engine
+from app.logging_config import configure_logging
 from app.services.manufacturing_data_service import (
     GenerationOutcome,
     claim_next_generation,
@@ -146,9 +147,7 @@ async def run_once() -> int:
 
 def main() -> None:
     """ジョブのエントリポイント（`python -m app.worker`）."""
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
-    )
+    configure_logging()
     warning = settings.lease_margin_warning()
     if warning:
         logger.warning("%s", warning)
