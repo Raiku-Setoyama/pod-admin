@@ -47,6 +47,8 @@ module "services" {
     "artifactregistry.googleapis.com",
     "cloudscheduler.googleapis.com",
     "storage.googleapis.com",
+    "monitoring.googleapis.com",
+    "logging.googleapis.com",
   ]
 }
 
@@ -373,6 +375,21 @@ module "worker_job" {
   vpc_egress = var.worker_vpc_egress
 
   depends_on = [module.secrets]
+}
+
+# 監視と通知。**Cloud Run と Job を作ったあとに置く。**
+# アラートは対象の名前で絞るので、対象が先に存在していないと
+# 「条件は正しいが 1 度も当たらない policy」が静かに出来上がる。
+module "monitoring" {
+  source = "../monitoring"
+
+  project_id          = var.project_id
+  enabled             = var.monitoring_enabled
+  notification_emails = var.alert_emails
+
+  api_service_name = module.api.name
+  worker_job_name  = module.worker_job.name
+  api_url          = module.api.uri
 }
 
 module "worker_schedule" {

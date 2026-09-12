@@ -31,3 +31,8 @@ output "github_actions_workload_identity_provider" {
 output "github_actions_service_account" {
   value = module.stack.github_actions_service_account
 }
+
+output "alerting_active" {
+  description = "アラートが実際に作られているか。false なら誰にも通知が届かない"
+  value       = module.stack.alerting_active
+}

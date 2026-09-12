@@ -98,6 +98,13 @@ module "stack" {
 
   sendgrid_from_email = "noreply@rksyo.com"
   contact_email       = "raiku.setoyama@ironiwa.co.jp"
+
+  # **障害に気づくための唯一の経路である。** ここが空だとアラートは 1 本も作られない
+  # （`terraform output alerting_active` が false になるので、気づける）。
+  #
+  # 宛先はメールのみにしてある。Slack など別の宛先を足すなら
+  # `modules/monitoring` に通知チャンネルを追加する。
+  alert_emails = ["raiku.setoyama@ironiwa.co.jp"]
 }
 
 # 製造データ生成 VM を迎えるためのネットワーク（REQ-0055 の 1 本目）。

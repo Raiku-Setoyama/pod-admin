@@ -12,3 +12,8 @@ output "urls" {
   DESC
   value       = sort(google_cloud_run_v2_service.this.urls)
 }
+
+output "name" {
+  description = "サービス名（監視の対象を名前で絞るために使う）"
+  value       = google_cloud_run_v2_service.this.name
+}
