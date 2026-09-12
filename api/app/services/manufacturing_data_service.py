@@ -7,13 +7,17 @@
   ワーカー（app/worker.py）が別プロセスで拾う。コンテナ実行基盤ではレスポンス送出後に
   CPU が絞られるため、リクエスト内で生成を走らせると完走しない（ADR-0026）。
 - VM の72h削除に依存せず、完了ジョブは速やかに DL して FileStorage に保存。
+- **失敗を 2 つに分ける。** VM に届かなかった失敗（接続不能・タイムアウト・5xx）は
+  待ち行列へ戻して後で再試行し、入力が悪い失敗（未対応の商品種別・レイヤー不足）は
+  その場で failed にする。**再試行して直るものと直らないものを同じ終端に置かない。**
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from enum import Enum
 from typing import Any
 
 import httpx
@@ -32,7 +36,11 @@ from app.schemas.manufacturing_data import (
     ManufacturingDataListResponse,
     ManufacturingDataResponse,
 )
-from app.services.illustrator_vm_client import IllustratorVmClient, IllustratorVmError
+from app.services.illustrator_vm_client import (
+    IllustratorVmClient,
+    IllustratorVmError,
+    IllustratorVmUnavailableError,
+)
 from app.utils.exceptions import ConflictError, NotFoundError, ValidationError
 from app.utils.file_storage import FileStorage, build_file_storage
 from app.utils.mfg_product_mapping import MfgMappingError, build_vm_mapping
@@ -43,6 +51,14 @@ logger = logging.getLogger(__name__)
 
 class SourceImageTooLargeError(Exception):
     """元データ画像がサイズ上限を超えた場合のエラー."""
+
+
+class GenerationOutcome(str, Enum):
+    """1 件の生成がどう終わったか（ワーカーが次の判断に使う）."""
+
+    READY = "ready"  # 生成できた
+    FAILED = "failed"  # 入力が悪い。再試行しても直らない
+    RESCHEDULED = "rescheduled"  # VM に届かなかった。待ち行列へ戻した
 
 
 # 生成済みファイルの保存先プレフィックス（FileStorage 上）
@@ -191,6 +207,9 @@ class ManufacturingDataService:
             if existing.status == MfgDataStatus.FAILED.value:
                 existing.status = MfgDataStatus.PENDING.value
                 existing.error_message = None
+                # 新しい受注は新しい機会である。前回の到達不能の数え直しを持ち越さない。
+                existing.attempts = 0
+                existing.next_attempt_at = None
                 existing.source_images = _merge_uploaded_layers(
                     existing.source_images, item.source_images
                 )
@@ -256,8 +275,8 @@ class ManufacturingDataService:
 
     # === 生成ドライバ（バックグラウンド） ===
 
-    async def generate(self, md_id: str, lease_token: datetime) -> None:
-        """**確保済みの**製造データを1件生成し、状態を ready/failed に確定させる.
+    async def generate(self, md_id: str, lease_token: datetime) -> GenerationOutcome:
+        """**確保済みの**製造データを1件生成し、その結末を返す.
 
         呼び出し側（ワーカー）が claim_next_generation で行を generating へ確保し、
         リースを打ってから呼ぶ。**この関数は確保をしない。**二重生成の防止は取り出しの
@@ -266,11 +285,15 @@ class ManufacturingDataService:
         ``lease_token`` は取り出しが返したリース期限＝所有権の証明である。結果の書き戻しは
         この値が一致する間だけ通す。一致しなければ、生成に手間取っている間にリースが失効し、
         別のワーカーがこの行を再確保したということなので、**自分の結果を捨てる。**
+
+        失敗は 2 つに分かれる（``_classify``）。VM に届かなかった失敗は ``pending`` へ戻して
+        再試行の予定時刻を打ち、入力が悪い失敗は ``failed`` で終える。
+        **戻すのも書き戻しなので、同じリースの検査を通る。**
         """
         md = await self._md_repo.find_by_id(md_id)
         if md is None:
             logger.warning("manufacturing data %s not found; skip generation", md_id)
-            return
+            return GenerationOutcome.FAILED
         if md.status != MfgDataStatus.GENERATING.value:
             # 取り出しの直後にしか呼ばれないはずなので、ここに来るのは呼び出し側の誤りである。
             logger.warning(
@@ -278,7 +301,7 @@ class ManufacturingDataService:
                 md_id,
                 md.status,
             )
-            return
+            return GenerationOutcome.FAILED
 
         try:
             if self._vm_client is None:
@@ -327,22 +350,95 @@ class ManufacturingDataService:
                 error_message=None,
             )
             if not applied:
-                return
+                return GenerationOutcome.FAILED
             # 生成完了を参照明細へ波及: 「発注準備中」→「発注済み」（発注可能に）。
             await self._order_repo.sync_item_status_for_manufacturing_data(
                 md_id, ready=True
             )
             await self._commit()
             logger.info("manufacturing data %s generated (%s)", md_id, filename)
+            return GenerationOutcome.READY
         except Exception as exc:  # noqa: BLE001 - 失敗は必ず行に記録して終える
-            logger.exception("manufacturing data generation failed for %s", md_id)
-            await self._finish(
+            return await self._handle_failure(md, lease_token, exc)
+
+    async def _handle_failure(
+        self, md: ManufacturingData, lease_token: datetime, exc: Exception
+    ) -> GenerationOutcome:
+        """生成の失敗を、再試行するものと終わらせるものに振り分けて記録する.
+
+        **上限に触れたら終わらせる。** 到達不能が続くかぎり無限に戻し続けると、
+        VM が恒久的に壊れている場合に「待ち行列にずっと居るが誰も気づかない」状態になる。
+        上限まで来たら failed にして、管理画面と通知の対象へ出す。
+        """
+        message = str(exc)[:1000]
+        retryable = self._is_retryable(exc)
+        attempts_left = settings.MFG_MAX_GENERATION_ATTEMPTS - md.attempts
+
+        if retryable and attempts_left > 0:
+            delay = self._retry_delay(md.attempts)
+            # 例外そのものは出さない（想定内の経路であり、毎回スタックを積む値がない）。
+            logger.warning(
+                "manufacturing data %s could not reach the VM (attempt %d/%d); "
+                "retrying in %.0fs: %s",
+                md.id,
+                md.attempts,
+                settings.MFG_MAX_GENERATION_ATTEMPTS,
+                delay,
+                message,
+            )
+            applied = await self._finish(
                 md,
                 lease_token,
-                status=MfgDataStatus.FAILED.value,
-                error_message=str(exc)[:1000],
+                status=MfgDataStatus.PENDING.value,
+                error_message=message,
+                next_attempt_at=datetime.now(UTC) + timedelta(seconds=delay),
             )
             await self._commit()
+            # リースを失っていたら別のワーカーが握っている。**止める理由にはならない。**
+            return (
+                GenerationOutcome.RESCHEDULED if applied else GenerationOutcome.FAILED
+            )
+
+        if retryable:
+            message = (
+                f"VM に {md.attempts} 回届きませんでした（上限）。"
+                f"最後のエラー: {message}"
+            )[:1000]
+        logger.exception("manufacturing data generation failed for %s", md.id)
+        await self._finish(
+            md,
+            lease_token,
+            status=MfgDataStatus.FAILED.value,
+            error_message=message,
+        )
+        await self._commit()
+        return GenerationOutcome.FAILED
+
+    @staticmethod
+    def _is_retryable(exc: Exception) -> bool:
+        """「VM に届かなかった」失敗かどうかを判定する.
+
+        **判定は型で行う。** 文言で見分けると、VM 側のメッセージが変わった日に
+        静かに壊れ、しかも壊れ方が「失敗しても再試行されない」という気づきにくい側になる。
+
+        ``httpx`` の例外がそのまま出てくるのは元データ（PNG レイヤー）の取得と保存先で
+        あり、こちらも相手先の不調なので再試行の対象にする。
+        """
+        return isinstance(
+            exc, IllustratorVmUnavailableError | httpx.TransportError | httpx.TimeoutException
+        )
+
+    @staticmethod
+    def _retry_delay(attempts: int) -> float:
+        """再試行までの待ち時間（秒）。試行回数に応じて指数的に伸ばし、上限で止める.
+
+        **落ちている VM を叩き続けない**ためと、特定の入力でだけ 5xx になる行を
+        待ち行列の後ろへ下げるための両方を、同じ 1 つの仕掛けで満たす。
+        """
+        # attempts は確保時に加算済みなので 1 以上。1 回目は base そのもの。
+        exponent = max(0, attempts - 1)
+        delay = settings.MFG_RETRY_BASE_SECONDS * (2**exponent)
+        return float(min(delay, settings.MFG_RETRY_MAX_SECONDS))
 
     async def _finish(
         self, md: ManufacturingData, lease_token: datetime, **values: Any
@@ -480,6 +576,9 @@ class ManufacturingDataService:
 
         md.status = MfgDataStatus.PENDING.value
         md.error_message = None
+        # 人の判断による仕切り直しなので、到達不能の数え直しも、待ち時間も手放す。
+        md.attempts = 0
+        md.next_attempt_at = None
         await self._md_repo.update(md)
         await self._commit()
         return ManufacturingDataResponse.model_validate(md)
@@ -622,6 +721,8 @@ class ManufacturingDataService:
         """
         md.status = MfgDataStatus.PENDING.value
         md.error_message = None
+        md.attempts = 0
+        md.next_attempt_at = None
         await self._md_repo.update(md)
         await self._order_repo.sync_item_status_for_manufacturing_data(md.id, ready=False)
         await self._commit()
@@ -664,6 +765,22 @@ class ManufacturingDataService:
             raise ValidationError(f"元画像は PNG 形式のみ対応しています: {layer_type}")
         return content
 
+    async def retry_failed(self, ids: list[str] | None = None) -> int:
+        """失敗した生成をまとめて待ち行列へ戻し、戻した件数を返す.
+
+        VM が落ちていた間に溜まった失敗を、1 件ずつ叩かずに戻すための入口である。
+        ``ids`` 省略時は failed の全件が対象。
+        """
+        restored = await self._md_repo.retry_failed(ids)
+        await self._commit()
+        if restored:
+            logger.info("restored %d failed manufacturing data row(s) to pending", restored)
+        return restored
+
+    async def status_counts(self) -> dict[str, int]:
+        """ステータスごとの件数を返す（画面の集計用）."""
+        return await self._md_repo.count_by_status()
+
     async def list(
         self,
         page: int = 1,
@@ -685,11 +802,14 @@ class ManufacturingDataService:
             total=total,
             page=page,
             limit=limit,
+            # **絞り込みの影響を受けない全体像を一緒に返す。** failed だけを見ている
+            # 画面でも「いま何件溜まっているか」が分かるようにするため。
+            status_counts=await self._md_repo.count_by_status(),
         )
 
 
-async def run_generation(md_id: str, lease_token: datetime) -> None:
-    """新規セッションを開き、1件の製造データを生成する.
+async def run_generation(md_id: str, lease_token: datetime) -> GenerationOutcome:
+    """新規セッションを開き、1件の製造データを生成して、その結末を返す.
 
     ワーカー（app/worker.py）から呼ばれる。呼び出し元のセッションや ORM を持ち込まず、
     プレーンな md_id だけを受け取る。生成は 30〜360 秒かかりうるため、この関数を
@@ -705,10 +825,14 @@ async def run_generation(md_id: str, lease_token: datetime) -> None:
             vm_client=IllustratorVmClient.from_settings(settings),
         )
         try:
-            await service.generate(md_id, lease_token)
+            return await service.generate(md_id, lease_token)
         except Exception:  # noqa: BLE001 - バックグラウンドは絶対に落とさない
             await session.rollback()
             logger.exception("run_generation crashed for %s", md_id)
+            # ここへ来るのは generate() が処理しきれなかったとき（DB の不調など）。
+            # **行は generating のまま残る。** リースが切れれば pending へ戻るので、
+            # 取りこぼしにはならない。周回は続けてよいので FAILED を返す。
+            return GenerationOutcome.FAILED
 
 
 async def claim_next_generation(lease_seconds: float) -> tuple[str, datetime] | None:

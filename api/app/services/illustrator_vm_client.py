@@ -37,6 +37,19 @@ class IllustratorVmError(Exception):
     """illustrator-vm 呼び出しに関するエラー."""
 
 
+class IllustratorVmUnavailableError(IllustratorVmError):
+    """**VM に届かなかった**ことを表すエラー（入力の誤りと区別する）.
+
+    接続不能・タイムアウト・503・5xx のように、**同じ入力でも VM が戻れば成功する**
+    失敗だけがこれになる。422 のような入力起因の失敗は基底の ``IllustratorVmError``
+    のままにする。
+
+    呼び出し側（manufacturing_data_service）はこの型を見て、生成待ちへ戻すか
+    失敗として確定させるかを決める。**型で分けるのは、文言での判定が
+    VM 側のメッセージ変更で静かに壊れるからである。**
+    """
+
+
 @dataclass
 class VmJobStatus:
     """ジョブのステータス（status エンドポイント由来）."""
@@ -193,7 +206,9 @@ class IllustratorVmClient:
                     f"VM job {job_id} failed: {last_status.error or last_status.status}"
                 )
             if time.monotonic() >= deadline:
-                raise IllustratorVmError(
+                # **入力の誤りではない。** VM は受理していて、返ってこないだけである
+                # （Illustrator の固着・VM の過負荷）。VM が健全に戻れば同じ入力で通る。
+                raise IllustratorVmUnavailableError(
                     f"VM job {job_id} timed out after {self._max_poll_seconds}s "
                     f"(last status: {last_status.status})"
                 )
@@ -209,8 +224,10 @@ class IllustratorVmClient:
                         f"{self._base_url}/api/download/{job_id}",
                         headers=self._headers(),
                     )
-                if response.status_code == 503:
-                    last_exc = IllustratorVmError("VM busy (503) while downloading")
+                if response.status_code >= 500:
+                    last_exc = IllustratorVmUnavailableError(
+                        f"VM returned {response.status_code} while downloading"
+                    )
                     await self._backoff(attempt)
                     continue
                 response.raise_for_status()
@@ -218,7 +235,9 @@ class IllustratorVmClient:
             except (httpx.TransportError, httpx.TimeoutException) as exc:
                 last_exc = exc
                 await self._backoff(attempt)
-        raise IllustratorVmError(
+        # ここへ来るのは 5xx か transport 系を出し切ったときだけ（4xx は
+        # raise_for_status が HTTPStatusError として即座に投げ、捕まえていない）。
+        raise IllustratorVmUnavailableError(
             f"failed to download VM job {job_id}: {last_exc}"
         ) from last_exc
 
@@ -232,11 +251,17 @@ class IllustratorVmClient:
                     response = await client.request(
                         method, url, json=json, headers=self._headers()
                     )
-                if response.status_code == 503:
-                    last_exc = IllustratorVmError("VM busy (503)")
+                if response.status_code >= 500:
+                    # 503（キュー上限）だけでなく 5xx 全般を「VM 側の不調」とみなす。
+                    # どれも入力を直しても変わらず、VM が戻れば同じ入力で通る。
+                    last_exc = IllustratorVmUnavailableError(
+                        f"VM {method} {path} -> {response.status_code}: "
+                        f"{_extract_error(response)}"
+                    )
                     await self._backoff(attempt)
                     continue
                 if response.status_code >= 400:
+                    # 4xx は入力が悪い。**再試行しても同じ結果になる**ので基底の型で投げる。
                     raise IllustratorVmError(
                         f"VM {method} {path} -> {response.status_code}: "
                         f"{_extract_error(response)}"
@@ -248,7 +273,7 @@ class IllustratorVmClient:
                     # 2xx だが本文が JSON でない（前段 proxy の一時的な HTML/空応答など）。
                     # 一過性のことが多いためリトライ対象として扱う（未捕捉で生成を
                     # 落とさない）。
-                    last_exc = IllustratorVmError(
+                    last_exc = IllustratorVmUnavailableError(
                         f"VM {method} {path} returned a non-JSON body: "
                         f"{response.text[:200]!r}"
                     )
@@ -257,7 +282,10 @@ class IllustratorVmClient:
             except (httpx.TransportError, httpx.TimeoutException) as exc:
                 last_exc = exc
                 await self._backoff(attempt)
-        raise IllustratorVmError(f"VM {method} {path} failed: {last_exc}") from last_exc
+        # 出し切って残るのは 5xx か transport 系だけ（4xx は上で即 raise 済み）。
+        raise IllustratorVmUnavailableError(
+            f"VM {method} {path} failed: {last_exc}"
+        ) from last_exc
 
     async def _backoff(self, attempt: int) -> None:
         # 1s, 2s, 4s, ... （最終試行後は待たない）

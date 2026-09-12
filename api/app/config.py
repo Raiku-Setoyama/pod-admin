@@ -117,6 +117,17 @@ class Settings(BaseSettings):
     # 長くするほど安全だが、ワーカーがクラッシュしてから拾い直されるまでの待ち時間も伸びる。
     WORKER_LEASE_SECONDS: float = 2400.0
 
+    # 製造データ生成の再試行（VM に届かなかったときだけ効く。入力の誤りは即 failed）
+    #
+    # 上限に達した行は failed になり、管理画面の一覧と通知に出る。**無限には粘らない。**
+    # 既定は、下の待ち時間と合わせて丸一日ぶんの停止に耐える値にしてある
+    # （300s から倍々で 3600s 上限、20 回でおよそ 17 時間）。
+    MFG_MAX_GENERATION_ATTEMPTS: int = 20
+    # 1 回目の再試行までの待ち時間（秒）。以降は試行ごとに倍にする。
+    MFG_RETRY_BASE_SECONDS: float = 300.0
+    # 待ち時間の上限（秒）。これ以上は伸ばさない。
+    MFG_RETRY_MAX_SECONDS: float = 3600.0
+
     @property
     def generation_worst_case_seconds(self) -> float:
         """1 件の生成にかかりうる最大秒数の見積もり.
@@ -135,6 +146,9 @@ class Settings(BaseSettings):
         """リース期限の余裕が足りなければ警告文を返す（足りていれば None）.
 
         設定同士の危険な組み合わせを、人間のレビュー任せにしない。
+
+        **再試行の待ち時間（MFG_RETRY_*）はここに関係しない。** リースは 1 回の生成を
+        持っている間だけの所有権であり、待ち時間は行を手放したあとの話である。
         """
         worst_case = self.generation_worst_case_seconds
         if self.WORKER_LEASE_SECONDS >= worst_case * 2:

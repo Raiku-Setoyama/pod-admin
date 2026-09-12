@@ -7,7 +7,11 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from app.services.illustrator_vm_client import IllustratorVmClient, IllustratorVmError
+from app.services.illustrator_vm_client import (
+    IllustratorVmClient,
+    IllustratorVmError,
+    IllustratorVmUnavailableError,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -246,3 +250,86 @@ class TestFromSettings:
             assert isinstance(client, IllustratorVmClient)
         finally:
             settings.ILLUSTRATOR_VM_BASE_URL = original
+
+
+class TestFailureClassification:
+    """**到達不能と入力の誤りを型で分ける。**
+
+    呼び出し側はこの型だけを見て、待ち行列へ戻すか失敗で終えるかを決める。
+    ここが誤ると「VM が落ちただけの失敗が二度と再試行されない」という、
+    気づきにくい側へ倒れる。
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status_code", [500, 502, 503, 504])
+    async def test_server_side_errors_are_unavailable(self, status_code: int) -> None:
+        transport = httpx.MockTransport(
+            lambda _: httpx.Response(status_code, json={"detail": "busy"})
+        )
+        client = IllustratorVmClient(
+            "http://vm:8000", transport=transport, max_retries=2, request_timeout=1
+        )
+
+        with pytest.raises(IllustratorVmUnavailableError):
+            await client.get_status("job-1")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status_code", [400, 404, 422])
+    async def test_client_side_errors_are_not_unavailable(self, status_code: int) -> None:
+        """4xx は入力が悪い。**再試行しても同じ結果になる。**"""
+        transport = httpx.MockTransport(
+            lambda _: httpx.Response(status_code, json={"detail": "bad input"})
+        )
+        client = IllustratorVmClient(
+            "http://vm:8000", transport=transport, max_retries=2, request_timeout=1
+        )
+
+        with pytest.raises(IllustratorVmError) as exc_info:
+            await client.get_status("job-1")
+        assert not isinstance(exc_info.value, IllustratorVmUnavailableError)
+
+    @pytest.mark.asyncio
+    async def test_a_refused_connection_is_unavailable(self) -> None:
+        def refuse(_: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("connection refused")
+
+        client = IllustratorVmClient(
+            "http://vm:8000",
+            transport=httpx.MockTransport(refuse),
+            max_retries=1,
+            request_timeout=1,
+        )
+
+        with pytest.raises(IllustratorVmUnavailableError):
+            await client.get_status("job-1")
+
+    @pytest.mark.asyncio
+    async def test_a_job_that_never_completes_is_unavailable(self) -> None:
+        """VM は受理したが返ってこない。**入力の誤りではない。**"""
+        transport = httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"status": "processing"})
+        )
+        client = IllustratorVmClient(
+            "http://vm:8000",
+            transport=transport,
+            poll_interval=0,
+            max_poll_seconds=0,
+            request_timeout=1,
+        )
+
+        with pytest.raises(IllustratorVmUnavailableError):
+            await client.wait_until_complete("job-1")
+
+    @pytest.mark.asyncio
+    async def test_a_job_the_vm_rejected_is_not_unavailable(self) -> None:
+        """VM が「失敗した」と答えたのは、届いたうえでの結果である."""
+        transport = httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"status": "failed", "error": "bad layer"})
+        )
+        client = IllustratorVmClient(
+            "http://vm:8000", transport=transport, poll_interval=0, request_timeout=1
+        )
+
+        with pytest.raises(IllustratorVmError) as exc_info:
+            await client.wait_until_complete("job-1")
+        assert not isinstance(exc_info.value, IllustratorVmUnavailableError)

@@ -22,7 +22,9 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 class MfgDataStatus(str, Enum):
     """製造データの生成ステータス."""
 
-    PENDING = "pending"  # 生成待ち（行は作成済み、VM未起動）
+    # 生成待ち。**未着手と再試行待ちの両方がここに入る。**
+    # 区別は next_attempt_at と attempts から導ける（保存しない）。
+    PENDING = "pending"
     GENERATING = "generating"  # 生成中（VMジョブ実行中）
     READY = "ready"  # 生成完了（file_path に保存済み）
     FAILED = "failed"  # 生成失敗（error_message 参照）
@@ -103,6 +105,15 @@ class ManufacturingData(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # 期限は 1 件の生成にかかりうる最大時間より十分に長くすること。短すぎると、生きている
     # ワーカーが処理中の行を別のワーカーが奪い、VM ジョブが二重に投入される。
     lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # 再試行を始めてよい時刻。到達不能で pending へ戻すときに打ち、確保時に NULL へ戻す。
+    #
+    # **これが「落ちている VM を待つ」と「問題のある行を後ろへ下げる」を同時に満たす。**
+    # NULL は「今すぐ対象」の意味なので、新規行も、リース失効で戻された行も、
+    # 移行前から居る行も、追加の詰め直しなしにそのまま取り出しの対象になる。
+    next_attempt_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 

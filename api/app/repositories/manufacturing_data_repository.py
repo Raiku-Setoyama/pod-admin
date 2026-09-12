@@ -45,7 +45,16 @@ class ManufacturingDataRepository:
         """
         oldest_pending = (
             select(ManufacturingData.id)
-            .where(ManufacturingData.status == MfgDataStatus.PENDING.value)
+            .where(
+                ManufacturingData.status == MfgDataStatus.PENDING.value,
+                # 再試行の予定時刻が来ていない行は飛ばす。NULL は「今すぐ対象」。
+                # **これが待ち行列の先頭詰まりを防いでいる。** 到達不能で戻された行は
+                # 予定時刻ぶん後ろに下がるので、後続の行が先に処理される。
+                or_(
+                    ManufacturingData.next_attempt_at.is_(None),
+                    ManufacturingData.next_attempt_at <= func.now(),
+                ),
+            )
             .order_by(ManufacturingData.created_at)
             .limit(1)
             .with_for_update(skip_locked=True)
@@ -58,6 +67,9 @@ class ManufacturingDataRepository:
                 status=MfgDataStatus.GENERATING.value,
                 attempts=ManufacturingData.attempts + 1,
                 error_message=None,
+                # 確保した時点で予定は消化済み。**残すとリース失効で戻ってきた行が
+                # 過去の予定を引きずり**、再開の判定が読めなくなる。
+                next_attempt_at=None,
                 lease_expires_at=func.now() + timedelta(seconds=lease_seconds),
             )
             .returning(ManufacturingData.id, ManufacturingData.lease_expires_at)
@@ -114,6 +126,47 @@ class ManufacturingDataRepository:
             .execution_options(synchronize_session=False)
         )
         return len(result.scalars().all())
+
+    async def retry_failed(self, ids: list[str] | None = None) -> int:
+        """失敗した生成を待ち行列へ戻し、戻した件数を返す.
+
+        ``ids`` を渡せばその行だけ、渡さなければ ``failed`` の全行が対象になる。
+
+        **対象は failed だけである。** ready/generating/pending を巻き戻すと、その行を
+        共有する他の注文の発注可否まで劣化する（ManufacturingDataService.retry と同じ理由）。
+
+        試行回数を 0 に戻すのは、**これが人の判断による仕切り直しだから**である。
+        戻さないと、到達不能で上限まで数えきった行が、1 回の再試行で再び上限に触れる。
+        """
+        conditions = [ManufacturingData.status == MfgDataStatus.FAILED.value]
+        if ids is not None:
+            if not ids:
+                return 0
+            conditions.append(ManufacturingData.id.in_(ids))
+
+        result = await self._db.execute(
+            update(ManufacturingData)
+            .where(*conditions)
+            .values(
+                status=MfgDataStatus.PENDING.value,
+                error_message=None,
+                attempts=0,
+                next_attempt_at=None,
+                lease_expires_at=None,
+            )
+            .returning(ManufacturingData.id)
+            .execution_options(synchronize_session=False)
+        )
+        return len(result.scalars().all())
+
+    async def count_by_status(self) -> dict[str, int]:
+        """ステータスごとの件数を返す（管理画面の集計・監視用）."""
+        result = await self._db.execute(
+            select(ManufacturingData.status, func.count(ManufacturingData.id)).group_by(
+                ManufacturingData.status
+            )
+        )
+        return dict(result.tuples().all())
 
     async def find_by_cache_key(
         self,

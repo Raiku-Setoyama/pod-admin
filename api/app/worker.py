@@ -37,6 +37,7 @@ import app.models  # noqa: F401  # 全モデルをマッパー登録に載せる
 from app.config import settings
 from app.database import get_engine
 from app.services.manufacturing_data_service import (
+    GenerationOutcome,
     claim_next_generation,
     reclaim_expired_generation_leases,
     run_generation,
@@ -52,6 +53,9 @@ async def process_pending(*, max_runtime_seconds: float, max_items: int) -> int:
     """生成待ちの製造データを順に処理し、処理した件数を返す.
 
     打ち切っても取りこぼしにはならない。残りは pending のまま次回の起動が拾う。
+
+    VM に届かなかったときは、その場で周回を打ち切る。**戻された行は再試行の予定時刻を
+    持つので、次回の起動が同じ行を取り直して数秒で使い切ることはない。**
 
     取り出した時点で行は generating になりリースが打たれるので、次の周回で同じ行が
     返ってくることはない。処理の途中で落ちても、リースが切れれば pending へ戻る。
@@ -79,8 +83,20 @@ async def process_pending(*, max_runtime_seconds: float, max_items: int) -> int:
             break
 
         md_id, lease_token = claimed
-        await run_generation(md_id, lease_token)
+        outcome = await run_generation(md_id, lease_token)
         processed += 1
+
+        if outcome is GenerationOutcome.RESCHEDULED:
+            # **VM に届かなかった。次の行も同じ結果になる。** 1 件あたり最悪 15 分
+            # かかる待ちを、同じ答えのために積み増す理由がない。
+            #
+            # **取りこぼしにはならない。** 戻した行は再試行の予定時刻を持ち、
+            # 手つかずの行は pending のまま残る。どちらも次回の起動が拾う。
+            logger.info(
+                "the VM could not be reached; stopping this run and leaving the rest "
+                "for the next one"
+            )
+            break
 
     return processed
 

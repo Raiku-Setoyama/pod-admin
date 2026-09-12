@@ -9,10 +9,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from app.config import settings
 from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
 from app.models.order import OrderItem, OrderItemStatus
 from app.services import manufacturing_data_service as mds
-from app.services.illustrator_vm_client import IllustratorVmError
+from app.services.illustrator_vm_client import (
+    IllustratorVmError,
+    IllustratorVmUnavailableError,
+)
 from app.services.manufacturing_data_service import ManufacturingDataService
 from app.utils.exceptions import ConflictError, NotFoundError
 
@@ -529,6 +533,146 @@ class TestRecovery:
         # pending へ戻すだけ。再駆動は通常の取り出しが拾う。
         assert reclaimed == 2
         session.commit.assert_awaited()
+
+
+class TestUnreachableVmIsRetried:
+    """**VM に届かなかった失敗は終端にしない。**
+
+    到達不能（接続不能・タイムアウト・5xx）は、同じ入力でも VM が戻れば成功する。
+    入力の誤りと同じ `failed` に落とすと、VM が数分止まっただけで待ち行列が失敗の山に
+    変わり、戻すのに 1 件ずつの手作業が要る。
+    """
+
+    def _claimed_md(self, attempts: int = 1) -> Any:
+        md = ManufacturingData(product_code="RKSYO-1", product_type="sticker", size="50x50mm")
+        md.id = "md-1"
+        md.status = MfgDataStatus.GENERATING.value
+        md.source_images = [
+            {"layer_type": "color", "url": "https://x/color.png"},
+            {"layer_type": "cutline", "url": "https://x/cutline.png"},
+        ]
+        md.attempts = attempts
+        md.lease_expires_at = _LEASE
+        return md
+
+    def _service_with_vm_error(self, md: Any, error: Exception) -> Any:
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        vm_client = MagicMock()
+        vm_client.submit = AsyncMock(side_effect=error)
+        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
+        svc._download_source_images = AsyncMock(
+            return_value={"color": b"c", "cutline": b"k"}
+        )
+        return svc
+
+    @pytest.mark.asyncio
+    async def test_unreachable_vm_goes_back_to_the_queue(self) -> None:
+        md = self._claimed_md()
+        svc = self._service_with_vm_error(
+            md, IllustratorVmUnavailableError("connection refused")
+        )
+
+        outcome = await svc.generate("md-1", _LEASE)
+
+        assert outcome is mds.GenerationOutcome.RESCHEDULED
+        assert md.status == MfgDataStatus.PENDING.value
+        # 次にいつ試してよいかを持たせる。持たせないと同じ周回が即座に取り直す。
+        assert md.next_attempt_at is not None
+        assert md.next_attempt_at > datetime.now(UTC)
+        # 何が起きたかは残す（画面と通知が読む）。
+        assert "connection refused" in md.error_message
+        assert md.lease_expires_at is None  # 所有権は返す
+
+    @pytest.mark.asyncio
+    async def test_bad_input_still_fails_at_once(self) -> None:
+        """入力の誤りは再試行しても直らない。**回数を使わずその場で終える。**"""
+        md = self._claimed_md()
+        svc = self._service_with_vm_error(md, IllustratorVmError("422 unsupported size"))
+
+        outcome = await svc.generate("md-1", _LEASE)
+
+        assert outcome is mds.GenerationOutcome.FAILED
+        assert md.status == MfgDataStatus.FAILED.value
+        assert md.next_attempt_at is None
+
+    @pytest.mark.asyncio
+    async def test_a_dropped_connection_while_fetching_layers_is_retried(self) -> None:
+        """元データの取得先が落ちた場合も、入力の誤りではない."""
+        md = self._claimed_md()
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        svc = _service(md_repo, file_storage=MagicMock(), vm_client=MagicMock())
+        svc._download_source_images = AsyncMock(
+            side_effect=httpx.ConnectError("asset host is down")
+        )
+
+        outcome = await svc.generate("md-1", _LEASE)
+
+        assert outcome is mds.GenerationOutcome.RESCHEDULED
+        assert md.status == MfgDataStatus.PENDING.value
+
+    @pytest.mark.asyncio
+    async def test_it_gives_up_once_the_attempt_cap_is_reached(self) -> None:
+        """**無限には粘らない。** 上限まで来たら failed にして人の目に入れる."""
+        md = self._claimed_md(attempts=settings.MFG_MAX_GENERATION_ATTEMPTS)
+        svc = self._service_with_vm_error(
+            md, IllustratorVmUnavailableError("connection refused")
+        )
+
+        outcome = await svc.generate("md-1", _LEASE)
+
+        assert outcome is mds.GenerationOutcome.FAILED
+        assert md.status == MfgDataStatus.FAILED.value
+        # 上限で諦めたことが読み取れる文言にする（入力エラーと区別が付かないと困る）。
+        assert str(settings.MFG_MAX_GENERATION_ATTEMPTS) in md.error_message
+        assert "connection refused" in md.error_message
+
+    @pytest.mark.asyncio
+    async def test_a_lost_lease_does_not_stop_the_run(self) -> None:
+        """リースを失っていたら、その行は別のワーカーのものである。周回は続けてよい."""
+        md = self._claimed_md()
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        md_repo.finish_generation.return_value = False  # 書き戻せなかった
+        vm_client = MagicMock()
+        vm_client.submit = AsyncMock(
+            side_effect=IllustratorVmUnavailableError("connection refused")
+        )
+        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
+        svc._download_source_images = AsyncMock(
+            return_value={"color": b"c", "cutline": b"k"}
+        )
+
+        assert await svc.generate("md-1", _LEASE) is mds.GenerationOutcome.FAILED
+
+    def test_the_wait_grows_with_each_attempt_and_then_stops(self) -> None:
+        """待ち時間は倍々に伸び、上限で止まる（落ちている VM を叩き続けない）."""
+        delays = [
+            ManufacturingDataService._retry_delay(attempt) for attempt in range(1, 12)
+        ]
+
+        assert delays[0] == settings.MFG_RETRY_BASE_SECONDS
+        assert delays[1] == settings.MFG_RETRY_BASE_SECONDS * 2
+        # 単調非減少で、上限を超えない
+        assert delays == sorted(delays)
+        assert max(delays) == settings.MFG_RETRY_MAX_SECONDS
+
+    @pytest.mark.parametrize(
+        ("error", "retryable"),
+        [
+            pytest.param(IllustratorVmUnavailableError("5xx"), True, id="VMが5xxを返す"),
+            pytest.param(httpx.ConnectError("refused"), True, id="接続できない"),
+            pytest.param(httpx.ReadTimeout("slow"), True, id="応答が返らない"),
+            pytest.param(IllustratorVmError("422"), False, id="入力が悪い"),
+            pytest.param(ValueError("bug"), False, id="想定外の不具合"),
+        ],
+    )
+    def test_only_reachability_failures_are_retried(
+        self, error: Exception, retryable: bool
+    ) -> None:
+        """**判定は型で行う**（文言で見ると VM 側の変更で静かに壊れる）."""
+        assert ManufacturingDataService._is_retryable(error) is retryable
 
 
 class TestManufacturingReadinessGate:
