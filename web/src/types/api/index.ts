@@ -42,6 +42,31 @@ export interface SourceImageLayer {
   filename: string | null;
 }
 
+// 製造データ一覧の 1 行（管理画面の製造データ一覧）
+export interface ManufacturingDataRow extends MfgDataItemInfo {
+  order_source_id: string | null;
+  product_code: string;
+  product_type: ProductType;
+  size: string | null;
+  variant: string | null;
+  vm_job_id: string | null;
+  attempts: number;
+  // 再試行を始めてよい時刻。pending でこれが入っていれば「VM に届かず待機中」。
+  next_attempt_at: string | null;
+  source_images_replaced_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ManufacturingDataListResponse {
+  items: ManufacturingDataRow[];
+  total: number;
+  page: number;
+  limit: number;
+  // ステータスごとの件数。**絞り込みの影響を受けない全体像**（一覧の上に出す）。
+  status_counts: Partial<Record<ManufacturingDataStatus, number>>;
+}
+
 // 製造データ詳細（元画像レイヤー一覧つき）
 export interface ManufacturingDataDetail extends MfgDataItemInfo {
   product_code: string;
