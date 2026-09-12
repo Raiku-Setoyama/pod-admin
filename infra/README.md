@@ -142,6 +142,86 @@ terraform output -raw github_actions_service_account
 2. `terraform plan -detailed-exitcode` が差分なしを返すことを確認する
 3. その結果を添えて Pull Request を出す
 
+## 切り戻す（デプロイが原因のとき）
+
+**先に切り戻す。原因の究明はそのあとでよい。**
+
+Cloud Run はリビジョンを残すので、**イメージを作り直さずに前の状態へ戻せる。**
+所要は 1 分程度である。
+
+```bash
+# 1. いま動いているリビジョンと、その 1 つ前を確認する
+gcloud run revisions list --service pod-admin-api --region asia-northeast1 \
+  --format='table(name, active, creationTimestamp, spec.containers[0].image)'
+
+# 2. 前のリビジョンへ 100% 戻す
+gcloud run services update-traffic pod-admin-api --region asia-northeast1 \
+  --to-revisions <前のリビジョン名>=100
+
+# 3. 管理画面も同じように戻す（API と web は別サービスである）
+gcloud run services update-traffic pod-admin-web --region asia-northeast1 \
+  --to-revisions <前のリビジョン名>=100
+
+# 4. **ワーカーも戻す。** Job にはリビジョンもトラフィック分割も無いので、
+#    前のイメージを指し直す。**ここを忘れると、API だけ戻ってワーカーは
+#    新しいコードのまま動き続ける。**
+gcloud run jobs update pod-admin-worker --region asia-northeast1 \
+  --image asia-northeast1-docker.pkg.dev/tosyo-api-504104/pod-admin/api:<戻す先のコミットSHA>
+```
+
+戻す先のコミット SHA は、リビジョン一覧の `image` 列の末尾に入っている
+（イメージのタグはコミット SHA。`deploy.yml` 参照）。
+
+### スキーマが進んでいるときは、そのままでは戻せない
+
+`deploy.yml` は **migrate Job を最初に流す**ので、デプロイが完了していれば
+**スキーマは新しいまま**である。上の手順で戻すのは**コードだけ**であり、
+古いコードが新しいスキーマの上で動くことになる。
+
+**列の追加だけなら動く**（古いコードはその列を知らないまま無視する）。
+**列の削除・改名・NOT NULL 化を含むマイグレーションを流したあとは動かない。**
+その場合はコードを戻すのではなく、**次の修正を前に進めて出す**ほうが速い。
+
+どちらかは `api/alembic/versions/` の当該リビジョンを読めば分かる。
+`op.add_column` だけなら前者、`op.drop_column` / `op.alter_column` があれば後者である。
+
+**このため、後方互換でないマイグレーションは避ける。** 列を消すなら、
+「使うのをやめる」変更を先に出し、次のデプロイで消す。
+
+### データを戻す（Cloud SQL）
+
+コードでもスキーマでもなく、**データが壊れた**とき（誤った一括更新など）に使う。
+
+本番は PITR が有効（`db_pitr_enabled = true`・バックアップ 14 世代）なので、
+**任意の時点へ復元できる。** ただし**既存のインスタンスは上書きしない。**
+新しいインスタンスとして復元し、中身を確かめてから差し替える。
+
+```bash
+# 復元先を新しいインスタンスとして作る（既存には触らない）
+gcloud sql instances clone pod-admin pod-admin-restore-<日付> \
+  --point-in-time '2026-09-12T04:30:00.000Z'   # UTC で指定する
+```
+
+確認してから切り替える。**切り替えは接続先（Secret Manager の `database-url`）を
+書き換えるのではなく、`infra/scripts/migrate-data.sh` で必要なデータだけを
+戻すほうが安全である**（インスタンス名が変わると Terraform の管理から外れるため）。
+
+**復元の前に、まずワーカーの Cloud Scheduler を止めること。**
+止めないと、復元中の DB に対して生成が走る。
+
+```bash
+gcloud scheduler jobs pause pod-admin-worker --location asia-northeast1
+```
+
+### 製造データの生成が止まったとき
+
+**切り戻しは要らない。** 生成待ちの行は `pending` のまま残り、VM が戻れば
+ワーカーが自動で作り直す（到達不能は再試行され、上限に達した分だけが `failed` になる）。
+
+1. 管理画面の「製造データ」で、生成待ち・生成失敗の件数を見る
+2. VM を戻す（下記「外部 IP を持たない VM に入る」）
+3. `failed` に落ちた行を「失敗した全件を戻す」でまとめて生成待ちへ戻す
+
 ## データの移送（カットオーバー）
 
 `scripts/migrate-data.sh` が移送の道具である。**当日その場で手順を組み立てない。**
