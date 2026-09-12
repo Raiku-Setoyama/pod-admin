@@ -47,5 +47,5 @@ output "alerting_active" {
     アラートが実際に作られているか。**false なら誰にも通知が届かない。**
     alert_emails が空か monitoring_enabled = false のときに false になる。
   EOT
-  value       = module.monitoring.has_notification_channel
+  value       = module.monitoring.alerting_active
 }

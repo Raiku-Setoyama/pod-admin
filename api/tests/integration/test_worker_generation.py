@@ -24,6 +24,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import worker
+from app.config import settings
 from app.models.manufacturing_data import MfgDataStatus
 from app.repositories.manufacturing_data_repository import ManufacturingDataRepository
 from app.services.manufacturing_data_service import (
@@ -358,9 +359,12 @@ class TestLeaseFencing:
             assert first is not None
             _, stale_token = first
 
-            # 1 本目が生成に手間取っている間に、リースが切れて 2 本目が再確保する
+            # 1 本目が生成に手間取っている間に、リースが切れて 2 本目が再確保する。
+            # 巻き戻しは再試行の間隔を空けるので、ここではそれを 0 にして即座に取り直す
+            # （検証したいのはフェンシングであって、間隔ではない）。
             await asyncio.sleep(1.2)
-            await reclaim_expired_generation_leases()
+            with patch.object(settings, "MFG_RETRY_BASE_SECONDS", 0):
+                await reclaim_expired_generation_leases()
             second = await claim_next_generation(1800)
             assert second is not None
             assert second[0] == md_id
@@ -510,15 +514,44 @@ class TestRetryScheduling:
             await _cleanup(db_session, [blocked, behind])
 
     @pytest.mark.asyncio
-    async def test_an_expired_lease_returns_a_row_that_is_claimable_at_once(
+    async def test_a_crashed_row_is_put_back_behind_a_wait(
         self, db_session: AsyncSession, quiet_queue: None
     ) -> None:
-        """クラッシュで戻された行は待たされない（予定時刻を持たないため）."""
+        """**クラッシュで戻した行も間隔を空ける。**
+
+        空けないと、ワーカーを落とす行（巨大な画像で OOM になる等）が即座に取り直され、
+        取り出しは古い順なので待ち行列の先頭に居座り続ける。**後続がその 1 行で止まる。**
+        生成の途中で落ちた行は失敗ハンドラを通らないので、ここが唯一の歯止めである。
+        """
+        crashed = await _insert_row(
+            db_session, MfgDataStatus.GENERATING.value, seq=0, lease_offset_seconds=-1
+        )
+        behind = await _insert_row(db_session, MfgDataStatus.PENDING.value, seq=1)
+        try:
+            assert await reclaim_expired_generation_leases() >= 1
+
+            status, _, next_attempt, _ = await _retry_row(db_session, crashed)
+            assert status == MfgDataStatus.PENDING.value
+            assert next_attempt is not None
+
+            # 先頭に居座らず、後続が先に進む
+            claimed = await claim_next_generation(60)
+            assert claimed is not None
+            assert claimed[0] == behind
+        finally:
+            await _cleanup(db_session, [crashed, behind])
+
+    @pytest.mark.asyncio
+    async def test_a_crashed_row_comes_back_once_the_wait_has_passed(
+        self, db_session: AsyncSession, quiet_queue: None
+    ) -> None:
+        """待ったうえで、ちゃんと戻ってくる（取りこぼしにはしない）."""
         md_id = await _insert_row(
             db_session, MfgDataStatus.GENERATING.value, lease_offset_seconds=-1
         )
         try:
-            assert await reclaim_expired_generation_leases() >= 1
+            with patch.object(settings, "MFG_RETRY_BASE_SECONDS", 0):
+                assert await reclaim_expired_generation_leases() >= 1
             claimed = await claim_next_generation(60)
             assert claimed is not None
             assert claimed[0] == md_id
@@ -623,7 +656,7 @@ class TestWorkerStopsWhenTheVmIsDown:
                 {"id": md_id},
             )
             await db_session.commit()
-            return GenerationOutcome.RESCHEDULED
+            return GenerationOutcome.VM_UNREACHABLE
 
         try:
             with patch.object(worker, "run_generation", vm_is_down):

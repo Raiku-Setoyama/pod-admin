@@ -87,7 +87,7 @@ async def process_pending(*, max_runtime_seconds: float, max_items: int) -> int:
         outcome = await run_generation(md_id, lease_token)
         processed += 1
 
-        if outcome is GenerationOutcome.RESCHEDULED:
+        if outcome is GenerationOutcome.VM_UNREACHABLE:
             # **VM に届かなかった。次の行も同じ結果になる。** 1 件あたり最悪 15 分
             # かかる待ちを、同じ答えのために積み増す理由がない。
             #

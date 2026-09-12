@@ -26,6 +26,8 @@ from typing import Any
 
 import httpx
 
+from app.utils.exceptions import TransientDependencyError
+
 logger = logging.getLogger(__name__)
 
 # VM が完了・失敗を示すステータス値（表記ゆれを吸収）
@@ -37,7 +39,7 @@ class IllustratorVmError(Exception):
     """illustrator-vm 呼び出しに関するエラー."""
 
 
-class IllustratorVmUnavailableError(IllustratorVmError):
+class IllustratorVmUnavailableError(IllustratorVmError, TransientDependencyError):
     """**VM に届かなかった**ことを表すエラー（入力の誤りと区別する）.
 
     接続不能・タイムアウト・503・5xx のように、**同じ入力でも VM が戻れば成功する**

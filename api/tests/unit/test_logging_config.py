@@ -124,3 +124,36 @@ class TestItIsSafeToCallTwice:
         logging.getLogger("app").info("once")
 
         assert capsys.readouterr().out.count("once") == 1
+
+
+class TestThirdPartyNoiseIsCapped:
+    """ルートに水準を与えた副作用で、依存ライブラリのログが一斉に出ないこと.
+
+    **これは費用と可読性の両方の問題である。** httpx は 1 リクエスト 1 行を INFO で
+    出すので、製造データ 1 件の生成（VM を 5 秒間隔で最大 360 秒ポーリング）だけで
+    70 行を超える。Cloud Logging の取り込みは従量制である。
+    """
+
+    @pytest.mark.parametrize("library", ["httpx", "httpcore", "urllib3", "google"])
+    def test_library_info_is_dropped(
+        self, capsys: pytest.CaptureFixture[str], library: str
+    ) -> None:
+        configure_logging(level="INFO", log_format="text")
+        logging.getLogger(library).info("HTTP Request: GET http://vm:8000/api/status/1")
+
+        assert capsys.readouterr().out == ""
+
+    def test_library_warnings_still_get_through(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """**黙らせるのは INFO までである。** 本当の異常は読めなければ意味がない."""
+        configure_logging(level="INFO", log_format="text")
+        logging.getLogger("httpx").warning("connection pool is exhausted")
+
+        assert "connection pool is exhausted" in capsys.readouterr().out
+
+    def test_app_info_is_unaffected(self, capsys: pytest.CaptureFixture[str]) -> None:
+        configure_logging(level="INFO", log_format="text")
+        logging.getLogger("app.services.manufacturing_data_service").info("generated")
+
+        assert "generated" in capsys.readouterr().out

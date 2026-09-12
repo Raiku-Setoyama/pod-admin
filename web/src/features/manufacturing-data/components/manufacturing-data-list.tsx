@@ -10,36 +10,13 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import type { ManufacturingDataRow, ManufacturingDataStatus, ProductType } from "@/types/api";
-
-const productTypeLabels: Record<ProductType, string> = {
-  acrylic_keychain: "アクリルキーホルダー",
-  acrylic_stand: "アクリルスタンド",
-  sticker: "ステッカー",
-  tote_bag: "トートバッグ",
-  tshirt: "Tシャツ",
-};
-
-const statusLabels: Record<ManufacturingDataStatus, string> = {
-  pending: "生成待ち",
-  generating: "生成中",
-  ready: "完成",
-  failed: "生成失敗",
-};
-
-const statusVariants: Record<
-  ManufacturingDataStatus,
-  "default" | "secondary" | "destructive" | "outline"
-> = {
-  pending: "outline",
-  generating: "secondary",
-  ready: "default",
-  failed: "destructive",
-};
-
-function formatDateTime(value: string | null): string {
-  return value ? new Date(value).toLocaleString("ja-JP") : "—";
-}
+import {
+  MANUFACTURING_DATA_STATUS_COLORS,
+  MANUFACTURING_DATA_STATUS_LABELS,
+} from "@/constants/status";
+import { getProductTypeLabel } from "@/constants/product";
+import { cn, formatDateTime } from "@/lib/utils";
+import type { ManufacturingDataRow } from "@/types/api";
 
 /**
  * 「生成待ち」の内訳を出す。
@@ -55,22 +32,33 @@ function pendingDetail(row: ManufacturingDataRow): string | null {
 
 interface ManufacturingDataListProps {
   items: ManufacturingDataRow[];
-  selectedIds: string[];
-  onToggle: (id: string) => void;
-  onToggleAll: () => void;
-  /** 選択できる行（= failed）があるか。無ければ全選択のチェックボックスを出さない。 */
-  selectableIds: string[];
+  /** 選択中の ID。`onSelectChange` を渡したときだけ選択列が出る。 */
+  selectedIds?: string[];
+  onSelectChange?: (ids: string[]) => void;
 }
 
 export function ManufacturingDataList({
   items,
-  selectedIds,
-  onToggle,
-  onToggleAll,
-  selectableIds,
+  selectedIds = [],
+  onSelectChange,
 }: ManufacturingDataListProps) {
-  const allSelected =
-    selectableIds.length > 0 && selectableIds.every((id) => selectedIds.includes(id));
+  const hasSelection = onSelectChange !== undefined;
+  // **選べるのは失敗した行だけである。** ready を巻き戻すと、その行を共有する
+  // 他の注文の発注可否まで落ちる（API 側も failed 以外は受け付けない）。
+  const selectableIds = items.filter((i) => i.status === "failed").map((i) => i.id);
+  const selectedCount = selectedIds.filter((id) => selectableIds.includes(id)).length;
+  const allSelected = selectableIds.length > 0 && selectedCount === selectableIds.length;
+  const someSelected = selectedCount > 0 && !allSelected;
+
+  const handleSelectAll = (checked: boolean) => {
+    onSelectChange?.(checked ? selectableIds : []);
+  };
+
+  const handleSelectOne = (id: string, checked: boolean) => {
+    onSelectChange?.(
+      checked ? [...selectedIds, id] : selectedIds.filter((x) => x !== id),
+    );
+  };
 
   if (items.length === 0) {
     return (
@@ -85,15 +73,17 @@ export function ManufacturingDataList({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-10">
-              {selectableIds.length > 0 && (
-                <Checkbox
-                  checked={allSelected}
-                  onCheckedChange={onToggleAll}
-                  aria-label="失敗した行をすべて選択"
-                />
-              )}
-            </TableHead>
+            {hasSelection && (
+              <TableHead className="w-12">
+                {selectableIds.length > 0 && (
+                  <Checkbox
+                    checked={someSelected ? "indeterminate" : allSelected}
+                    onCheckedChange={handleSelectAll}
+                    aria-label="失敗した行をすべて選択"
+                  />
+                )}
+              </TableHead>
+            )}
             <TableHead>ステータス</TableHead>
             <TableHead>商品コード</TableHead>
             <TableHead>商品種別</TableHead>
@@ -108,22 +98,32 @@ export function ManufacturingDataList({
             const detail = pendingDetail(row);
             return (
               <TableRow key={row.id}>
+                {hasSelection && (
+                  <TableCell>
+                    {row.status === "failed" && (
+                      <Checkbox
+                        checked={selectedIds.includes(row.id)}
+                        onCheckedChange={(checked) =>
+                          handleSelectOne(row.id, checked === true)
+                        }
+                        aria-label={`${row.product_code} を選択`}
+                      />
+                    )}
+                  </TableCell>
+                )}
                 <TableCell>
-                  {row.status === "failed" && (
-                    <Checkbox
-                      checked={selectedIds.includes(row.id)}
-                      onCheckedChange={() => onToggle(row.id)}
-                      aria-label={`${row.product_code} を選択`}
-                    />
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Badge variant={statusVariants[row.status]}>
-                    {statusLabels[row.status]}
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "border font-medium",
+                      MANUFACTURING_DATA_STATUS_COLORS[row.status],
+                    )}
+                  >
+                    {MANUFACTURING_DATA_STATUS_LABELS[row.status] ?? row.status}
                   </Badge>
                 </TableCell>
                 <TableCell className="font-mono text-xs">{row.product_code}</TableCell>
-                <TableCell>{productTypeLabels[row.product_type] ?? row.product_type}</TableCell>
+                <TableCell>{getProductTypeLabel(row.product_type)}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {[row.size, row.variant].filter(Boolean).join(" / ") || "—"}
                 </TableCell>

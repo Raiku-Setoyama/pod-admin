@@ -88,6 +88,56 @@ export function isManufacturingDataActive(
   return status === "pending" || status === "generating";
 }
 
+/**
+ * 製造データ生成ステータスの表示名。
+ *
+ * **STATUS_LABELS には混ぜない。** `pending` と `ready` が ShipmentStatus と
+ * 衝突しており、混ぜると配送の表記まで変わってしまう。
+ */
+export const MANUFACTURING_DATA_STATUS_LABELS: Record<
+  ManufacturingDataStatus,
+  string
+> = {
+  pending: "生成待ち",
+  generating: "生成中",
+  ready: "完成",
+  failed: "生成失敗",
+};
+
+/** 製造データ生成ステータスの色（他のステータスと同じ配色の語彙に揃える）。 */
+export const MANUFACTURING_DATA_STATUS_COLORS: Record<
+  ManufacturingDataStatus,
+  string
+> = {
+  pending: "bg-gray-100 text-gray-700 border-gray-200",
+  generating: "bg-blue-100 text-blue-700 border-blue-200",
+  ready: "bg-green-100 text-green-700 border-green-200",
+  failed: "bg-red-100 text-red-700 border-red-200",
+};
+
+/**
+ * 製造データ一覧の絞り込み選択肢。
+ *
+ * **並び順は「対応が要る順」である。** 生成失敗を先頭に置くのは、この画面を開く
+ * 理由のほとんどがそれだからである。
+ */
+export function getManufacturingDataFilterOptions(): StatusOption<ManufacturingDataStatus>[] {
+  return [
+    { value: "all", label: "すべて" },
+    ...(["failed", "pending", "generating", "ready"] as const).map((value) => ({
+      value,
+      label: MANUFACTURING_DATA_STATUS_LABELS[value],
+    })),
+  ];
+}
+
+/** 文字列が製造データ生成ステータスかどうか（URL のクエリ検証に使う）。 */
+export function isManufacturingDataStatus(
+  value: string | null
+): value is ManufacturingDataStatus {
+  return value !== null && value in MANUFACTURING_DATA_STATUS_LABELS;
+}
+
 // ========================================
 // Combined Status (StatusBadge 用)
 // ========================================

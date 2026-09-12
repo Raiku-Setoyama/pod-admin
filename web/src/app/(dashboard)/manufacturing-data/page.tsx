@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { RefreshCw, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,24 +10,15 @@ import { Pagination } from "@/components/common/pagination";
 import { PageLoading } from "@/components/common/loading-spinner";
 import { apiClient } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
+import { useSearchParamUpdater } from "@/lib/use-search-param-updater";
+import {
+  getManufacturingDataFilterOptions,
+  isManufacturingDataStatus,
+} from "@/constants/status";
 import { ManufacturingDataList } from "@/features/manufacturing-data/components/manufacturing-data-list";
 import { useManufacturingData } from "@/features/manufacturing-data/hooks/use-manufacturing-data";
-import type { ManufacturingDataStatus } from "@/types/api";
 
-const statusFilters: { value: ManufacturingDataStatus | null; label: string }[] = [
-  { value: null, label: "すべて" },
-  { value: "failed", label: "生成失敗" },
-  { value: "pending", label: "生成待ち" },
-  { value: "generating", label: "生成中" },
-  { value: "ready", label: "完成" },
-];
-
-const validStatuses: ManufacturingDataStatus[] = [
-  "pending",
-  "generating",
-  "ready",
-  "failed",
-];
+const filterOptions = getManufacturingDataFilterOptions();
 
 /**
  * 製造データの状態を一覧し、失敗した行をまとめて生成待ちへ戻す画面。
@@ -36,17 +27,13 @@ const validStatuses: ManufacturingDataStatus[] = [
  * 受注画面は 1 注文ずつしか見えず、失敗した行を横断して探せなかった。
  */
 export default function ManufacturingDataPage() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
+  const updateSearchParams = useSearchParamUpdater();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isRetrying, setIsRetrying] = useState(false);
 
   const rawStatus = searchParams.get("status");
-  const status =
-    rawStatus && validStatuses.includes(rawStatus as ManufacturingDataStatus)
-      ? (rawStatus as ManufacturingDataStatus)
-      : null;
+  const status = isManufacturingDataStatus(rawStatus) ? rawStatus : null;
   const page = Number(searchParams.get("page")) || 1;
   const limit = Number(searchParams.get("limit")) || 20;
 
@@ -55,31 +42,6 @@ export default function ManufacturingDataPage() {
     limit,
     status,
   });
-
-  const updateSearchParams = useCallback(
-    (updates: Record<string, string | null>) => {
-      const params = new URLSearchParams(searchParams.toString());
-      for (const [key, value] of Object.entries(updates)) {
-        if (value === null) params.delete(key);
-        else params.set(key, value);
-      }
-      const queryString = params.toString();
-      router.replace(`${pathname}${queryString ? `?${queryString}` : ""}`);
-    },
-    [searchParams, router, pathname],
-  );
-
-  const selectableIds = items.filter((i) => i.status === "failed").map((i) => i.id);
-
-  const toggle = (id: string) =>
-    setSelectedIds((current) =>
-      current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
-    );
-
-  const toggleAll = () =>
-    setSelectedIds((current) =>
-      selectableIds.every((id) => current.includes(id)) ? [] : selectableIds,
-    );
 
   /**
    * 失敗した行を生成待ちへ戻す。選択が無ければ failed の全件が対象になる。
@@ -120,18 +82,17 @@ export default function ManufacturingDataPage() {
     >
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
-          {statusFilters.map((filter) => {
-            const count = filter.value ? statusCounts[filter.value] : undefined;
+          {filterOptions.map((option) => {
+            const value = option.value === "all" ? null : option.value;
+            const count = value ? statusCounts[value] : undefined;
             return (
               <Button
-                key={filter.label}
-                variant={status === filter.value ? "default" : "outline"}
+                key={option.value}
+                variant={status === value ? "default" : "outline"}
                 size="sm"
-                onClick={() =>
-                  updateSearchParams({ status: filter.value, page: null })
-                }
+                onClick={() => updateSearchParams({ status: value, page: null })}
               >
-                {filter.label}
+                {option.label}
                 {count !== undefined && count > 0 && (
                   <span className="ml-1.5 text-xs opacity-80">{count}</span>
                 )}
@@ -181,9 +142,7 @@ export default function ManufacturingDataPage() {
             <ManufacturingDataList
               items={items}
               selectedIds={selectedIds}
-              onToggle={toggle}
-              onToggleAll={toggleAll}
-              selectableIds={selectableIds}
+              onSelectChange={setSelectedIds}
             />
             <Pagination
               page={page}

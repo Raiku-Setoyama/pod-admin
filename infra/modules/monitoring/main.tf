@@ -18,14 +18,10 @@
 # ワーカーが到達不能を報告した時点で、VM が落ちていることは確定している。
 
 locals {
-  enabled = var.enabled
-
   # 通知先が無ければアラートは作らない。**鳴らないアラートを置くほうが危険である。**
   # 「監視してあるはず」という思い込みだけが残るため。
-  has_channel = length(var.notification_emails) > 0
-
-  make_alerts = local.enabled && local.has_channel ? 1 : 0
-  make_uptime = local.enabled && var.api_url != "" ? 1 : 0
+  make_alerts = var.enabled && length(var.notification_emails) > 0 ? 1 : 0
+  make_uptime = var.enabled && var.api_url != "" ? 1 : 0
 
   channel_ids = [for c in google_monitoring_notification_channel.email : c.id]
 
@@ -34,7 +30,7 @@ locals {
 }
 
 resource "google_monitoring_notification_channel" "email" {
-  for_each = local.enabled ? toset(var.notification_emails) : toset([])
+  for_each = var.enabled ? toset(var.notification_emails) : toset([])
 
   project      = var.project_id
   display_name = "POD Admin アラート (${each.value})"
@@ -48,45 +44,39 @@ resource "google_monitoring_notification_channel" "email" {
 # --- ログベースの指標 -------------------------------------------------------
 #
 # **ワーカーが JSON 構造化ログを出していることに依存している**
-# （api/app/logging_config.py）。素の stderr のままだと severity が付かず、
-# 下の filter は当たらない。片方だけ直すと静かに効かなくなる。
+# （api/app/logging_config.py）。素の stderr のままだと jsonPayload が無く、
+# 下の filter は当たらない。
+#
+# 絞りは `jsonPayload.event` — アプリが `extra={"event": ...}` で載せる
+# **機械可読なイベント名**である。文面（"could not reach the VM" 等）で絞ると、
+# 日本語化も言い換えもファイル移動もアラートを黙らせる。しかも apply も CI も通るので、
+# **誰も気づかないまま検知だけが失われる。**
+# 値の正本は api/app/services/manufacturing_data_service.py の _EVENT_* 定数。
 
-resource "google_logging_metric" "vm_unreachable" {
-  count = local.enabled ? 1 : 0
-
-  project = var.project_id
-  name    = "pod_admin/mfg_vm_unreachable"
-  description = join("", [
-    "製造データ生成 VM に届かなかった回数。",
-    "ワーカーが再試行を予定した（= VM が落ちている疑い）ときに 1 増える。",
-  ])
-
-  # 文言は api/app/services/manufacturing_data_service.py の _handle_failure が出すもの。
-  # **両方を同時に直すこと。** 片方だけ変えても apply は通り、アラートだけが黙る。
-  filter = join(" AND ", [
-    "resource.type=\"cloud_run_job\"",
-    "jsonPayload.logger=\"app.services.manufacturing_data_service\"",
-    "jsonPayload.message=~\"could not reach the VM\"",
-  ])
-
-  metric_descriptor {
-    metric_kind = "DELTA"
-    value_type  = "INT64"
-    unit        = "1"
+locals {
+  log_metrics = {
+    mfg_vm_unreachable = {
+      description = join("", [
+        "製造データ生成 VM に届かなかった回数。",
+        "ワーカーが再試行を予定した（= VM が落ちている疑い）ときに 1 増える。",
+      ])
+    }
+    mfg_generation_failed = {
+      description = "製造データ生成が failed で終わった回数（入力の誤り、または再試行の上限）。"
+    }
   }
 }
 
-resource "google_logging_metric" "generation_failed" {
-  count = local.enabled ? 1 : 0
+resource "google_logging_metric" "app" {
+  for_each = var.enabled ? local.log_metrics : {}
 
   project     = var.project_id
-  name        = "pod_admin/mfg_generation_failed"
-  description = "製造データ生成が failed で終わった回数（入力の誤り、または再試行の上限）。"
+  name        = "pod_admin/${each.key}"
+  description = each.value.description
 
   filter = join(" AND ", [
     "resource.type=\"cloud_run_job\"",
-    "jsonPayload.logger=\"app.services.manufacturing_data_service\"",
-    "jsonPayload.message=~\"manufacturing data generation failed\"",
+    "jsonPayload.event=\"${each.key}\"",
   ])
 
   metric_descriptor {
@@ -127,7 +117,7 @@ resource "google_monitoring_alert_policy" "vm_unreachable" {
     condition_threshold {
       filter = join(" AND ", [
         "resource.type=\"cloud_run_job\"",
-        "metric.type=\"logging.googleapis.com/user/${google_logging_metric.vm_unreachable[0].name}\"",
+        "metric.type=\"logging.googleapis.com/user/${google_logging_metric.app["mfg_vm_unreachable"].name}\"",
       ])
       comparison      = "COMPARISON_GT"
       threshold_value = 0
@@ -174,7 +164,7 @@ resource "google_monitoring_alert_policy" "generation_failed" {
     condition_threshold {
       filter = join(" AND ", [
         "resource.type=\"cloud_run_job\"",
-        "metric.type=\"logging.googleapis.com/user/${google_logging_metric.generation_failed[0].name}\"",
+        "metric.type=\"logging.googleapis.com/user/${google_logging_metric.app["mfg_generation_failed"].name}\"",
       ])
       comparison = "COMPARISON_GT"
       # **1 件では鳴らさない。** 個別の入力ミスは日常的に起きるうえ、

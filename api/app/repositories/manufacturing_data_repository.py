@@ -3,12 +3,49 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import CursorResult, and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
+
+# 行を「手つかずの生成待ち」へ戻すときに書く値。
+#
+# **4 か所が同じ状態を作っていた**（手動リトライ・再作成/元画像差し替え・失敗行の再受注・
+# 一括リトライ）。再試行まわりの列が増えるたびに 4 か所を直すことになり、
+# 1 か所忘れると「戻したのに前回の試行回数を引きずる」という気づきにくい形で残る。
+# **正本をここに 1 つ置き、ORM 経由の 3 か所は reset_to_pending() を通す。**
+_PENDING_RESET_VALUES: dict[str, Any] = {
+    "status": MfgDataStatus.PENDING.value,
+    "error_message": None,
+    # 人の判断による仕切り直しなので、到達不能の数え直しも待ち時間も手放す。
+    "attempts": 0,
+    "next_attempt_at": None,
+    "lease_expires_at": None,
+}
+
+
+def retry_delay_interval(attempts: Any) -> Any:
+    """試行回数から再試行までの待ち時間を作る（SQL 式）.
+
+    **サービス側の ``ManufacturingDataService._retry_delay`` と同じ形である。**
+    あちらは Python で 1 件ぶんを計算し、こちらは SQL で一括に適用する。
+    片方だけ変えると、生成の失敗で戻した行とクラッシュで戻した行で間隔が食い違う。
+    """
+    seconds = func.least(
+        settings.MFG_RETRY_BASE_SECONDS
+        * func.pow(2, func.greatest(attempts - 1, 0)),
+        settings.MFG_RETRY_MAX_SECONDS,
+    )
+    return func.make_interval(0, 0, 0, 0, 0, 0, seconds)
+
+
+def reset_to_pending(md: ManufacturingData) -> None:
+    """読み込み済みの行を、手つかずの生成待ちへ戻す（永続化は呼び出し側）."""
+    for field, value in _PENDING_RESET_VALUES.items():
+        setattr(md, field, value)
 
 
 class ManufacturingDataRepository:
@@ -111,6 +148,15 @@ class ManufacturingDataRepository:
 
         pending の行は対象にしない。戻す必要が無いうえ、同じ値で UPDATE すると
         バックログ全件の updated_at が動き、戻した件数も読めなくなる。
+
+        **戻すときは再試行の間隔を空ける。** 間隔を空けないと、ワーカーを落とす行
+        （巨大な画像で OOM になる等）が即座に取り直され、しかも取り出しは古い順なので
+        待ち行列の先頭に居座り続ける。**後続のすべてがその 1 行で止まる。**
+        生成の途中で落ちた行は ``_handle_failure`` を通らないので、
+        ここが唯一の歯止めである。
+
+        間隔は ``attempts`` から導く（確保のたびに増えるので、何度も落ちている行ほど
+        後ろへ下がる）。1 度きりのクラッシュなら 1 回目の間隔で戻ってくる。
         """
         result = await self._db.execute(
             update(ManufacturingData)
@@ -121,11 +167,19 @@ class ManufacturingDataRepository:
                     ManufacturingData.lease_expires_at < func.now(),
                 ),
             )
-            .values(status=MfgDataStatus.PENDING.value, lease_expires_at=None)
-            .returning(ManufacturingData.id)
+            .values(
+                status=MfgDataStatus.PENDING.value,
+                lease_expires_at=None,
+                next_attempt_at=func.now() + retry_delay_interval(
+                    ManufacturingData.attempts
+                ),
+            )
             .execution_options(synchronize_session=False)
         )
-        return len(result.scalars().all())
+        # RETURNING で id を運ばない。**件数しか使っていない。**
+        # UPDATE の戻りは実体としては CursorResult だが、async の execute() は
+        # 総称の Result として型付けされているため、ここで絞る。
+        return cast(CursorResult[Any], result).rowcount
 
     async def retry_failed(self, ids: list[str] | None = None) -> int:
         """失敗した生成を待ち行列へ戻し、戻した件数を返す.
@@ -135,8 +189,7 @@ class ManufacturingDataRepository:
         **対象は failed だけである。** ready/generating/pending を巻き戻すと、その行を
         共有する他の注文の発注可否まで劣化する（ManufacturingDataService.retry と同じ理由）。
 
-        試行回数を 0 に戻すのは、**これが人の判断による仕切り直しだから**である。
-        戻さないと、到達不能で上限まで数えきった行が、1 回の再試行で再び上限に触れる。
+        書き戻す値は _PENDING_RESET_VALUES が正本である（ORM 経由の 3 か所と揃える）。
         """
         conditions = [ManufacturingData.status == MfgDataStatus.FAILED.value]
         if ids is not None:
@@ -147,20 +200,24 @@ class ManufacturingDataRepository:
         result = await self._db.execute(
             update(ManufacturingData)
             .where(*conditions)
-            .values(
-                status=MfgDataStatus.PENDING.value,
-                error_message=None,
-                attempts=0,
-                next_attempt_at=None,
-                lease_expires_at=None,
-            )
-            .returning(ManufacturingData.id)
+            .values(**_PENDING_RESET_VALUES)
             .execution_options(synchronize_session=False)
         )
-        return len(result.scalars().all())
+        # RETURNING で id を運ばない。**件数しか使っていない。** VM 停止明けの
+        # 一括復旧はこの経路が本命で、そこが最も行数の多い呼び出しになる。
+        return cast(CursorResult[Any], result).rowcount
 
     async def count_by_status(self) -> dict[str, int]:
-        """ステータスごとの件数を返す（管理画面の集計・監視用）."""
+        """ステータスごとの件数を返す（管理画面の集計用）.
+
+        **絞り込みを掛けない全件集計である。** 一覧が failed だけを映していても
+        「いま全体で何件溜まっているか」を出すためで、それがこの画面の用途だからである。
+
+        この表は**受注ごとではなく商品ごと**に 1 行を持つキャッシュ
+        （受注元 × 商品コード × サイズ × バリアント）なので、行数は商品の種類数で頭打ちになり、
+        受注が増えても伸びない。**受注量に比例して重くなる類の集計ではない。**
+        伸び始めたら status に索引があるので、部分集計へ落とす余地も残っている。
+        """
         result = await self._db.execute(
             select(ManufacturingData.status, func.count(ManufacturingData.id)).group_by(
                 ManufacturingData.status

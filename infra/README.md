@@ -151,8 +151,12 @@ Cloud Run はリビジョンを残すので、**イメージを作り直さず�
 
 ```bash
 # 1. いま動いているリビジョンと、その 1 つ前を確認する
-gcloud run revisions list --service pod-admin-api --region asia-northeast1 \
-  --format='table(name, active, creationTimestamp, spec.containers[0].image)'
+#    （新しい順に並ぶ。ACTIVE が付いているのが今のもの）
+gcloud run revisions list --service pod-admin-api --region asia-northeast1
+
+# 戻す先のイメージ（= コミット SHA）を確かめる
+gcloud run revisions describe <前のリビジョン名> --region asia-northeast1 \
+  --format='value(containers[0].image)'
 
 # 2. 前のリビジョンへ 100% 戻す
 gcloud run services update-traffic pod-admin-api --region asia-northeast1 \
@@ -169,8 +173,7 @@ gcloud run jobs update pod-admin-worker --region asia-northeast1 \
   --image asia-northeast1-docker.pkg.dev/tosyo-api-504104/pod-admin/api:<戻す先のコミットSHA>
 ```
 
-戻す先のコミット SHA は、リビジョン一覧の `image` 列の末尾に入っている
-（イメージのタグはコミット SHA。`deploy.yml` 参照）。
+イメージのタグはコミット SHA なので、戻す先のコミットは一意に辿れる（`deploy.yml` 参照）。
 
 ### スキーマが進んでいるときは、そのままでは戻せない
 

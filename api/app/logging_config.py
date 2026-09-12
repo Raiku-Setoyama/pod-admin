@@ -32,15 +32,6 @@ import logging.config
 import os
 from typing import Any
 
-# Python の水準名 → Cloud Logging の severity。値が一致しないものだけ写す。
-_SEVERITY = {
-    "WARNING": "WARNING",
-    "ERROR": "ERROR",
-    "CRITICAL": "CRITICAL",
-    "DEBUG": "DEBUG",
-    "INFO": "INFO",
-}
-
 # 構造化ログに写さない LogRecord の属性（標準属性と、自前で別名にしたもの）。
 _RESERVED = frozenset(
     logging.LogRecord("", 0, "", 0, "", None, None).__dict__
@@ -52,7 +43,10 @@ class CloudLoggingFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
-            "severity": _SEVERITY.get(record.levelname, record.levelname),
+            # **Python の水準名をそのまま渡せる。** DEBUG / INFO / WARNING / ERROR /
+            # CRITICAL は Cloud Logging の severity と綴りまで一致している。
+            # 自前の水準を足した場合は解釈されず DEFAULT 扱いになるだけで、害はない。
+            "severity": record.levelname,
             "message": record.getMessage(),
             "logger": record.name,
         }
@@ -112,7 +106,18 @@ def configure_logging(level: str | None = None, log_format: str | None = None) -
                 # 揃えないと、同じ 1 リクエストの記録が 2 つの形式に分かれる。
                 "uvicorn": {"handlers": [], "propagate": True},
                 "uvicorn.error": {"handlers": [], "propagate": True},
-                "uvicorn.access": {"handlers": [], "propagate": True},
+                # **アクセスログは出さない。** Cloud Run が同じ内容（経路・状態・所要）を
+                # 自前のリクエストログとして必ず出すので、通すと全リクエストが二重に課金される。
+                "uvicorn.access": {"handlers": [], "propagate": True, "level": "WARNING"},
+                # 依存ライブラリの INFO を止める。**ルートに水準を与えた副作用として、
+                # これまで捨てられていた他人のログが一斉に出るようになる。**
+                # とくに httpx は 1 リクエスト 1 行で、製造データ 1 件の生成が
+                # VM のポーリングだけで 70 行を超える（5 秒間隔・最大 360 秒）。
+                # 読む人が居ないうえに、Cloud Logging の取り込みは従量である。
+                **{
+                    name: {"level": "WARNING"}
+                    for name in ("httpx", "httpcore", "urllib3", "google", "asyncio")
+                },
             },
         }
     )

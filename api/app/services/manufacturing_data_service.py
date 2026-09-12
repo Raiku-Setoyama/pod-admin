@@ -29,7 +29,10 @@ from app.config import settings
 from app.database import get_session_maker
 from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
 from app.models.order import OrderItem, item_status_for_manufacturing_ready
-from app.repositories.manufacturing_data_repository import ManufacturingDataRepository
+from app.repositories.manufacturing_data_repository import (
+    ManufacturingDataRepository,
+    reset_to_pending,
+)
 from app.repositories.order_repository import OrderRepository
 from app.schemas.manufacturing_data import (
     ManufacturingDataDetailResponse,
@@ -39,14 +42,27 @@ from app.schemas.manufacturing_data import (
 from app.services.illustrator_vm_client import (
     IllustratorVmClient,
     IllustratorVmError,
-    IllustratorVmUnavailableError,
 )
-from app.utils.exceptions import ConflictError, NotFoundError, ValidationError
+from app.utils.exceptions import (
+    ConflictError,
+    NotFoundError,
+    TransientDependencyError,
+    ValidationError,
+)
 from app.utils.file_storage import FileStorage, build_file_storage
 from app.utils.mfg_product_mapping import MfgMappingError, build_vm_mapping
 from app.utils.url_guard import validate_source_url
 
 logger = logging.getLogger(__name__)
+
+# 構造化ログに載せる機械可読なイベント名。
+#
+# **Terraform のログベース指標（infra/modules/monitoring/main.tf）がこの値で絞る。**
+# 文面で絞ると、日本語化も言い換えもファイル移動もアラートを黙らせる。しかも
+# apply も CI も通るので、誰も気づかないまま検知だけが失われる。
+# 値を変えるときは、Terraform 側の filter も同時に変えること。
+_EVENT_VM_UNREACHABLE = "mfg_vm_unreachable"
+_EVENT_GENERATION_FAILED = "mfg_generation_failed"
 
 
 class SourceImageTooLargeError(Exception):
@@ -54,11 +70,17 @@ class SourceImageTooLargeError(Exception):
 
 
 class GenerationOutcome(str, Enum):
-    """1 件の生成がどう終わったか（ワーカーが次の判断に使う）."""
+    """1 件の生成がどう終わったか（ワーカーが次の判断に使う）.
 
-    READY = "ready"  # 生成できた
-    FAILED = "failed"  # 入力が悪い。再試行しても直らない
-    RESCHEDULED = "rescheduled"  # VM に届かなかった。待ち行列へ戻した
+    **語彙は「行がどうなったか」ではなく「次の 1 件を試す意味があるか」で切ってある。**
+    行の側（pending へ戻したか failed にしたか）で切ると、到達不能だが上限に達した行が
+    「入力が悪い行」と区別できなくなり、VM が落ちている間じゅうワーカーが
+    1 件ずつ最悪 15 分の空振りを積み上げることになる。
+    """
+
+    READY = "ready"  # 生成できた。次へ進む
+    FAILED = "failed"  # この行の事情で失敗した。次へ進んでよい
+    VM_UNREACHABLE = "vm_unreachable"  # 相手が落ちている。次を試しても同じ
 
 
 # 生成済みファイルの保存先プレフィックス（FileStorage 上）
@@ -76,6 +98,26 @@ _DEFAULT_SOURCE_MAX_BYTES = 25 * 1024 * 1024  # 25MB
 # PNG のシグネチャ。差し替えアップロードが本当に PNG かを中身で確認する
 # （VM は PNG レイヤーしか受け付けないため、拡張子や Content-Type は信用しない）。
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def is_transient_failure(exc: Exception) -> bool:
+    """「相手が一時的に応答しなかった」失敗かどうか.
+
+    **正規の経路は ``TransientDependencyError`` である。** どの例外が一時的かを
+    知っているのは、それを呼んでいる境界（`IllustratorVmClient`・`GCSFileStorage`）
+    だけなので、そこで翻訳してもらう。サービスは型 1 つを見れば済む。
+
+    ``httpx`` の分だけ例外的にここで見ているのは、**元データ（PNG レイヤー）の
+    HTTP 取得だけは、この層が自分で httpx を呼んでいる**ためである。翻訳する境界が
+    無いので、ここが境界を兼ねる。5xx は相手の不調、4xx は URL か権限の誤りとして扱う。
+
+    翻訳を挟み忘れた経路があっても恒久的な失敗に倒れないという意味で、
+    この httpx の分は安全網も兼ねる。**倒れる向きが「二度と再試行されない」なので、
+    網は広いほうに寄せてある。**
+    """
+    if isinstance(exc, TransientDependencyError | httpx.TransportError | httpx.TimeoutException):
+        return True
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500
 
 
 def _redact_url(url: str) -> str:
@@ -205,11 +247,8 @@ class ManufacturingDataService:
         if existing:
             # 失敗行は元データを更新して再生成対象にする。それ以外はそのまま再利用。
             if existing.status == MfgDataStatus.FAILED.value:
-                existing.status = MfgDataStatus.PENDING.value
-                existing.error_message = None
                 # 新しい受注は新しい機会である。前回の到達不能の数え直しを持ち越さない。
-                existing.attempts = 0
-                existing.next_attempt_at = None
+                reset_to_pending(existing)
                 existing.source_images = _merge_uploaded_layers(
                     existing.source_images, item.source_images
                 )
@@ -314,12 +353,19 @@ class ManufacturingDataService:
             layer_types = {img["layer_type"] for img in md.source_images}
             mapping = build_vm_mapping(md.product_type, md.size, layer_types)
 
+            transient_layers: set[str] = set()
             images = await self._download_source_images(
-                md.source_images, set(mapping.usable_layers)
+                md.source_images, set(mapping.usable_layers), transient_layers
             )
             # 必須レイヤーが揃っているか最終確認
             missing = [layer for layer in mapping.required_layers if layer not in images]
             if missing:
+                # **欠けた理由で投げ分ける。** 配信元が一時的に落ちていただけのものを
+                # 恒久的な失敗にすると、元データは正しいのに二度と作り直されない。
+                if transient_layers.intersection(missing):
+                    raise TransientDependencyError(
+                        f"could not fetch required layers right now: {missing}"
+                    )
                 raise IllustratorVmError(f"failed to fetch required layers: {missing}")
 
             job_id = await self._vm_client.submit(
@@ -385,8 +431,9 @@ class ManufacturingDataService:
                 settings.MFG_MAX_GENERATION_ATTEMPTS,
                 delay,
                 message,
+                extra={"event": _EVENT_VM_UNREACHABLE, "manufacturing_data_id": md.id},
             )
-            applied = await self._finish(
+            await self._finish(
                 md,
                 lease_token,
                 status=MfgDataStatus.PENDING.value,
@@ -394,17 +441,20 @@ class ManufacturingDataService:
                 next_attempt_at=datetime.now(UTC) + timedelta(seconds=delay),
             )
             await self._commit()
-            # リースを失っていたら別のワーカーが握っている。**止める理由にはならない。**
-            return (
-                GenerationOutcome.RESCHEDULED if applied else GenerationOutcome.FAILED
-            )
+            # **書き戻せたかは、この戻り値に関係しない。** リースを失っていたとしても
+            # 「相手が落ちている」という事実は変わらないので、周回は降りる。
+            return GenerationOutcome.VM_UNREACHABLE
 
         if retryable:
             message = (
                 f"VM に {md.attempts} 回届きませんでした（上限）。"
                 f"最後のエラー: {message}"
             )[:1000]
-        logger.exception("manufacturing data generation failed for %s", md.id)
+        logger.exception(
+            "manufacturing data generation failed for %s",
+            md.id,
+            extra={"event": _EVENT_GENERATION_FAILED, "manufacturing_data_id": md.id},
+        )
         await self._finish(
             md,
             lease_token,
@@ -412,21 +462,16 @@ class ManufacturingDataService:
             error_message=message,
         )
         await self._commit()
-        return GenerationOutcome.FAILED
-
-    @staticmethod
-    def _is_retryable(exc: Exception) -> bool:
-        """「VM に届かなかった」失敗かどうかを判定する.
-
-        **判定は型で行う。** 文言で見分けると、VM 側のメッセージが変わった日に
-        静かに壊れ、しかも壊れ方が「失敗しても再試行されない」という気づきにくい側になる。
-
-        ``httpx`` の例外がそのまま出てくるのは元データ（PNG レイヤー）の取得と保存先で
-        あり、こちらも相手先の不調なので再試行の対象にする。
-        """
-        return isinstance(
-            exc, IllustratorVmUnavailableError | httpx.TransportError | httpx.TimeoutException
+        # **上限に達しただけで、相手はまだ落ちている。** ここで FAILED を返すと、
+        # 溜まった行を 1 件ずつ空振りし続けて 1 回の起動を使い切る。
+        return (
+            GenerationOutcome.VM_UNREACHABLE if retryable else GenerationOutcome.FAILED
         )
+
+    # 判定はモジュール関数 1 つに寄せてある（取得の境界とサービスで同じものを使う）。
+    # **文言では見分けない。** VM 側のメッセージが変わった日に静かに壊れ、しかも
+    # 壊れ方が「失敗しても再試行されない」という気づきにくい側になる。
+    _is_retryable = staticmethod(is_transient_failure)
 
     @staticmethod
     def _retry_delay(attempts: int) -> float:
@@ -466,7 +511,7 @@ class ManufacturingDataService:
         return True
 
     async def _download_source_images(
-        self, source_images: list[Any], wanted: set[str]
+        self, source_images: list[Any], wanted: set[str], transient: set[str] | None = None
     ) -> dict[str, bytes]:
         """必要なレイヤーの PNG を並列取得する.
 
@@ -476,6 +521,11 @@ class ManufacturingDataService:
         個々のレイヤー取得失敗は fetch 内で握って None を返し、成功したレイヤーだけ集める。
         必須レイヤー不足の判定は呼び出し側の missing チェックに委ねる。これにより optional
         レイヤー（white 等）の取得失敗で生成全体を落とさない。
+
+        **ただし「なぜ取れなかったか」は捨てない。** 握りつぶして名前だけを返すと、
+        配信元が一時的に落ちていただけの失敗が「入力が悪い」として恒久的な failed に
+        なり、二度と自動では作り直されない。一時的な失敗は
+        ``transient`` 集合に記録して呼び出し側へ返す。
         """
         targets = [img for img in source_images if img["layer_type"] in wanted]
         semaphore = asyncio.Semaphore(4)
@@ -505,6 +555,8 @@ class ManufacturingDataService:
                             )
                         return img["layer_type"], content
                     except Exception as exc:  # noqa: BLE001 - 1レイヤーの失敗で全体を止めない（Unsafe/TooLarge含む）
+                        if transient is not None and is_transient_failure(exc):
+                            transient.add(img["layer_type"])
                         logger.warning(
                             "failed to load source layer %s (%s): %s",
                             img["layer_type"],
@@ -574,11 +626,7 @@ class ManufacturingDataService:
                 f"(current status: {md.status}); retry is only allowed for failed rows"
             )
 
-        md.status = MfgDataStatus.PENDING.value
-        md.error_message = None
-        # 人の判断による仕切り直しなので、到達不能の数え直しも、待ち時間も手放す。
-        md.attempts = 0
-        md.next_attempt_at = None
+        reset_to_pending(md)
         await self._md_repo.update(md)
         await self._commit()
         return ManufacturingDataResponse.model_validate(md)
@@ -719,10 +767,7 @@ class ManufacturingDataService:
         参照する「発注済み」明細は「発注準備中」へ戻す（demote）ことで、未完成の製造データで
         メーカー発注されるのを防ぐ。生成完了時に generate() が再び「発注済み」へ昇格させる。
         """
-        md.status = MfgDataStatus.PENDING.value
-        md.error_message = None
-        md.attempts = 0
-        md.next_attempt_at = None
+        reset_to_pending(md)
         await self._md_repo.update(md)
         await self._order_repo.sync_item_status_for_manufacturing_data(md.id, ready=False)
         await self._commit()
@@ -776,10 +821,6 @@ class ManufacturingDataService:
         if restored:
             logger.info("restored %d failed manufacturing data row(s) to pending", restored)
         return restored
-
-    async def status_counts(self) -> dict[str, int]:
-        """ステータスごとの件数を返す（画面の集計用）."""
-        return await self._md_repo.count_by_status()
 
     async def list(
         self,

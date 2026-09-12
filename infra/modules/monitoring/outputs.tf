@@ -3,10 +3,13 @@ output "notification_channel_ids" {
   value       = local.channel_ids
 }
 
-output "has_notification_channel" {
+output "alerting_active" {
   description = <<-EOT
-    通知先があるか。**false ならアラートは 1 本も作られていない。**
-    呼び出し側がこれを出力に出して、気づけるようにすること。
+    アラートが実際に作られているか。**false なら誰にも通知が届かない。**
+
+    **入力からではなく、作られた実体から導く。** 入力（通知先の有無）から導くと、
+    monitoring_enabled = false で通知先だけ設定されている環境で true を返し、
+    **「監視してあるはず」を否定するための唯一の仕掛けが、それ自身で嘘をつく。**
   EOT
-  value       = local.has_channel
+  value       = length(google_monitoring_alert_policy.vm_unreachable) > 0
 }
