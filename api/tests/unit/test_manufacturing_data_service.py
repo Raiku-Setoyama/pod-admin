@@ -588,6 +588,7 @@ class TestUnreachableVmIsRetried:
 
         outcome = await svc.generate("md-1", _LEASE)
 
+        # VM そのものが落ちているので、次の行を試しても同じ結果になる。
         assert outcome is mds.GenerationOutcome.VM_UNREACHABLE
         assert md.status == MfgDataStatus.PENDING.value
         # 次にいつ試してよいかを持たせる。持たせないと同じ周回が即座に取り直す。
@@ -638,7 +639,9 @@ class TestUnreachableVmIsRetried:
         with patch.object(httpx, "AsyncClient", _mock_client_factory(host_is_down)):
             outcome = await svc.generate("md-1", _LEASE)
 
-        assert outcome is mds.GenerationOutcome.VM_UNREACHABLE
+        # **VM は健全である。** 配信元の不調で周回を降りると、その配信元を
+        # 使っていない後続の行まで止まる。
+        assert outcome is mds.GenerationOutcome.RESCHEDULED
         assert md.status == MfgDataStatus.PENDING.value
         assert md.next_attempt_at is not None
 
@@ -689,7 +692,9 @@ class TestUnreachableVmIsRetried:
 
         outcome = await svc.generate("md-1", _LEASE)
 
-        assert outcome is mds.GenerationOutcome.VM_UNREACHABLE
+        # **保存先が落ちているだけで、VM は健全である。** ここで周回を降りると、
+        # 無関係な後続の行まで 1 回の起動ぶん止まる。
+        assert outcome is mds.GenerationOutcome.RESCHEDULED
         assert md.status == MfgDataStatus.PENDING.value
 
     @pytest.mark.asyncio
@@ -809,7 +814,11 @@ class TestMonitoringContract:
 
     @pytest.mark.parametrize(
         "event",
-        [mds._EVENT_VM_UNREACHABLE, mds._EVENT_GENERATION_FAILED],
+        [
+            mds._EVENT_VM_UNREACHABLE,
+            mds._EVENT_DEPENDENCY_UNAVAILABLE,
+            mds._EVENT_GENERATION_FAILED,
+        ],
     )
     def test_the_event_name_is_the_one_terraform_filters_on(self, event: str) -> None:
         assert event in self._TERRAFORM.read_text(encoding="utf-8"), (
@@ -839,3 +848,28 @@ class TestMonitoringContract:
 
         events = [getattr(r, "event", None) for r in caplog.records]
         assert mds._EVENT_VM_UNREACHABLE in events
+
+    @pytest.mark.asyncio
+    async def test_a_dependency_outage_does_not_raise_the_vm_alert(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """**VM の通知には「VM を見に行け」という手順書が付いている。**
+
+        元データの配信元が落ちただけでそれを鳴らすと、障害の最中に人を
+        健全な VM の前へ座らせることになる。
+        """
+        md = _claimed_md()
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        vm_client = MagicMock()
+        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
+        svc._download_source_images = AsyncMock(
+            side_effect=TransientDependencyError("asset host is down")
+        )
+
+        with caplog.at_level(logging.WARNING):
+            await svc.generate("md-1", _LEASE)
+
+        events = [getattr(r, "event", None) for r in caplog.records]
+        assert mds._EVENT_DEPENDENCY_UNAVAILABLE in events
+        assert mds._EVENT_VM_UNREACHABLE not in events

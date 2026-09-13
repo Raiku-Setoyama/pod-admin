@@ -39,7 +39,7 @@ export function useManufacturingData(params: UseManufacturingDataParams = {}) {
   queryParams.set("limit", String(limit));
   if (status) queryParams.set("status", status);
 
-  const { data, isLoading, mutate } = useSWR<ManufacturingDataListResponse>(
+  const { data, error, isLoading, mutate } = useSWR<ManufacturingDataListResponse>(
     `/manufacturing-data?${queryParams.toString()}`,
     apiClient,
     { refreshInterval },
@@ -49,6 +49,10 @@ export function useManufacturingData(params: UseManufacturingDataParams = {}) {
     items: data?.items ?? [],
     total: data?.total ?? 0,
     statusCounts: data?.status_counts ?? {},
+    // **取得できなかったことを握りつぶさない。** 空配列だけを返すと、画面は
+    // 「1 件も無い」と「取れていない」を同じ見た目で出す。**この画面は生成の失敗に
+    // 気づくための唯一の手段**なので、黙って「無い」と言うのが最悪の壊れ方になる。
+    error: error as Error | undefined,
     isLoading,
     mutate,
   };

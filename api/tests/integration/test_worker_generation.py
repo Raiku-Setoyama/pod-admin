@@ -708,3 +708,57 @@ class TestWorkerStopsWhenTheVmIsDown:
             assert attempted == ids
         finally:
             await _cleanup(db_session, ids)
+
+
+class TestCrashLoopIsNotEndless:
+    """**ワーカーを落とし続ける行を、永久に回さない。**
+
+    生成の途中で落ちた行は失敗ハンドラを一度も通らないので、巻き戻しの側が
+    上限を見なければ `failed` にならない。そのままだと管理画面にも通知にも出ず、
+    それを参照する注文が発注準備中で止まり続ける。
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_row_under_the_cap_goes_back_to_the_queue(
+        self, db_session: AsyncSession, quiet_queue: None
+    ) -> None:
+        md_id = await _insert_row(
+            db_session, MfgDataStatus.GENERATING.value, lease_offset_seconds=-1
+        )
+        try:
+            await db_session.execute(
+                text("UPDATE manufacturing_data SET attempts = 1 WHERE id = :id"),
+                {"id": md_id},
+            )
+            await db_session.commit()
+
+            assert await reclaim_expired_generation_leases() >= 1
+            status, _, _, _ = await _retry_row(db_session, md_id)
+            assert status == MfgDataStatus.PENDING.value
+        finally:
+            await _cleanup(db_session, [md_id])
+
+    @pytest.mark.asyncio
+    async def test_a_row_at_the_cap_is_ended_instead(
+        self, db_session: AsyncSession, quiet_queue: None
+    ) -> None:
+        """上限に達していたら failed にして人の目に入れる（無限に回さない）."""
+        md_id = await _insert_row(
+            db_session, MfgDataStatus.GENERATING.value, lease_offset_seconds=-1
+        )
+        try:
+            await db_session.execute(
+                text("UPDATE manufacturing_data SET attempts = :n WHERE id = :id"),
+                {"id": md_id, "n": settings.MFG_MAX_GENERATION_ATTEMPTS},
+            )
+            await db_session.commit()
+
+            await reclaim_expired_generation_leases()
+
+            status, _, next_attempt, error = await _retry_row(db_session, md_id)
+            assert status == MfgDataStatus.FAILED.value
+            assert next_attempt is None
+            # 入力の誤りと区別が付く文言であること（見に行く先が違う）。
+            assert "中断" in error
+        finally:
+            await _cleanup(db_session, [md_id])

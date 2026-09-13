@@ -157,3 +157,22 @@ class TestThirdPartyNoiseIsCapped:
         logging.getLogger("app.services.manufacturing_data_service").info("generated")
 
         assert "generated" in capsys.readouterr().out
+
+
+class TestUvicornNoiseIsNotCarried:
+    def test_the_ansi_duplicate_of_the_message_is_dropped(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """uvicorn が添える `color_message` を載せない.
+
+        message と同じ内容の ANSI エスケープ入りの複製で、**読めないものが
+        1 行ごとに増えるだけ**である。取り込みは従量なので静かに費用になる。
+        """
+        configure_logging(level="INFO", log_format="json")
+        logging.getLogger("uvicorn.error").warning(
+            "Uvicorn running on %s", "http://x", extra={"color_message": "\x1b[1m%s\x1b[0m"}
+        )
+
+        entry = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+        assert "color_message" not in entry
+        assert entry["message"] == "Uvicorn running on http://x"

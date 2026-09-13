@@ -34,9 +34,14 @@ def retry_delay_interval(attempts: Any) -> Any:
     あちらは Python で 1 件ぶんを計算し、こちらは SQL で一括に適用する。
     片方だけ変えると、生成の失敗で戻した行とクラッシュで戻した行で間隔が食い違う。
     """
+    # **指数を先に頭打ちにする。** `least()` は両辺を評価するので、上限だけでは
+    # `pow()` の溢れを防げない。attempts はクラッシュで戻した行では上限を持たず
+    # 伸び続けるため、2^1024 を超えた時点で PostgreSQL が
+    # `value out of range: overflow` を投げ、**この 1 行が全件の巻き戻しごと
+    # ワーカーの起動を落とす。** 30 は上限秒数を遥かに超えるので挙動は変わらない。
+    exponent = func.least(func.greatest(attempts - 1, 0), 30)
     seconds = func.least(
-        settings.MFG_RETRY_BASE_SECONDS
-        * func.pow(2, func.greatest(attempts - 1, 0)),
+        settings.MFG_RETRY_BASE_SECONDS * func.pow(2, exponent),
         settings.MFG_RETRY_MAX_SECONDS,
     )
     return func.make_interval(0, 0, 0, 0, 0, 0, seconds)
@@ -157,15 +162,46 @@ class ManufacturingDataRepository:
 
         間隔は ``attempts`` から導く（確保のたびに増えるので、何度も落ちている行ほど
         後ろへ下がる）。1 度きりのクラッシュなら 1 回目の間隔で戻ってくる。
+
+        **上限に達した行は failed で終わらせる。** ここで無条件に pending へ戻すと、
+        ワーカーを確実に落とす行（巨大な画像で OOM になる等）が永久に回り続ける。
+        その行は失敗ハンドラを一度も通らないので `failed` にならず、**管理画面にも
+        通知にも出ないまま、それを参照する注文が発注準備中で止まり続ける。**
+        「無限には粘らない」という約束（`MFG_MAX_GENERATION_ATTEMPTS`）は、
+        失敗ハンドラを通る経路だけのものであってはならない。
         """
+        expired = [
+            ManufacturingData.status == MfgDataStatus.GENERATING.value,
+            or_(
+                ManufacturingData.lease_expires_at.is_(None),
+                ManufacturingData.lease_expires_at < func.now(),
+            ),
+        ]
+        # 先に上限超えを終端させる。**順序が逆だと、いま failed にした行を
+        # 同じ起動の中で pending に戻してしまう。**
+        await self._db.execute(
+            update(ManufacturingData)
+            .where(
+                *expired,
+                ManufacturingData.attempts >= settings.MFG_MAX_GENERATION_ATTEMPTS,
+            )
+            .values(
+                status=MfgDataStatus.FAILED.value,
+                lease_expires_at=None,
+                next_attempt_at=None,
+                error_message=(
+                    f"生成の途中で {settings.MFG_MAX_GENERATION_ATTEMPTS} 回中断しました"
+                    "（上限）。この製造データを処理するとワーカーが落ちている可能性があります。"
+                ),
+            )
+            .execution_options(synchronize_session=False)
+        )
+
         result = await self._db.execute(
             update(ManufacturingData)
             .where(
-                ManufacturingData.status == MfgDataStatus.GENERATING.value,
-                or_(
-                    ManufacturingData.lease_expires_at.is_(None),
-                    ManufacturingData.lease_expires_at < func.now(),
-                ),
+                *expired,
+                ManufacturingData.attempts < settings.MFG_MAX_GENERATION_ATTEMPTS,
             )
             .values(
                 status=MfgDataStatus.PENDING.value,

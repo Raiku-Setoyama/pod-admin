@@ -42,6 +42,7 @@ from app.schemas.manufacturing_data import (
 from app.services.illustrator_vm_client import (
     IllustratorVmClient,
     IllustratorVmError,
+    IllustratorVmUnavailableError,
 )
 from app.utils.exceptions import (
     ConflictError,
@@ -62,6 +63,7 @@ logger = logging.getLogger(__name__)
 # apply も CI も通るので、誰も気づかないまま検知だけが失われる。
 # 値を変えるときは、Terraform 側の filter も同時に変えること。
 _EVENT_VM_UNREACHABLE = "mfg_vm_unreachable"
+_EVENT_DEPENDENCY_UNAVAILABLE = "mfg_dependency_unavailable"
 _EVENT_GENERATION_FAILED = "mfg_generation_failed"
 
 
@@ -80,7 +82,8 @@ class GenerationOutcome(str, Enum):
 
     READY = "ready"  # 生成できた。次へ進む
     FAILED = "failed"  # この行の事情で失敗した。次へ進んでよい
-    VM_UNREACHABLE = "vm_unreachable"  # 相手が落ちている。次を試しても同じ
+    RESCHEDULED = "rescheduled"  # この行だけ後で試す。他の行は進めてよい
+    VM_UNREACHABLE = "vm_unreachable"  # 共有している VM が落ちている。次を試しても同じ
 
 
 # 生成済みファイルの保存先プレフィックス（FileStorage 上）
@@ -418,20 +421,35 @@ class ManufacturingDataService:
         """
         message = str(exc)[:1000]
         retryable = self._is_retryable(exc)
+        # **VM だけを特別扱いする。** 直列で共有している 1 台なので、そこが落ちて
+        # いれば次の行も必ず同じ結果になる。元データの配信元や保存先はそうではなく、
+        # 落ちているのはその行が参照している先だけかもしれない。
+        vm_is_down = isinstance(exc, IllustratorVmUnavailableError)
         attempts_left = settings.MFG_MAX_GENERATION_ATTEMPTS - md.attempts
 
         if retryable and attempts_left > 0:
             delay = self._retry_delay(md.attempts)
             # 例外そのものは出さない（想定内の経路であり、毎回スタックを積む値がない）。
             logger.warning(
-                "manufacturing data %s could not reach the VM (attempt %d/%d); "
+                "manufacturing data %s could not reach %s (attempt %d/%d); "
                 "retrying in %.0fs: %s",
                 md.id,
+                "the VM" if vm_is_down else "a dependency",
                 md.attempts,
                 settings.MFG_MAX_GENERATION_ATTEMPTS,
                 delay,
                 message,
-                extra={"event": _EVENT_VM_UNREACHABLE, "manufacturing_data_id": md.id},
+                extra={
+                    # **落ちた先ごとに別のイベントにする。** 1 つに混ぜると、
+                    # 元データの配信元が落ちただけで「VM を見に行け」という
+                    # 手順書つきの通知が飛び、障害の最中に人を誤った先へ向かわせる。
+                    "event": (
+                        _EVENT_VM_UNREACHABLE
+                        if vm_is_down
+                        else _EVENT_DEPENDENCY_UNAVAILABLE
+                    ),
+                    "manufacturing_data_id": md.id,
+                },
             )
             await self._finish(
                 md,
@@ -442,12 +460,17 @@ class ManufacturingDataService:
             )
             await self._commit()
             # **書き戻せたかは、この戻り値に関係しない。** リースを失っていたとしても
-            # 「相手が落ちている」という事実は変わらないので、周回は降りる。
-            return GenerationOutcome.VM_UNREACHABLE
+            # 「相手が落ちている」という事実は変わらないので、判断は同じである。
+            return (
+                GenerationOutcome.VM_UNREACHABLE
+                if vm_is_down
+                else GenerationOutcome.RESCHEDULED
+            )
 
         if retryable:
+            where = "VM" if vm_is_down else "依存先"
             message = (
-                f"VM に {md.attempts} 回届きませんでした（上限）。"
+                f"{where}に {md.attempts} 回届きませんでした（上限）。"
                 f"最後のエラー: {message}"
             )[:1000]
         logger.exception(
@@ -462,10 +485,10 @@ class ManufacturingDataService:
             error_message=message,
         )
         await self._commit()
-        # **上限に達しただけで、相手はまだ落ちている。** ここで FAILED を返すと、
+        # **上限に達しただけで、VM はまだ落ちている。** ここで FAILED を返すと、
         # 溜まった行を 1 件ずつ空振りし続けて 1 回の起動を使い切る。
         return (
-            GenerationOutcome.VM_UNREACHABLE if retryable else GenerationOutcome.FAILED
+            GenerationOutcome.VM_UNREACHABLE if vm_is_down else GenerationOutcome.FAILED
         )
 
     # 判定はモジュール関数 1 つに寄せてある（取得の境界とサービスで同じものを使う）。

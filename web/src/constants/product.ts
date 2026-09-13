@@ -18,7 +18,14 @@ export const PRODUCT_TYPE_LABELS: Record<ProductType, string> = {
   tshirt: "Tシャツ",
 };
 
-/** 商品種別の表示名を返す（未知の値はキーをそのまま出す）。 */
+/**
+ * 商品種別の表示名を返す（未知の値はキーをそのまま出す）。
+ *
+ * **添字で引く前に自前のキーか確かめる。** そのまま引くとプロトタイプ鎖に当たり、
+ * `"constructor"` のような値で文字列ではなく関数が返って描画が落ちる。
+ */
 export function getProductTypeLabel(productType: ProductType | string): string {
-  return PRODUCT_TYPE_LABELS[productType as ProductType] ?? productType;
+  return Object.hasOwn(PRODUCT_TYPE_LABELS, productType)
+    ? PRODUCT_TYPE_LABELS[productType as ProductType]
+    : productType;
 }

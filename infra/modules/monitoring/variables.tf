@@ -25,12 +25,22 @@ variable "worker_job_name" {
 }
 
 variable "api_url" {
-  description = <<-EOT
-    API の公開 URL。外形監視（Uptime Check）の宛先になる。
-    空なら外形監視を作らない。
-  EOT
+  description = "API の公開 URL。外形監視（Uptime Check）の宛先になる"
   type        = string
   default     = ""
+}
+
+variable "uptime_check_enabled" {
+  description = <<-EOT
+    外形監視を作るか。
+
+    **`api_url` の中身では判断しない。** その値は Cloud Run サービスの属性なので、
+    環境をゼロから作るとき（DR の再構築・別リージョン）には plan の時点で未確定であり、
+    `count` に使うと `Invalid count argument` で plan ごと止まる。
+    **最も必要なとき — 作り直しのとき — にだけ止まる**という壊れ方になる。
+  EOT
+  type        = bool
+  default     = true
 }
 
 variable "enabled" {

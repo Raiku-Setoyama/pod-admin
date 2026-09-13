@@ -21,12 +21,13 @@ locals {
   # 通知先が無ければアラートは作らない。**鳴らないアラートを置くほうが危険である。**
   # 「監視してあるはず」という思い込みだけが残るため。
   make_alerts = var.enabled && length(var.notification_emails) > 0 ? 1 : 0
-  make_uptime = var.enabled && var.api_url != "" ? 1 : 0
+  make_uptime = var.enabled && var.uptime_check_enabled ? 1 : 0
 
   channel_ids = [for c in google_monitoring_notification_channel.email : c.id]
 
   # Uptime Check はホスト名だけを取る（scheme とパスは別のフィールド）。
-  api_host = local.make_uptime == 1 ? replace(replace(var.api_url, "https://", ""), "/", "") : ""
+  # **ここは属性なので未確定でよい。** count と違い、apply の時点で埋まればよい。
+  api_host = replace(replace(var.api_url, "https://", ""), "/", "")
 }
 
 resource "google_monitoring_notification_channel" "email" {
@@ -59,6 +60,12 @@ locals {
       description = join("", [
         "製造データ生成 VM に届かなかった回数。",
         "ワーカーが再試行を予定した（= VM が落ちている疑い）ときに 1 増える。",
+      ])
+    }
+    mfg_dependency_unavailable = {
+      description = join("", [
+        "製造データ生成が VM 以外の依存先（元データの配信元・保存先）に届かなかった回数。",
+        "**VM は健全である。** 混ぜると、配信元の不調で「VM を見に行け」という通知が飛ぶ。",
       ])
     }
     mfg_generation_failed = {
@@ -134,6 +141,53 @@ resource "google_monitoring_alert_policy" "vm_unreachable" {
 
   alert_strategy {
     # 5 分間隔のワーカーが 1 度も報告しなければ、VM は戻っている。
+    auto_close = "3600s"
+  }
+}
+
+resource "google_monitoring_alert_policy" "dependency_unavailable" {
+  count = local.make_alerts
+
+  project      = var.project_id
+  display_name = "製造データの依存先に届いていない（VM 以外）"
+  combiner     = "OR"
+
+  documentation {
+    content = join("\n", [
+      "製造データ生成が、**VM 以外の依存先**に到達できていません。",
+      "元データ（PNG レイヤー）の配信元か、生成物の保存先（GCS）です。",
+      "",
+      "**VM を見に行く必要はありません。** VM が落ちている場合は別のアラート",
+      "「製造データ生成VMに届いていない」が鳴ります。",
+      "",
+      "生成待ちの行は残り、相手が戻れば自動で作り直されます。",
+      "管理画面の「製造データ」で、待機中の行の理由を確認してください。",
+    ])
+    mime_type = "text/markdown"
+  }
+
+  conditions {
+    display_name = "5 分間に 1 回以上、到達に失敗している"
+
+    condition_threshold {
+      filter = join(" AND ", [
+        "resource.type=\"cloud_run_job\"",
+        "metric.type=\"logging.googleapis.com/user/${google_logging_metric.app["mfg_dependency_unavailable"].name}\"",
+      ])
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_SUM"
+      }
+    }
+  }
+
+  notification_channels = local.channel_ids
+
+  alert_strategy {
     auto_close = "3600s"
   }
 }
@@ -340,11 +394,15 @@ resource "google_monitoring_alert_policy" "api_down" {
         "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\"",
         "metric.label.check_id=\"${google_monitoring_uptime_check_config.api[0].uptime_check_id}\"",
       ])
-      comparison      = "COMPARISON_LT"
-      threshold_value = 1
-      # **1 回の失敗では鳴らさない。** probe は複数地域から来るので、
+      # **REDUCE_COUNT_FALSE が数えるのは「失敗した probe 地域の数」である。**
+      # したがって鳴らす条件は「失敗地域が 1 を超えた」= COMPARISON_GT / 1 になる。
+      # LT / 1 にすると「失敗地域が 0」= **健全なときだけ鳴る**という真逆の条件になり、
+      # しかも全地域が落ちた瞬間に黙る。
+      comparison = "COMPARISON_GT"
+      # **1 地域の失敗では鳴らさない。** probe は複数地域から来るので、
       # 1 地域の一過性の失敗を障害として扱わない。
-      duration = "300s"
+      threshold_value = 1
+      duration        = "300s"
 
       aggregations {
         alignment_period     = "300s"
@@ -353,8 +411,11 @@ resource "google_monitoring_alert_policy" "api_down" {
         group_by_fields      = ["resource.label.host"]
       }
 
+      # **地域数は threshold_value が見ている。** ここで数えるのは
+      # 「条件を満たした時系列の本数」であり、host でまとめた後は 1 本しかない。
+      # 2 を要求すると、どれだけ落ちても永久に満たされない。
       trigger {
-        count = 2
+        count = 1
       }
     }
   }

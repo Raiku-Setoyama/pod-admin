@@ -301,6 +301,11 @@ def _extract_error(response: httpx.Response) -> str:
         body = response.json()
     except ValueError:
         return response.text[:500]
+    # JSON ではあるが object とは限らない（前段 proxy が配列や文字列を返すことがある）。
+    # ここで落ちると、5xx＝到達不能だったはずの失敗が AttributeError に化けて
+    # **恒久的な failed に倒れる**（再試行の対象から外れる）。
+    if not isinstance(body, dict):
+        return str(body)[:500]
     detail = body.get("detail")
     if detail is not None:
         return str(detail)

@@ -167,11 +167,16 @@ def _transient_gcs_errors(what: str) -> Iterator[None]:
     """
     # import をここに置くのは、このモジュールが google-cloud-storage 未導入の
     # 環境（CI・オフライン）でも読み込めるようにするためである（他の箇所と同じ方針）。
-    from google.api_core.exceptions import ServerError, TooManyRequests
+    from google.api_core.exceptions import RetryError, ServerError, TooManyRequests
 
     try:
         yield
-    except (ServerError, TooManyRequests) as exc:
+    # ServerError/TooManyRequests は「GCS が応答したうえでの 5xx・429」である。
+    # **応答すら返らない場合はこの型にならない。** クライアントが使う requests は
+    # 接続不能・読み取りタイムアウトを RequestException（= OSError の子）として投げ、
+    # api_core はリトライを打ち切ったときに RetryError を投げる。どちらも翻訳しないと、
+    # **6 分かけて生成した製造データが「入力が悪い」として恒久的な失敗に落ちる。**
+    except (ServerError, TooManyRequests, RetryError, OSError) as exc:
         raise TransientDependencyError(f"GCS is unavailable ({what}): {exc}") from exc
 
 

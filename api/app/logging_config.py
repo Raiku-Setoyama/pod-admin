@@ -33,9 +33,13 @@ import os
 from typing import Any
 
 # 構造化ログに写さない LogRecord の属性（標準属性と、自前で別名にしたもの）。
+#
+# `color_message` は uvicorn が自分のログに毎回添える ANSI エスケープ入りの複製である。
+# **message と同じ内容なので、載せても読めないものが 1 行ごとに増えるだけ**であり、
+# Cloud Logging の取り込みは従量なので静かに費用になる。
 _RESERVED = frozenset(
     logging.LogRecord("", 0, "", 0, "", None, None).__dict__
-) | {"message", "asctime", "taskName"}
+) | {"message", "asctime", "taskName", "color_message"}
 
 
 class CloudLoggingFormatter(logging.Formatter):

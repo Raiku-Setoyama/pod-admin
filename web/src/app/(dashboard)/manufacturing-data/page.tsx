@@ -37,7 +37,7 @@ export default function ManufacturingDataPage() {
   const page = Number(searchParams.get("page")) || 1;
   const limit = Number(searchParams.get("limit")) || 20;
 
-  const { items, total, statusCounts, isLoading, mutate } = useManufacturingData({
+  const { items, total, statusCounts, error, isLoading, mutate } = useManufacturingData({
     page,
     limit,
     status,
@@ -132,6 +132,22 @@ export default function ManufacturingDataPage() {
                 失敗した全 {failedCount} 件を戻す
               </Button>
             </div>
+          </div>
+        )}
+
+        {/*
+          **取得に失敗したら、その事実を出す。** 出さないと一覧が空表示になり、
+          「生成失敗は 1 件も無い」と読めてしまう。この画面は失敗に気づくための
+          唯一の手段なので、その誤読が最も高く付く。
+        */}
+        {error && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
+            <span className="font-medium text-destructive">
+              製造データを取得できませんでした。
+            </span>{" "}
+            <span className="text-muted-foreground">
+              ここに出ている件数は最新ではありません。「更新」で取り直してください。
+            </span>
           </div>
         )}
 

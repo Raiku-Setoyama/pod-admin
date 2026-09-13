@@ -131,11 +131,16 @@ export function getManufacturingDataFilterOptions(): StatusOption<ManufacturingD
   ];
 }
 
-/** 文字列が製造データ生成ステータスかどうか（URL のクエリ検証に使う）。 */
+/**
+ * 文字列が製造データ生成ステータスかどうか（URL のクエリ検証に使う）。
+ *
+ * **`in` では判定しない。** プロトタイプ鎖まで見るので `?status=toString` や
+ * `?status=constructor` が通ってしまい、ラベル参照が文字列ではなく関数を返す。
+ */
 export function isManufacturingDataStatus(
   value: string | null
 ): value is ManufacturingDataStatus {
-  return value !== null && value in MANUFACTURING_DATA_STATUS_LABELS;
+  return value !== null && Object.hasOwn(MANUFACTURING_DATA_STATUS_LABELS, value);
 }
 
 // ========================================
