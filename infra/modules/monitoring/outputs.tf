@@ -11,5 +11,5 @@ output "alerting_active" {
     monitoring_enabled = false で通知先だけ設定されている環境で true を返し、
     **「監視してあるはず」を否定するための唯一の仕掛けが、それ自身で嘘をつく。**
   EOT
-  value       = length(google_monitoring_alert_policy.vm_unreachable) > 0
+  value       = length(google_monitoring_alert_policy.api_down) > 0
 }

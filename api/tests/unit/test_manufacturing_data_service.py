@@ -1,9 +1,7 @@
 """Unit tests for ManufacturingDataService and the manufacturing readiness gate."""
 
-import logging
-import pathlib
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -15,10 +13,7 @@ from app.config import settings
 from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
 from app.models.order import OrderItem, OrderItemStatus
 from app.services import manufacturing_data_service as mds
-from app.services.illustrator_vm_client import (
-    IllustratorVmError,
-    IllustratorVmUnavailableError,
-)
+from app.services.illustrator_vm_client import IllustratorVmError, IllustratorVmUnavailableError
 from app.services.manufacturing_data_service import ManufacturingDataService
 from app.utils.exceptions import (
     ConflictError,
@@ -53,24 +48,6 @@ def _service(md_repo: Any, order_repo: Any=None, **kwargs: Any) -> Any:
         session=None,  # unit test: _commit は no-op、_insert_row は md_repo.create を使用
         **kwargs,
     )
-
-
-def _mock_client_factory(handler: Any) -> Any:
-    """`httpx.AsyncClient(...)` を MockTransport 付きのものに差し替える工場を返す.
-
-    元データ取得はサービスがその場で AsyncClient を組み立てるため、
-    transport を注入する口が無い。クラスごと差し替えて中身だけ挿げ替える。
-    """
-
-    # **本物を先に掴んでおく。** `mds.httpx` は httpx モジュールそのものなので、
-    # パッチ後に `httpx.AsyncClient` を呼ぶと自分自身を呼び続ける。
-    real_client = httpx.AsyncClient
-
-    def factory(**kwargs: Any) -> httpx.AsyncClient:
-        kwargs.pop("transport", None)
-        return real_client(transport=httpx.MockTransport(handler), **kwargs)
-
-    return factory
 
 
 def _assign_id(md: ManufacturingData, new_id: str = "md-new") -> ManufacturingData:
@@ -228,24 +205,39 @@ class TestCacheResolution:
 _LEASE = datetime(2099, 1, 1, tzinfo=UTC)
 
 
-def _claimed_md(attempts: int = 1) -> Any:
-    """ワーカーが取り出した直後の行（generating・試行回数は加算済み・リース保持）."""
-    md = ManufacturingData(product_code="RKSYO-1", product_type="sticker", size="50x50mm")
-    md.id = "md-1"
-    md.status = MfgDataStatus.GENERATING.value
-    md.source_images = [
-        {"layer_type": "color", "url": "https://x/color.png"},
-        {"layer_type": "cutline", "url": "https://x/cutline.png"},
-    ]
-    md.attempts = attempts
-    md.lease_expires_at = _LEASE
-    return md
-
-
 class TestGenerateDriver:
+    def _claimed_md(self) -> Any:
+        """ワーカーが取り出した直後の行（generating・試行回数は加算済み・リース保持）."""
+        md = ManufacturingData(product_code="RKSYO-1", product_type="sticker", size="50x50mm")
+        md.id = "md-1"
+        md.status = MfgDataStatus.GENERATING.value
+        md.source_images = [
+            {"layer_type": "color", "url": "https://x/color.png"},
+            {"layer_type": "cutline", "url": "https://x/cutline.png"},
+        ]
+        md.attempts = 1
+        md.lease_expires_at = _LEASE
+        return md
+
+    async def _generate_with_submit_error(
+        self, md: Any, exc: Exception, *, finish_ok: bool = True
+    ) -> tuple[Any, Any]:
+        """VM への投入が exc で失敗する状況で generate を 1 回走らせ、(svc, 結果) を返す."""
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        if not finish_ok:
+            md_repo.finish_generation.return_value = False  # リースを失っている
+
+        vm_client = MagicMock()
+        vm_client.submit = AsyncMock(side_effect=exc)
+
+        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
+        svc._download_source_images = AsyncMock(return_value={"color": b"c", "cutline": b"k"})
+        return svc, await svc.generate("md-1", _LEASE)
+
     @pytest.mark.asyncio
     async def test_successful_generation_marks_ready(self) -> None:
-        md = _claimed_md()
+        md = self._claimed_md()
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
 
@@ -281,25 +273,149 @@ class TestGenerateDriver:
 
     @pytest.mark.asyncio
     async def test_vm_failure_marks_failed_with_message(self) -> None:
-        md = _claimed_md()
-        md_repo = AsyncMock()
-        md_repo.find_by_id.return_value = md
-
-        vm_client = MagicMock()
-        vm_client.submit = AsyncMock(side_effect=IllustratorVmError("VM 503"))
-
-        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
-        svc._download_source_images = AsyncMock(return_value={"color": b"c", "cutline": b"k"})
-
-        await svc.generate("md-1", _LEASE)
+        md = self._claimed_md()
+        await self._generate_with_submit_error(md, IllustratorVmError("VM 503"))
 
         assert md.status == MfgDataStatus.FAILED.value
         assert "VM 503" in md.error_message
         assert md.lease_expires_at is None  # 失敗でも所有権は返す
 
     @pytest.mark.asyncio
+    async def test_unreachable_vm_defers_to_pending_instead_of_failing(self) -> None:
+        """VM に届かないのは入力の誤りではない。failed にせず生成待ちへ戻す.
+
+        2026-09-27〜10-02 の障害では failed に確定させたため、VM の復旧後も
+        人が 1 件ずつ再生成を押すまで発注が止まったままになった。
+        """
+        md = self._claimed_md()
+        md.vm_job_id = "stale-job"
+        svc, outcome = await self._generate_with_submit_error(
+            md, IllustratorVmUnavailableError("VM POST /api/process failed: ConnectTimeout")
+        )
+
+        assert outcome is mds.GenerationOutcome.DEFERRED
+        assert md.status == MfgDataStatus.PENDING.value
+        assert md.vm_job_id is None
+        assert "ConnectTimeout" in md.error_message
+        assert md.lease_expires_at is None
+        # 発注可否は変えない（生成待ちのまま）
+        svc._order_repo.sync_item_status_for_manufacturing_data.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unreachable_vm_fails_after_the_attempt_limit(self) -> None:
+        md = self._claimed_md()
+        md.attempts = settings.WORKER_MAX_GENERATION_ATTEMPTS
+        _, outcome = await self._generate_with_submit_error(
+            md, IllustratorVmUnavailableError("down")
+        )
+
+        assert outcome is mds.GenerationOutcome.FAILED
+        assert md.status == MfgDataStatus.FAILED.value
+        assert "接続できませんでした" in md.error_message
+
+    @pytest.mark.asyncio
+    async def test_deferred_row_is_given_a_retry_time(self) -> None:
+        """戻す行には次に試す時刻を入れる（先頭詰まりを防ぐ）.
+
+        取り出しは created_at の昇順なので、時刻を入れずに戻すと同じ行が毎回いちばん先に
+        選ばれ、その 1 行が上限を使い切るまで後ろの行が 1 件も処理されない。
+        """
+        md = self._claimed_md()
+        before = datetime.now(UTC)
+        _, outcome = await self._generate_with_submit_error(
+            md, IllustratorVmUnavailableError("down")
+        )
+
+        assert outcome is mds.GenerationOutcome.DEFERRED
+        assert md.next_attempt_at is not None
+        # 1 回目（attempts=1）は base そのぶんだけ先。
+        assert md.next_attempt_at >= before + timedelta(seconds=settings.MFG_RETRY_BASE_SECONDS)
+
+    @pytest.mark.asyncio
+    async def test_retry_delay_doubles_and_stops_at_the_cap(self) -> None:
+        delay = ManufacturingDataService._retry_delay
+        assert delay(1) == settings.MFG_RETRY_BASE_SECONDS
+        assert delay(2) == settings.MFG_RETRY_BASE_SECONDS * 2
+        assert delay(3) == settings.MFG_RETRY_BASE_SECONDS * 4
+        # 試行回数がいくら増えても上限を超えない（SQL 側と違い overflow はしないが、
+        # 落ちている相手を何日も待たせない意味で上限を効かせる）。
+        assert delay(99) == settings.MFG_RETRY_MAX_SECONDS
+
+    @pytest.mark.asyncio
+    async def test_unavailable_storage_defers_but_keeps_the_run_going(self) -> None:
+        """保存先が一時的に落ちた行も生成待ちへ戻す。**ただし周回は続ける.**
+
+        VM と違い、落ちているのはその行が参照している先だけかもしれない。VM と同じ扱いに
+        すると 1 行の都合で起動まるごとを捨てることになる。
+        """
+        md = self._claimed_md()
+        _, outcome = await self._generate_with_submit_error(
+            md, TransientDependencyError("GCS is unavailable (upload): 503")
+        )
+
+        assert outcome is mds.GenerationOutcome.RESCHEDULED
+        assert md.status == MfgDataStatus.PENDING.value
+        assert md.next_attempt_at is not None
+        assert "依存先に接続できず再試行待ち" in md.error_message
+
+    @pytest.mark.asyncio
+    async def test_unreachable_asset_host_defers(self) -> None:
+        """元データの配信元に届かない場合も恒久的な失敗にしない.
+
+        この層は元データの取得だけ自分で httpx を呼ぶので、翻訳する境界が無い
+        （is_transient_failure がここで境界を兼ねる）。
+        """
+        md = self._claimed_md()
+        _, outcome = await self._generate_with_submit_error(
+            md, httpx.ConnectError("asset host is down")
+        )
+
+        assert outcome is mds.GenerationOutcome.RESCHEDULED
+        assert md.status == MfgDataStatus.PENDING.value
+
+    @pytest.mark.parametrize(
+        ("error", "transient"),
+        [
+            pytest.param(TransientDependencyError("GCS 503"), True, id="保存先が落ちている"),
+            pytest.param(httpx.ConnectError("refused"), True, id="配信元に繋がらない"),
+            pytest.param(httpx.ReadTimeout("slow"), True, id="配信元が応答しない"),
+            pytest.param(
+                httpx.HTTPStatusError(
+                    "boom", request=httpx.Request("GET", "https://x"),
+                    response=httpx.Response(503),
+                ),
+                True,
+                id="配信元が5xx",
+            ),
+            pytest.param(
+                httpx.HTTPStatusError(
+                    "nope", request=httpx.Request("GET", "https://x"),
+                    response=httpx.Response(404),
+                ),
+                False,
+                id="URLが誤っている（4xx）",
+            ),
+            pytest.param(ValueError("bad png"), False, id="入力が壊れている"),
+        ],
+    )
+    def test_is_transient_failure_classification(
+        self, error: Exception, transient: bool
+    ) -> None:
+        assert mds.is_transient_failure(error) is transient
+
+    @pytest.mark.asyncio
+    async def test_lost_lease_while_deferring_is_skipped(self) -> None:
+        md = self._claimed_md()
+        _, outcome = await self._generate_with_submit_error(
+            md, IllustratorVmUnavailableError("down"), finish_ok=False
+        )
+
+        assert outcome is mds.GenerationOutcome.SKIPPED
+        assert md.status == MfgDataStatus.GENERATING.value  # 他のワーカーの行を書き換えない
+
+    @pytest.mark.asyncio
     async def test_not_configured_vm_marks_failed(self) -> None:
-        md = _claimed_md()
+        md = self._claimed_md()
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
 
@@ -324,7 +440,7 @@ class TestGenerateDriver:
         generate は自分では確保しない。確保はキューからの取り出しが 1 文で済ませており、
         ここで再度確保しようとすると自分の取り出しと衝突する。
         """
-        md = _claimed_md()
+        md = self._claimed_md()
         md.status = status
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
@@ -394,6 +510,34 @@ class TestGenerateDriver:
 
 class TestRetry:
     @pytest.mark.asyncio
+    async def test_retry_clears_the_pending_retry_schedule(self) -> None:
+        """**人が押した再生成は待たせない。**
+
+        生成待ちへ戻した行は next_attempt_at を持ち、取り出しはその時刻まで飛ばす。
+        人の操作でここを消し忘れると、画面上は「生成待ち」なのに最長 1 時間動かない
+        （押しても何も起きないように見える）。
+        """
+        md = ManufacturingData(product_code="p", product_type="sticker")
+        md.id = "md-1"
+        md.status = MfgDataStatus.FAILED.value
+        md.error_message = "依存先に接続できず再試行待ち: boom"
+        md.attempts = 3
+        md.next_attempt_at = datetime.now(UTC) + timedelta(hours=1)
+        md.lease_expires_at = None
+        md.created_at = datetime.now(UTC)
+        md.updated_at = datetime.now(UTC)
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+
+        svc = _service(md_repo)
+        await svc.retry("md-1")
+
+        assert md.status == MfgDataStatus.PENDING.value
+        assert md.next_attempt_at is None  # 次の取り出しで拾われる
+        assert md.attempts == 0
+        assert md.error_message is None
+
+    @pytest.mark.asyncio
     async def test_retry_resets_to_pending_without_generating_inline(self) -> None:
         from datetime import UTC, datetime
 
@@ -415,6 +559,8 @@ class TestRetry:
         assert md.status == MfgDataStatus.PENDING.value
         assert md.error_message is None
         assert resp.status == MfgDataStatus.PENDING.value
+        # 人が再駆動したので、VM 不達の試行回数は数え直す
+        assert md.attempts == 0
 
     @pytest.mark.asyncio
     async def test_retry_missing_raises(self) -> None:
@@ -462,11 +608,13 @@ class TestRegenerate:
         order_repo = AsyncMock()
         order_repo.has_manufacturing_or_delivered_items.return_value = False
 
+        md.attempts = 3
         svc = _service(md_repo, order_repo)
         resp = await svc.regenerate("md-1")
 
         assert md.status == MfgDataStatus.PENDING.value
         assert md.error_message is None
+        assert md.attempts == 0  # 作り直しなので VM 不達の試行回数も数え直す
         # 降格は 1 回だけ（生成の起動もこの 1 回に対応する）
         order_repo.sync_item_status_for_manufacturing_data.assert_awaited_once_with(
             "md-1", ready=False
@@ -560,217 +708,6 @@ class TestRecovery:
         session.commit.assert_awaited()
 
 
-class TestUnreachableVmIsRetried:
-    """**VM に届かなかった失敗は終端にしない。**
-
-    到達不能（接続不能・タイムアウト・5xx）は、同じ入力でも VM が戻れば成功する。
-    入力の誤りと同じ `failed` に落とすと、VM が数分止まっただけで待ち行列が失敗の山に
-    変わり、戻すのに 1 件ずつの手作業が要る。
-    """
-
-    def _service_with_vm_error(self, md: Any, error: Exception) -> Any:
-        md_repo = AsyncMock()
-        md_repo.find_by_id.return_value = md
-        vm_client = MagicMock()
-        vm_client.submit = AsyncMock(side_effect=error)
-        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
-        svc._download_source_images = AsyncMock(
-            return_value={"color": b"c", "cutline": b"k"}
-        )
-        return svc
-
-    @pytest.mark.asyncio
-    async def test_unreachable_vm_goes_back_to_the_queue(self) -> None:
-        md = _claimed_md()
-        svc = self._service_with_vm_error(
-            md, IllustratorVmUnavailableError("connection refused")
-        )
-
-        outcome = await svc.generate("md-1", _LEASE)
-
-        # VM そのものが落ちているので、次の行を試しても同じ結果になる。
-        assert outcome is mds.GenerationOutcome.VM_UNREACHABLE
-        assert md.status == MfgDataStatus.PENDING.value
-        # 次にいつ試してよいかを持たせる。持たせないと同じ周回が即座に取り直す。
-        assert md.next_attempt_at is not None
-        assert md.next_attempt_at > datetime.now(UTC)
-        # 何が起きたかは残す（画面と通知が読む）。
-        assert "connection refused" in md.error_message
-        assert md.lease_expires_at is None  # 所有権は返す
-
-    @pytest.mark.asyncio
-    async def test_bad_input_still_fails_at_once(self) -> None:
-        """入力の誤りは再試行しても直らない。**回数を使わずその場で終える。**"""
-        md = _claimed_md()
-        svc = self._service_with_vm_error(md, IllustratorVmError("422 unsupported size"))
-
-        outcome = await svc.generate("md-1", _LEASE)
-
-        assert outcome is mds.GenerationOutcome.FAILED
-        assert md.status == MfgDataStatus.FAILED.value
-        assert md.next_attempt_at is None
-
-    @pytest.mark.asyncio
-    async def test_a_layer_host_that_is_down_is_retried(self) -> None:
-        """元データの配信元が落ちた場合も、入力の誤りではない.
-
-        **取得そのものを走らせて検証する。** `_download_source_images` ごと差し替えると、
-        「1 レイヤーの失敗を握りつぶしたうえで、その理由を失わない」という、
-        ここで一番壊れやすい仕組みを飛ばしてしまう。
-        """
-        md = _claimed_md()
-        md_repo = AsyncMock()
-        md_repo.find_by_id.return_value = md
-        # 許可ホストを渡す。渡さないと SSRF ガードが取得の手前で弾いてしまい、
-        # **検証したい「取得の失敗の種類」まで到達しない。**
-        svc = _service(
-            md_repo,
-            file_storage=MagicMock(),
-            vm_client=MagicMock(),
-            allowed_source_hosts=frozenset({"x"}),
-        )
-
-        def host_is_down(_: httpx.Request) -> httpx.Response:
-            raise httpx.ConnectError("asset host is down")
-
-        # サービスは自前で AsyncClient を組み立てるため transport を注入する口が無い。
-        # **クラスごと差し替える**（`mds.httpx` は httpx モジュールそのものなので、
-        # ここで httpx を直接パッチするのと同じ場所を触っている）。
-        with patch.object(httpx, "AsyncClient", _mock_client_factory(host_is_down)):
-            outcome = await svc.generate("md-1", _LEASE)
-
-        # **VM は健全である。** 配信元の不調で周回を降りると、その配信元を
-        # 使っていない後続の行まで止まる。
-        assert outcome is mds.GenerationOutcome.RESCHEDULED
-        assert md.status == MfgDataStatus.PENDING.value
-        assert md.next_attempt_at is not None
-
-    @pytest.mark.asyncio
-    async def test_a_layer_url_that_is_gone_is_not_retried(self) -> None:
-        """404 は入力（URL）の誤りである。何度取りに行っても変わらない."""
-        md = _claimed_md()
-        md_repo = AsyncMock()
-        md_repo.find_by_id.return_value = md
-        svc = _service(
-            md_repo,
-            file_storage=MagicMock(),
-            vm_client=MagicMock(),
-            allowed_source_hosts=frozenset({"x"}),
-        )
-
-        with patch.object(
-            httpx, "AsyncClient", _mock_client_factory(lambda _: httpx.Response(404))
-        ):
-            outcome = await svc.generate("md-1", _LEASE)
-
-        assert outcome is mds.GenerationOutcome.FAILED
-        assert md.status == MfgDataStatus.FAILED.value
-
-    @pytest.mark.asyncio
-    async def test_storage_being_unavailable_does_not_discard_the_render(self) -> None:
-        """**6 分かけて作ったものを、保存先の不調で捨てない。**"""
-        md = _claimed_md()
-        md_repo = AsyncMock()
-        md_repo.find_by_id.return_value = md
-
-        vm_client = MagicMock()
-        vm_client.submit = AsyncMock(return_value="job-9")
-        vm_client.wait_until_complete = AsyncMock(
-            return_value=SimpleNamespace(output_filename="sticker_out.ai")
-        )
-        vm_client.download = AsyncMock(return_value=b"AI-BYTES")
-
-        file_storage = MagicMock()
-        file_storage.save = AsyncMock(
-            side_effect=TransientDependencyError("GCS is unavailable")
-        )
-
-        svc = _service(md_repo, file_storage=file_storage, vm_client=vm_client)
-        svc._download_source_images = AsyncMock(
-            return_value={"color": b"c", "cutline": b"k"}
-        )
-
-        outcome = await svc.generate("md-1", _LEASE)
-
-        # **保存先が落ちているだけで、VM は健全である。** ここで周回を降りると、
-        # 無関係な後続の行まで 1 回の起動ぶん止まる。
-        assert outcome is mds.GenerationOutcome.RESCHEDULED
-        assert md.status == MfgDataStatus.PENDING.value
-
-    @pytest.mark.asyncio
-    async def test_it_gives_up_once_the_attempt_cap_is_reached(self) -> None:
-        """**無限には粘らない。** 上限まで来たら failed にして人の目に入れる."""
-        md = _claimed_md(attempts=settings.MFG_MAX_GENERATION_ATTEMPTS)
-        svc = self._service_with_vm_error(
-            md, IllustratorVmUnavailableError("connection refused")
-        )
-
-        outcome = await svc.generate("md-1", _LEASE)
-
-        assert md.status == MfgDataStatus.FAILED.value
-        # 上限で諦めたことが読み取れる文言にする（入力エラーと区別が付かないと困る）。
-        assert str(settings.MFG_MAX_GENERATION_ATTEMPTS) in md.error_message
-        assert "connection refused" in md.error_message
-        # **行は諦めたが、相手はまだ落ちている。** ここで FAILED を返すと、
-        # 溜まった行を 1 件ずつ空振りし続けて 1 回の起動を使い切る。
-        assert outcome is mds.GenerationOutcome.VM_UNREACHABLE
-
-    @pytest.mark.asyncio
-    async def test_a_lost_lease_does_not_change_what_we_learned(self) -> None:
-        """書き戻せなくても、「相手が落ちている」という事実は変わらない."""
-        md = _claimed_md()
-        md_repo = AsyncMock()
-        md_repo.find_by_id.return_value = md
-        md_repo.finish_generation.return_value = False  # 書き戻せなかった
-        vm_client = MagicMock()
-        vm_client.submit = AsyncMock(
-            side_effect=IllustratorVmUnavailableError("connection refused")
-        )
-        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
-        svc._download_source_images = AsyncMock(
-            return_value={"color": b"c", "cutline": b"k"}
-        )
-
-        assert (
-            await svc.generate("md-1", _LEASE) is mds.GenerationOutcome.VM_UNREACHABLE
-        )
-
-    def test_the_wait_grows_with_each_attempt_and_then_stops(self) -> None:
-        """待ち時間は倍々に伸び、上限で止まる（落ちている VM を叩き続けない）."""
-        delays = [
-            ManufacturingDataService._retry_delay(attempt) for attempt in range(1, 12)
-        ]
-
-        assert delays[0] == settings.MFG_RETRY_BASE_SECONDS
-        assert delays[1] == settings.MFG_RETRY_BASE_SECONDS * 2
-        # 単調非減少で、上限を超えない
-        assert delays == sorted(delays)
-        assert max(delays) == settings.MFG_RETRY_MAX_SECONDS
-
-    @pytest.mark.parametrize(
-        ("error", "retryable"),
-        [
-            pytest.param(IllustratorVmUnavailableError("5xx"), True, id="VMが5xxを返す"),
-            pytest.param(
-                TransientDependencyError("GCS 503"), True, id="保存先が落ちている"
-            ),
-            pytest.param(httpx.ConnectError("refused"), True, id="接続できない"),
-            pytest.param(httpx.ReadTimeout("slow"), True, id="応答が返らない"),
-            pytest.param(IllustratorVmError("422"), False, id="入力が悪い"),
-            pytest.param(ValueError("bug"), False, id="想定外の不具合"),
-        ],
-    )
-    def test_only_transient_failures_are_retried(
-        self, error: Exception, retryable: bool
-    ) -> None:
-        """**判定は型で行う**（文言で見ると VM 側の変更で静かに壊れる）.
-
-        正規の経路は `TransientDependencyError`。`httpx` の 2 つは、元データの
-        HTTP 取得がこの層から直接行われることと、翻訳し忘れへの安全網を兼ねる。
-        """
-        assert mds.is_transient_failure(error) is retryable
-
-
 class TestManufacturingReadinessGate:
     def test_v1_item_is_always_ready(self) -> None:
         item = OrderItem(manufacturing_data_id=None)
@@ -794,82 +731,3 @@ class TestManufacturingReadinessGate:
         md.status = MfgDataStatus.PENDING.value
         item.manufacturing_data = md
         assert item.is_manufacturing_ready is False
-
-
-class TestMonitoringContract:
-    """**アプリと監視設定のあいだの契約を、片方だけ変えられないようにする。**
-
-    ログベースの指標（`infra/modules/monitoring/main.tf`）は `jsonPayload.event` で
-    絞っている。イベント名を変えて Terraform を直さなくても、apply も CI も通るので、
-    **誰も気づかないままアラートだけが黙る。** その組み合わせをここで機械的に縛る。
-    """
-
-    _TERRAFORM = (
-        pathlib.Path(__file__).resolve().parents[3]
-        / "infra"
-        / "modules"
-        / "monitoring"
-        / "main.tf"
-    )
-
-    @pytest.mark.parametrize(
-        "event",
-        [
-            mds._EVENT_VM_UNREACHABLE,
-            mds._EVENT_DEPENDENCY_UNAVAILABLE,
-            mds._EVENT_GENERATION_FAILED,
-        ],
-    )
-    def test_the_event_name_is_the_one_terraform_filters_on(self, event: str) -> None:
-        assert event in self._TERRAFORM.read_text(encoding="utf-8"), (
-            f"イベント名 {event!r} が {self._TERRAFORM.name} に見当たりません。"
-            " 片方だけ変えるとアラートが黙ります。"
-        )
-
-    @pytest.mark.asyncio
-    async def test_an_unreachable_vm_logs_the_event_key(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """**実際に載っていること。** 定数があっても、載らなければ検知できない."""
-        md = _claimed_md()
-        md_repo = AsyncMock()
-        md_repo.find_by_id.return_value = md
-        vm_client = MagicMock()
-        vm_client.submit = AsyncMock(
-            side_effect=IllustratorVmUnavailableError("connection refused")
-        )
-        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
-        svc._download_source_images = AsyncMock(
-            return_value={"color": b"c", "cutline": b"k"}
-        )
-
-        with caplog.at_level(logging.WARNING):
-            await svc.generate("md-1", _LEASE)
-
-        events = [getattr(r, "event", None) for r in caplog.records]
-        assert mds._EVENT_VM_UNREACHABLE in events
-
-    @pytest.mark.asyncio
-    async def test_a_dependency_outage_does_not_raise_the_vm_alert(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """**VM の通知には「VM を見に行け」という手順書が付いている。**
-
-        元データの配信元が落ちただけでそれを鳴らすと、障害の最中に人を
-        健全な VM の前へ座らせることになる。
-        """
-        md = _claimed_md()
-        md_repo = AsyncMock()
-        md_repo.find_by_id.return_value = md
-        vm_client = MagicMock()
-        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
-        svc._download_source_images = AsyncMock(
-            side_effect=TransientDependencyError("asset host is down")
-        )
-
-        with caplog.at_level(logging.WARNING):
-            await svc.generate("md-1", _LEASE)
-
-        events = [getattr(r, "event", None) for r in caplog.records]
-        assert mds._EVENT_DEPENDENCY_UNAVAILABLE in events
-        assert mds._EVENT_VM_UNREACHABLE not in events

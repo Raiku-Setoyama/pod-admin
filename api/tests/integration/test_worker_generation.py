@@ -15,6 +15,7 @@ PostgreSQL の挙動そのもの（``FOR UPDATE SKIP LOCKED`` / サーバ時刻�
 
 import asyncio
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
@@ -30,6 +31,7 @@ from app.repositories.manufacturing_data_repository import ManufacturingDataRepo
 from app.services.manufacturing_data_service import (
     GenerationOutcome,
     claim_next_generation,
+    pending_generation_summary,
     reclaim_expired_generation_leases,
 )
 
@@ -381,6 +383,58 @@ class TestLeaseFencing:
             await _cleanup(db_session, [md_id])
 
 
+class TestDeferredGeneration:
+    """VM に届かず生成待ちへ戻した行が、次の取り出しで自動的に拾い直されること."""
+
+    @pytest.mark.asyncio
+    async def test_a_deferred_row_is_claimed_again_and_counts_attempts(
+        self, db_session: AsyncSession, quiet_queue: None
+    ) -> None:
+        md_id = await _insert_row(db_session, MfgDataStatus.PENDING.value)
+        try:
+            first = await claim_next_generation(1800)
+            assert first is not None
+            # generate() の _defer_or_fail と同じ書き戻し（リースを外して pending へ）
+            assert await _finish(db_session, md_id, first[1], MfgDataStatus.PENDING.value)
+
+            second = await claim_next_generation(1800)
+
+            assert second is not None
+            assert second[0] == md_id
+            _, attempts, _ = await _row(db_session, md_id)
+            assert attempts == 2  # 上限（WORKER_MAX_GENERATION_ATTEMPTS）の判定に使う
+        finally:
+            await _cleanup(db_session, [md_id])
+
+
+class TestPendingSummary:
+    @pytest.mark.asyncio
+    async def test_reports_the_count_and_the_longest_idle_row(
+        self, db_session: AsyncSession, quiet_queue: None
+    ) -> None:
+        idle = await _insert_row(db_session, MfgDataStatus.PENDING.value)
+        fresh = await _insert_row(db_session, MfgDataStatus.PENDING.value, seq=1)
+        done = await _insert_row(db_session, MfgDataStatus.READY.value, seq=2)
+        try:
+            await db_session.execute(
+                text(
+                    "UPDATE manufacturing_data SET updated_at = NOW() - INTERVAL '2 hours' "
+                    "WHERE id = ANY(:ids)"
+                ),
+                {"ids": [idle, done]},
+            )
+            await db_session.commit()
+
+            count, oldest = await pending_generation_summary()
+
+            assert count == 2  # ready は数えない
+            assert oldest is not None
+            idle_minutes = (datetime.now(UTC) - oldest).total_seconds() / 60
+            assert 115 < idle_minutes < 125
+        finally:
+            await _cleanup(db_session, [idle, fresh, done])
+
+
 class TestWorkerRun:
     @pytest.mark.asyncio
     async def test_drains_the_queue_in_created_order(
@@ -656,7 +710,7 @@ class TestWorkerStopsWhenTheVmIsDown:
                 {"id": md_id},
             )
             await db_session.commit()
-            return GenerationOutcome.VM_UNREACHABLE
+            return GenerationOutcome.DEFERRED
 
         try:
             with patch.object(worker, "run_generation", vm_is_down):
@@ -664,7 +718,8 @@ class TestWorkerStopsWhenTheVmIsDown:
                     max_runtime_seconds=60, max_items=0
                 )
 
-            assert processed == 1
+            # 生成待ちへ戻しただけの行は処理件数に数えない（数えると滞留の警告が出ない）。
+            assert processed == 0
             assert attempted == ids[:1]  # 2 件目以降には手を付けない
             # 手つかずの行はそのまま待っている
             for md_id in ids[1:]:
@@ -749,7 +804,7 @@ class TestCrashLoopIsNotEndless:
         try:
             await db_session.execute(
                 text("UPDATE manufacturing_data SET attempts = :n WHERE id = :id"),
-                {"id": md_id, "n": settings.MFG_MAX_GENERATION_ATTEMPTS},
+                {"id": md_id, "n": settings.WORKER_MAX_GENERATION_ATTEMPTS},
             )
             await db_session.commit()
 

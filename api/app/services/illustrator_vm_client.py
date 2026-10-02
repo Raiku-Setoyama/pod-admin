@@ -40,16 +40,56 @@ class IllustratorVmError(Exception):
 
 
 class IllustratorVmUnavailableError(IllustratorVmError, TransientDependencyError):
-    """**VM に届かなかった**ことを表すエラー（入力の誤りと区別する）.
+    """VM に届かない・応答しないエラー（**入力ではなく VM 側の都合**）.
 
-    接続不能・タイムアウト・503・5xx のように、**同じ入力でも VM が戻れば成功する**
-    失敗だけがこれになる。422 のような入力起因の失敗は基底の ``IllustratorVmError``
-    のままにする。
+    接続できない・タイムアウト・502/503/504（キュー満杯・前段の不調）・完了待ちの打ち切りが該当する。
+    同じ入力で後から再試行すれば成功しうるので、呼び出し側は製造データを failed に
+    確定させず、生成待ちへ戻して VM の復旧を待つ。
 
-    呼び出し側（manufacturing_data_service）はこの型を見て、生成待ちへ戻すか
-    失敗として確定させるかを決める。**型で分けるのは、文言での判定が
-    VM 側のメッセージ変更で静かに壊れるからである。**
+    422 などの 4xx（入力の誤り）、500（VM が入力の処理中に落ちた可能性がある）、
+    VM がジョブの失敗を報告した場合は
+    親クラスの IllustratorVmError のまま投げる。何度やり直しても結果が変わらないため。
+
+    ``TransientDependencyError`` も継がせてあるのは、**生成待ちへ戻す判断を依存先ごとに
+    書き分けないため**である。VM だけでなく GCS や元データの配信元が一時的に落ちた場合も
+    同じ扱いが要る（manufacturing_data_service はこの型 1 つだけを見る）。
     """
+
+
+# 接続確立だけのタイムアウト（秒）。応答待ちより短くする。
+# VM が止まると SYN が黙って捨てられ（Windows のファイアウォールは閉じたポートに
+# 応答しない）、応答待ちと同じ 60 秒を接続だけで使い切ってしまうため。
+_CONNECT_TIMEOUT = 10.0
+
+# 死活確認（/health）のタイムアウト（秒）。VM の /health は同期的に tasklist を
+# 走らせるため数秒かかることがある。
+_HEALTH_TIMEOUT = 20.0
+
+
+# 一時的とみなす（再試行し、尽きたら「VM に届かない」とする）5xx。
+# それ以外の 5xx（500 など）は VM 側で入力を処理して落ちた可能性があり、
+# 何度投げても同じなので再試行しない。
+_TRANSIENT_STATUSES = frozenset({502, 503, 504})
+
+
+def _describe(exc: BaseException | None) -> str:
+    """例外を「型名: メッセージ」で表す.
+
+    httpx の ConnectTimeout などは str() が空文字になるため、型名を添えないと
+    「VM POST /api/process failed: 」のように原因が読めないエラー文になる。
+    """
+    if exc is None:
+        return ""
+    message = str(exc)
+    return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
+
+
+@dataclass
+class VmHealth:
+    """死活確認（GET /health）の結果."""
+
+    ok: bool
+    detail: str
 
 
 @dataclass
@@ -95,8 +135,12 @@ class IllustratorVmClient:
         # テスト用に httpx transport を注入可能（本番は None = 既定トランスポート）
         self._transport = transport
 
-    def _new_client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(timeout=self._request_timeout, transport=self._transport)
+    def _new_client(self, timeout: float | None = None) -> httpx.AsyncClient:
+        total = timeout if timeout is not None else self._request_timeout
+        return httpx.AsyncClient(
+            timeout=httpx.Timeout(total, connect=min(_CONNECT_TIMEOUT, total)),
+            transport=self._transport,
+        )
 
     @classmethod
     def from_settings(cls, settings: Any) -> IllustratorVmClient | None:
@@ -117,6 +161,26 @@ class IllustratorVmClient:
         if self._auth_header:
             headers["Authorization"] = self._auth_header
         return headers
+
+    async def health(self) -> VmHealth:
+        """VM の死活を 1 回だけ確認する（リトライしない）.
+
+        ``status == "healthy"`` の 200 応答だけを生存とみなす。VM の /health は
+        ワーカー停止やディスク不足のとき 503 を返す（応答はするが生成できない）。
+        """
+        try:
+            async with self._new_client(timeout=_HEALTH_TIMEOUT) as client:
+                response = await client.get(f"{self._base_url}/health", headers=self._headers())
+        except (httpx.TransportError, httpx.TimeoutException) as exc:
+            return VmHealth(ok=False, detail=_describe(exc))
+        try:
+            body = response.json()
+        except ValueError:
+            body = {}
+        status = body.get("status") if isinstance(body, dict) else None
+        if response.status_code == 200 and status == "healthy":
+            return VmHealth(ok=True, detail="healthy")
+        return VmHealth(ok=False, detail=f"HTTP {response.status_code} status={status}")
 
     async def submit(
         self,
@@ -208,8 +272,7 @@ class IllustratorVmClient:
                     f"VM job {job_id} failed: {last_status.error or last_status.status}"
                 )
             if time.monotonic() >= deadline:
-                # **入力の誤りではない。** VM は受理していて、返ってこないだけである
-                # （Illustrator の固着・VM の過負荷）。VM が健全に戻れば同じ入力で通る。
+                # VM が詰まっている（直列処理の前のジョブが終わらない等）。入力の問題ではない。
                 raise IllustratorVmUnavailableError(
                     f"VM job {job_id} timed out after {self._max_poll_seconds}s "
                     f"(last status: {last_status.status})"
@@ -226,21 +289,25 @@ class IllustratorVmClient:
                         f"{self._base_url}/api/download/{job_id}",
                         headers=self._headers(),
                     )
-                if response.status_code >= 500:
-                    last_exc = IllustratorVmUnavailableError(
+                if response.status_code in _TRANSIENT_STATUSES:
+                    last_exc = IllustratorVmError(
                         f"VM returned {response.status_code} while downloading"
                     )
                     await self._backoff(attempt)
                     continue
-                response.raise_for_status()
+                if response.status_code >= 400:
+                    # 404・500 など。完了済みジョブの出力が無い・VM が落ちたのは
+                    # 待っても変わらない。
+                    raise IllustratorVmError(
+                        f"VM GET /api/download/{job_id} -> {response.status_code}: "
+                        f"{_extract_error(response)}"
+                    )
                 return response.content
             except (httpx.TransportError, httpx.TimeoutException) as exc:
                 last_exc = exc
                 await self._backoff(attempt)
-        # ここへ来るのは 5xx か transport 系を出し切ったときだけ（4xx は
-        # raise_for_status が HTTPStatusError として即座に投げ、捕まえていない）。
         raise IllustratorVmUnavailableError(
-            f"failed to download VM job {job_id}: {last_exc}"
+            f"failed to download VM job {job_id}: {_describe(last_exc)}"
         ) from last_exc
 
     async def _request_json(self, method: str, path: str, *, json: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -253,17 +320,15 @@ class IllustratorVmClient:
                     response = await client.request(
                         method, url, json=json, headers=self._headers()
                     )
-                if response.status_code >= 500:
-                    # 503（キュー上限）だけでなく 5xx 全般を「VM 側の不調」とみなす。
-                    # どれも入力を直しても変わらず、VM が戻れば同じ入力で通る。
-                    last_exc = IllustratorVmUnavailableError(
+                if response.status_code in _TRANSIENT_STATUSES:
+                    # 503 はキュー満杯、502/504 は前段の一時的な不調。
+                    last_exc = IllustratorVmError(
                         f"VM {method} {path} -> {response.status_code}: "
                         f"{_extract_error(response)}"
                     )
                     await self._backoff(attempt)
                     continue
                 if response.status_code >= 400:
-                    # 4xx は入力が悪い。**再試行しても同じ結果になる**ので基底の型で投げる。
                     raise IllustratorVmError(
                         f"VM {method} {path} -> {response.status_code}: "
                         f"{_extract_error(response)}"
@@ -275,7 +340,7 @@ class IllustratorVmClient:
                     # 2xx だが本文が JSON でない（前段 proxy の一時的な HTML/空応答など）。
                     # 一過性のことが多いためリトライ対象として扱う（未捕捉で生成を
                     # 落とさない）。
-                    last_exc = IllustratorVmUnavailableError(
+                    last_exc = IllustratorVmError(
                         f"VM {method} {path} returned a non-JSON body: "
                         f"{response.text[:200]!r}"
                     )
@@ -284,9 +349,8 @@ class IllustratorVmClient:
             except (httpx.TransportError, httpx.TimeoutException) as exc:
                 last_exc = exc
                 await self._backoff(attempt)
-        # 出し切って残るのは 5xx か transport 系だけ（4xx は上で即 raise 済み）。
         raise IllustratorVmUnavailableError(
-            f"VM {method} {path} failed: {last_exc}"
+            f"VM {method} {path} failed: {_describe(last_exc)}"
         ) from last_exc
 
     async def _backoff(self, attempt: int) -> None:
@@ -301,11 +365,6 @@ def _extract_error(response: httpx.Response) -> str:
         body = response.json()
     except ValueError:
         return response.text[:500]
-    # JSON ではあるが object とは限らない（前段 proxy が配列や文字列を返すことがある）。
-    # ここで落ちると、5xx＝到達不能だったはずの失敗が AttributeError に化けて
-    # **恒久的な failed に倒れる**（再試行の対象から外れる）。
-    if not isinstance(body, dict):
-        return str(body)[:500]
     detail = body.get("detail")
     if detail is not None:
         return str(detail)

@@ -5,7 +5,8 @@ tests/integration/test_worker_generation.py が受け持つ。ここでは打ち
 多重起動時の降り方だけを見る。
 """
 
-from datetime import UTC, datetime
+from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -13,6 +14,8 @@ import pytest
 
 from app import worker
 from app.config import settings
+from app.services.illustrator_vm_client import IllustratorVmClient, VmHealth
+from app.services.manufacturing_data_service import GenerationOutcome
 
 
 def _conn(*, acquired: bool) -> MagicMock:
@@ -116,7 +119,34 @@ class TestProcessPending:
         assert queue.await_args_list[0].args[0] == settings.WORKER_LEASE_SECONDS
 
 
+    @pytest.mark.asyncio
+    async def test_stops_when_the_vm_becomes_unreachable(self) -> None:
+        """生成待ちへ戻した（VM に届かなかった）ら、同じ起動では次の行へ進まない."""
+        queue = _queue("md-1", "md-2", "md-3")
+
+        with (
+            patch.object(worker, "claim_next_generation", queue),
+            patch.object(
+                worker, "run_generation", AsyncMock(return_value=GenerationOutcome.DEFERRED)
+            ) as run,
+        ):
+            count = await worker.process_pending(max_runtime_seconds=60, max_items=0)
+
+        assert count == 0  # 生成待ちへ戻しただけなので処理件数に数えない
+        assert run.await_count == 1
+        assert queue.await_count == 1  # 残りは取り出さない（試行回数を無駄に消費しない）
+
+
 class TestRunOnce:
+    @pytest.fixture(autouse=True)
+    def _no_side_effects(self) -> Iterator[None]:
+        """VM の死活確認と滞留の報告は、個別のテストが差し替えない限り何もしない."""
+        with (
+            patch.object(worker, "check_vm_health", AsyncMock(return_value=True)),
+            patch.object(worker, "report_pending", AsyncMock()),
+        ):
+            yield
+
     @pytest.mark.asyncio
     async def test_does_nothing_when_another_worker_holds_the_lock(self) -> None:
         """2 本目は降りる。直列な VM を複数のワーカーで奪い合わないため."""
@@ -157,6 +187,39 @@ class TestRunOnce:
         assert calls == ["reclaim", "process"]
 
     @pytest.mark.asyncio
+    async def test_leaves_pending_rows_untouched_when_the_vm_is_unhealthy(self) -> None:
+        """VM が NG なら取り出さない。生成待ちは pending のまま復旧を待つ."""
+        conn = _conn(acquired=True)
+
+        with (
+            patch.object(worker, "check_vm_health", AsyncMock(return_value=False)),
+            patch.object(worker, "get_engine", return_value=_engine(conn)),
+            patch.object(
+                worker, "reclaim_expired_generation_leases", AsyncMock(return_value=0)
+            ),
+            patch.object(worker, "process_pending", AsyncMock()) as process,
+            patch.object(worker, "report_pending", AsyncMock()) as report,
+        ):
+            count = await worker.run_once()
+
+        assert count == 0
+        process.assert_not_called()
+        report.assert_awaited_once()  # 滞留の報告は NG のときこそ要る
+
+    @pytest.mark.asyncio
+    async def test_checks_the_vm_even_when_another_worker_holds_the_lock(self) -> None:
+        """死活確認のログが途絶えたら「ワーカーが止まった」と判断するので、毎回出す."""
+        conn = _conn(acquired=False)
+
+        with (
+            patch.object(worker, "check_vm_health", AsyncMock(return_value=True)) as check,
+            patch.object(worker, "get_engine", return_value=_engine(conn)),
+        ):
+            await worker.run_once()
+
+        check.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_releases_the_lock_even_when_processing_raises(self) -> None:
         conn = _conn(acquired=True)
 
@@ -174,3 +237,68 @@ class TestRunOnce:
         statements = [str(call.args[0]) for call in conn.execute.await_args_list]
         assert "pg_try_advisory_lock" in statements[0]
         assert "pg_advisory_unlock" in statements[-1]
+
+
+class TestCheckVmHealth:
+    @pytest.mark.asyncio
+    async def test_logs_ng_with_the_marker(self, caplog: pytest.LogCaptureFixture) -> None:
+        client = MagicMock()
+        client.health = AsyncMock(return_value=VmHealth(ok=False, detail="ConnectTimeout"))
+
+        with patch.object(IllustratorVmClient, "from_settings", return_value=client):
+            ok = await worker.check_vm_health()
+
+        assert ok is False
+        assert "illustrator_vm_health status=ng detail=ConnectTimeout" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_logs_ok_with_the_marker(self, caplog: pytest.LogCaptureFixture) -> None:
+        caplog.set_level("INFO")
+        client = MagicMock()
+        client.health = AsyncMock(return_value=VmHealth(ok=True, detail="healthy"))
+
+        with patch.object(IllustratorVmClient, "from_settings", return_value=client):
+            ok = await worker.check_vm_health()
+
+        assert ok is True
+        assert "illustrator_vm_health status=ok" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_unconfigured_vm_is_not_a_failure(self) -> None:
+        with patch.object(IllustratorVmClient, "from_settings", return_value=None):
+            assert await worker.check_vm_health() is True
+
+
+class TestReportPending:
+    @pytest.mark.asyncio
+    async def test_warns_when_the_oldest_pending_row_is_idle_too_long(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        idle = datetime.now(UTC) - timedelta(minutes=settings.WORKER_STALL_ALERT_MINUTES + 5)
+        with patch.object(
+            worker, "pending_generation_summary", AsyncMock(return_value=(3, idle))
+        ):
+            await worker.report_pending(processed=0)
+
+        assert "manufacturing_data_stalled pending=3" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_quiet_while_draining_a_backlog(self, caplog: pytest.LogCaptureFixture) -> None:
+        """この起動で処理が進んでいるなら、古い行が待っていても止まってはいない."""
+        idle = datetime.now(UTC) - timedelta(minutes=settings.WORKER_STALL_ALERT_MINUTES + 5)
+        summary = AsyncMock(return_value=(30, idle))
+        with patch.object(worker, "pending_generation_summary", summary):
+            await worker.report_pending(processed=4)
+
+        assert "manufacturing_data_stalled" not in caplog.text
+        summary.assert_not_called()  # 処理が進んでいるなら数えに行かない
+
+    @pytest.mark.asyncio
+    async def test_quiet_when_recent(self, caplog: pytest.LogCaptureFixture) -> None:
+        recent = datetime.now(UTC) - timedelta(minutes=1)
+        with patch.object(
+            worker, "pending_generation_summary", AsyncMock(return_value=(1, recent))
+        ):
+            await worker.report_pending(processed=0)
+
+        assert "manufacturing_data_stalled" not in caplog.text

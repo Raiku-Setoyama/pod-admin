@@ -17,6 +17,10 @@ locals {
   # **module の出力を経由しない。** そうすると stack 全体が VM の作成待ちに
   # 直列化する。local なら plan の時点で確定するので、依存の辺が増えない。
   illustrator_vm_internal_ip = "10.20.0.10"
+
+  # 運用の連絡先。アプリの連絡先（contact_email）と、製造データ生成のアラートの予備の宛先を兼ねる。
+  # 片方だけ変えると、もう片方が古い宛先に届き続けて誰も気づかない。
+  ops_email = "raiku.setoyama@ironiwa.co.jp"
 }
 
 provider "google" {
@@ -97,14 +101,13 @@ module "stack" {
   }
 
   sendgrid_from_email = "noreply@rksyo.com"
-  contact_email       = "raiku.setoyama@ironiwa.co.jp"
+  contact_email       = local.ops_email
 
-  # **障害に気づくための唯一の経路である。** ここが空だとアラートは 1 本も作られない
-  # （`terraform output alerting_active` が false になるので、気づける）。
-  #
-  # 宛先はメールのみにしてある。Slack など別の宛先を足すなら
-  # `modules/monitoring` に通知チャンネルを追加する。
-  alert_emails = ["raiku.setoyama@ironiwa.co.jp"]
+  # API のアラート（5xx・外形監視）の宛先。**空にすると 1 本も作られない。**
+  # `terraform output alerting_active` が false になるので、作られていないことには
+  # 気づける。製造データ生成の宛先はここではなく管理画面で設定する
+  # （下の manufacturing_monitoring）。
+  alert_emails = [local.ops_email]
 }
 
 # 製造データ生成 VM を迎えるためのネットワーク（REQ-0055 の 1 本目）。
@@ -149,4 +152,20 @@ module "illustrator_vm" {
   # 作り、このプロジェクトへコピーしたもの。停止して作ったので、
   # Illustrator のインストールと Adobe のサインイン状態が途中で写っていない。
   source_image = "projects/${local.project_id}/global/images/illustrator-vm-20260902"
+}
+
+# 製造データ生成の監視とアラート（2026-09-27〜10-02 の障害を受けて追加）。
+# VM の生成 API が止まったまま 5 日間誰も気づかなかった。**人に届く経路を作る。**
+# 本番だけが呼ぶ理由は module "network" と同じ（ADR-0036）。
+module "manufacturing_monitoring" {
+  source = "../../modules/manufacturing-monitoring"
+
+  project_id          = local.project_id
+  worker_job_name     = module.stack.worker_job_name
+  api_url             = module.stack.api_url
+  internal_api_secret = module.stack.internal_api_secret
+
+  # **通常の宛先は管理画面で設定する**（設定 → 製造データ生成のアラート）。
+  # ここは API ごと止まったときの予備で、「ワーカーが動いていない」だけに使う。
+  fallback_emails = [local.ops_email]
 }

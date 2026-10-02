@@ -19,11 +19,6 @@ variable "api_service_name" {
   type        = string
 }
 
-variable "worker_job_name" {
-  description = "監視対象の Cloud Run Job 名（製造データ生成ワーカー）"
-  type        = string
-}
-
 variable "api_url" {
   description = "API の公開 URL。外形監視（Uptime Check）の宛先になる"
   type        = string

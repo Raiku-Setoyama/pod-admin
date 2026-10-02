@@ -167,7 +167,7 @@ class ManufacturingDataRepository:
         ワーカーを確実に落とす行（巨大な画像で OOM になる等）が永久に回り続ける。
         その行は失敗ハンドラを一度も通らないので `failed` にならず、**管理画面にも
         通知にも出ないまま、それを参照する注文が発注準備中で止まり続ける。**
-        「無限には粘らない」という約束（`MFG_MAX_GENERATION_ATTEMPTS`）は、
+        「無限には粘らない」という約束（`WORKER_MAX_GENERATION_ATTEMPTS`）は、
         失敗ハンドラを通る経路だけのものであってはならない。
         """
         expired = [
@@ -183,14 +183,14 @@ class ManufacturingDataRepository:
             update(ManufacturingData)
             .where(
                 *expired,
-                ManufacturingData.attempts >= settings.MFG_MAX_GENERATION_ATTEMPTS,
+                ManufacturingData.attempts >= settings.WORKER_MAX_GENERATION_ATTEMPTS,
             )
             .values(
                 status=MfgDataStatus.FAILED.value,
                 lease_expires_at=None,
                 next_attempt_at=None,
                 error_message=(
-                    f"生成の途中で {settings.MFG_MAX_GENERATION_ATTEMPTS} 回中断しました"
+                    f"生成の途中で {settings.WORKER_MAX_GENERATION_ATTEMPTS} 回中断しました"
                     "（上限）。この製造データを処理するとワーカーが落ちている可能性があります。"
                 ),
             )
@@ -201,7 +201,7 @@ class ManufacturingDataRepository:
             update(ManufacturingData)
             .where(
                 *expired,
-                ManufacturingData.attempts < settings.MFG_MAX_GENERATION_ATTEMPTS,
+                ManufacturingData.attempts < settings.WORKER_MAX_GENERATION_ATTEMPTS,
             )
             .values(
                 status=MfgDataStatus.PENDING.value,
@@ -260,6 +260,22 @@ class ManufacturingDataRepository:
             )
         )
         return dict(result.tuples().all())
+
+    async def pending_summary(self) -> tuple[int, datetime | None]:
+        """生成待ちの件数と、その中で最も長く動いていない行の ``updated_at`` を返す.
+
+        ``created_at`` ではなく ``updated_at`` を見る。再生成で生成待ちへ戻した古い行が
+        「何週間も放置されている」と誤って数えられないようにするため。取り出しと
+        生成待ちへの差し戻しのたびに ``updated_at`` は動くので、これが古いままなら、
+        その行には誰も手を付けていない。
+        """
+        result = await self._db.execute(
+            select(func.count(), func.min(ManufacturingData.updated_at)).where(
+                ManufacturingData.status == MfgDataStatus.PENDING.value
+            )
+        )
+        count, oldest = result.one()
+        return int(count), oldest
 
     async def find_by_cache_key(
         self,

@@ -42,10 +42,15 @@ output "github_actions_service_account" {
   value       = module.service_accounts.emails["pod-admin-deployer"]
 }
 
-output "alerting_active" {
-  description = <<-EOT
-    アラートが実際に作られているか。**false なら誰にも通知が届かない。**
-    alert_emails が空か monitoring_enabled = false のときに false になる。
-  EOT
-  value       = module.monitoring.alerting_active
+output "worker_job_name" {
+  description = "製造データ生成ワーカーの Cloud Run Job 名（監視のログ絞り込みに使う）"
+  value       = module.worker_job.name
+}
+
+# **これだけは envs/*/outputs.tf に写さない。** 監視モジュールへ渡すための配線であり、
+# terraform output で人が読む値ではない（シークレットを出力に並べない）。
+output "internal_api_secret" {
+  description = "API の内部エンドポイントの共有シークレット（監視の Webhook 認証に使う）"
+  value       = random_password.internal_api_secret.result
+  sensitive   = true
 }
