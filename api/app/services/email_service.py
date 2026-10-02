@@ -20,6 +20,10 @@ TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 JST = ZoneInfo("Asia/Tokyo")
 
 
+def _format_jst(value: datetime | None) -> str | None:
+    return value.astimezone(JST).strftime("%Y-%m-%d %H:%M") if value else None
+
+
 class EmailService:
     """SendGrid-based email sending service."""
 
@@ -209,6 +213,71 @@ class EmailService:
             )
             return False
 
+    async def send_monitoring_alert(
+        self,
+        to_emails: list[str],
+        *,
+        recovered: bool,
+        policy_name: str,
+        condition_name: str = "",
+        summary: str = "",
+        started_at: datetime | None = None,
+        ended_at: datetime | None = None,
+        url: str = "",
+        runbook: str = "",
+    ) -> bool:
+        """Send a monitoring alert (発生 / 回復) to operators.
+
+        Returns:
+            True if sent successfully, False otherwise. Never raises exceptions.
+        """
+        try:
+            subject = f"【回復】{policy_name}" if recovered else f"【要対応】{policy_name}"
+            context: dict[str, Any] = {
+                "recovered": recovered,
+                "policy_name": policy_name,
+                "condition_name": condition_name,
+                "summary": summary,
+                "started_at": _format_jst(started_at),
+                "ended_at": _format_jst(ended_at),
+                "url": url,
+                # 回復の通知に対処手順は要らない
+                "runbook": "" if recovered else runbook,
+            }
+            html_content = self._jinja_env.get_template("monitoring_alert.html").render(
+                **context
+            )
+            text_content = self._build_monitoring_alert_text(**context)
+
+            message = Mail(
+                from_email=From(self._from_email),
+                to_emails=[To(email) for email in to_emails],
+                subject=subject,
+            )
+            message.content = [
+                Content("text/plain", text_content),
+                Content("text/html", html_content),
+            ]
+
+            response = await asyncio.to_thread(self._client.send, message)
+            if response.status_code in (200, 201, 202):
+                logger.info(
+                    "Monitoring alert '%s' (%s) sent to %d recipient(s)",
+                    policy_name,
+                    "closed" if recovered else "open",
+                    len(to_emails),
+                )
+                return True
+            logger.warning(
+                "SendGrid returned status %s for monitoring alert '%s'",
+                response.status_code,
+                policy_name,
+            )
+            return False
+        except Exception:
+            logger.exception("Failed to send monitoring alert '%s'", policy_name)
+            return False
+
     async def send_manufacturer_daily_digest(
         self,
         to_emails: list[str],
@@ -304,6 +373,35 @@ class EmailService:
             f"{login_url}\n"
             "からログインしてご確認ください。\n"
         )
+
+    @staticmethod
+    def _build_monitoring_alert_text(
+        *,
+        recovered: bool,
+        policy_name: str,
+        condition_name: str,
+        summary: str,
+        started_at: str | None,
+        ended_at: str | None,
+        url: str,
+        runbook: str,
+    ) -> str:
+        """Build plain text content for the monitoring alert."""
+        lines = ["回復しました。" if recovered else "異常を検知しました。", ""]
+        lines.append(f"■ アラート: {policy_name}")
+        if condition_name:
+            lines.append(f"■ 条件: {condition_name}")
+        if started_at:
+            lines.append(f"■ 発生: {started_at}")
+        if ended_at:
+            lines.append(f"■ 回復: {ended_at}")
+        if summary:
+            lines.append(f"■ 概要: {summary}")
+        if url:
+            lines.append(f"■ 詳細: {url}")
+        if runbook:
+            lines += ["", runbook]
+        return "\n".join(lines)
 
     def _build_external_order_text(
         self,

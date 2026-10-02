@@ -14,6 +14,10 @@
 # **目印の文字列を変えたら、下のフィルタも同時に変える。** ずれても apply は通り、
 # アラートが二度と鳴らなくなるという静かな形でしか表に出ない。
 #
+# **宛先は管理画面で設定する**（設定 → 製造データ生成のアラート）。アラートは Webhook で
+# API の内部エンドポイントへ送り、API が app_settings の宛先へメールを送る。
+# Terraform に宛先を書くと、宛先を変えるたびに apply が要るためである。
+#
 # **本番だけが呼ぶ。** 製造データ生成 VM は本番にしか無い（ADR-0036 と同じ扱い）。
 
 module "services" {
@@ -62,11 +66,28 @@ resource "google_logging_metric" "this" {
   }
 }
 
-resource "google_monitoring_notification_channel" "email" {
-  for_each = toset(var.alert_emails)
+# 管理画面で設定した宛先へ送る経路。パスワードは API の INTERNAL_API_SECRET と同じ値で、
+# API 側は Basic 認証のパスワードだけを照合する（ユーザー名は見ない）。
+resource "google_monitoring_notification_channel" "webhook" {
+  project      = var.project_id
+  display_name = "製造データ生成アラート（管理画面で設定した宛先へ）"
+  type         = "webhook_basicauth"
+  labels = {
+    url      = "${trimsuffix(var.api_url, "/")}/api/v1/internal/monitoring-alerts"
+    username = "monitoring"
+  }
+  sensitive_labels {
+    password = var.internal_api_secret
+  }
+
+  depends_on = [module.services]
+}
+
+resource "google_monitoring_notification_channel" "fallback_email" {
+  for_each = toset(var.fallback_emails)
 
   project      = var.project_id
-  display_name = "製造データ生成アラート (${each.value})"
+  display_name = "製造データ生成アラートの予備 (${each.value})"
   type         = "email"
   labels = {
     email_address = each.value
@@ -76,7 +97,7 @@ resource "google_monitoring_notification_channel" "email" {
 }
 
 locals {
-  channels = [for c in google_monitoring_notification_channel.email : c.id]
+  channels = [google_monitoring_notification_channel.webhook.id]
 
   # **リソース種別では絞らない。** ログベース指標がどの監視対象リソースの下に
   # 書かれるかは元ログの種別に依存し、保証されていない。絞り込みがずれると
@@ -193,5 +214,9 @@ resource "google_monitoring_alert_policy" "worker_silent" {
     content   = "Cloud Scheduler `${var.worker_job_name}` が ENABLED か、Cloud Run Job の実行が失敗していないかを確認する。\n\n${local.runbook}"
   }
 
-  notification_channels = local.channels
+  # API・DB ごと止まっていると Webhook の先が受けられないので、予備の宛先にも直接送る。
+  notification_channels = concat(
+    local.channels,
+    [for c in google_monitoring_notification_channel.fallback_email : c.id],
+  )
 }

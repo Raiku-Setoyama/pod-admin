@@ -18,7 +18,7 @@ locals {
   # 直列化する。local なら plan の時点で確定するので、依存の辺が増えない。
   illustrator_vm_internal_ip = "10.20.0.10"
 
-  # 運用の連絡先。アプリの連絡先（contact_email）と、製造データ生成のアラートの宛先を兼ねる。
+  # 運用の連絡先。アプリの連絡先（contact_email）と、製造データ生成のアラートの予備の宛先を兼ねる。
   # 片方だけ変えると、もう片方が古い宛先に届き続けて誰も気づかない。
   ops_email = "raiku.setoyama@ironiwa.co.jp"
 }
@@ -154,9 +154,12 @@ module "illustrator_vm" {
 module "manufacturing_monitoring" {
   source = "../../modules/manufacturing-monitoring"
 
-  project_id      = local.project_id
-  worker_job_name = module.stack.worker_job_name
+  project_id          = local.project_id
+  worker_job_name     = module.stack.worker_job_name
+  api_url             = module.stack.api_url
+  internal_api_secret = module.stack.internal_api_secret
 
-  # 宛先を増やすときはここに足す。
-  alert_emails = [local.ops_email]
+  # **通常の宛先は管理画面で設定する**（設定 → 製造データ生成のアラート）。
+  # ここは API ごと止まったときの予備で、「ワーカーが動いていない」だけに使う。
+  fallback_emails = [local.ops_email]
 }

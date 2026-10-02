@@ -18,9 +18,9 @@ from app.services.external_order_notification import (
     NOTIFICATION_ENABLED_KEY,
     NOTIFICATION_RECIPIENTS_KEY,
     ExternalOrderNotificationService,
-    parse_recipients,
     validate_setting_value,
 )
+from app.services.recipient_settings import parse_recipients
 
 
 def _setting(value: str) -> types.SimpleNamespace:

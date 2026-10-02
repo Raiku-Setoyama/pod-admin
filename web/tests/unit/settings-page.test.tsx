@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import SettingsPage from '@/app/(dashboard)/settings/page'
 import { apiClient } from '@/lib/api/client'
 
@@ -20,7 +20,7 @@ describe('SettingsPage - 外部注文の通知', () => {
 
     expect(screen.getByText('外部注文の通知')).toBeInTheDocument()
     expect(screen.getByText('通知を有効にする')).toBeInTheDocument()
-    expect(screen.getByRole('switch')).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: '通知を有効にする' })).toBeInTheDocument()
     expect(screen.getByLabelText('通知先メールアドレス')).toBeInTheDocument()
     // 発送準備日数・注文〆切時間・外部注文の通知 の 3 つの保存ボタン
     expect(screen.getAllByRole('button', { name: '保存' }).length).toBeGreaterThanOrEqual(3)
@@ -81,6 +81,44 @@ describe('SettingsPage - 外部注文の通知', () => {
           method: 'PUT',
           body: { value: 'staff@example.com' },
         }),
+      )
+    })
+  })
+})
+
+describe('SettingsPage - 製造データ生成のアラート', () => {
+  beforeEach(() => {
+    mockedApiClient.mockReset()
+    mockedApiClient.mockResolvedValue(undefined as never)
+  })
+
+  it('アラートのセクションが既定で有効の状態で表示される', () => {
+    render(<SettingsPage />)
+
+    expect(screen.getByText('製造データ生成のアラート')).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'アラートを有効にする' })).toBeChecked()
+    expect(screen.getByLabelText('アラートの通知先メールアドレス')).toBeInTheDocument()
+  })
+
+  it('保存すると有効フラグと宛先の両キーが PUT される', async () => {
+    render(<SettingsPage />)
+
+    const input = screen.getByLabelText('アラートの通知先メールアドレス')
+    fireEvent.change(input, { target: { value: 'ops@example.com' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    // カードの並び順に依存しないよう、アラートのカードの中の保存ボタンを押す
+    const card = screen.getByText('製造データ生成のアラート').closest('[data-slot="card"]') as HTMLElement
+    fireEvent.click(within(card).getByRole('button', { name: '保存' }))
+
+    await waitFor(() => {
+      expect(mockedApiClient).toHaveBeenCalledWith(
+        '/settings/monitoring_alert_enabled',
+        expect.objectContaining({ method: 'PUT', body: { value: 'true' } }),
+      )
+      expect(mockedApiClient).toHaveBeenCalledWith(
+        '/settings/monitoring_alert_recipients',
+        expect.objectContaining({ method: 'PUT', body: { value: 'ops@example.com' } }),
       )
     })
   })

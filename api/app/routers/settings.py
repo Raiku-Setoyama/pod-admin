@@ -1,5 +1,6 @@
 """Settings router."""
 
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -19,7 +20,7 @@ from app.schemas.app_setting import (
     AppSettingResponse,
     AppSettingUpdate,
 )
-from app.services import order_deadline
+from app.services import monitoring_alert_notification, order_deadline
 from app.services.estimated_shipping_service import recalculate_all_estimated_shipping_dates
 from app.services.external_order_notification import (
     NOTIFICATION_ENABLED_KEY,
@@ -34,6 +35,33 @@ from app.services.manufacturer_notification import (
 from app.utils.exceptions import AppException
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+
+def _keyed(validate: Callable[[str, str], None], key: str) -> Callable[[str], None]:
+    return lambda value: validate(key, value)
+
+
+# キー → 値の検証（不正なら日本語メッセージの ValueError）。新しい設定はここに足す。
+# 注文〆切時間は空文字を「無効化」として許可する。既存注文の再計算はしない
+# （〆切変更は新規注文にのみ適用する方針）。
+_SETTING_VALIDATORS: dict[str, Callable[[str], None]] = {
+    **{
+        key: _keyed(validate_setting_value, key)
+        for key in (NOTIFICATION_ENABLED_KEY, NOTIFICATION_RECIPIENTS_KEY)
+    },
+    **{
+        key: _keyed(validate_digest_setting_value, key)
+        for key in (DIGEST_ENABLED_KEY, DIGEST_SEND_TIME_KEY)
+    },
+    **{
+        key: _keyed(monitoring_alert_notification.validate_setting_value, key)
+        for key in (
+            monitoring_alert_notification.ALERT_ENABLED_KEY,
+            monitoring_alert_notification.ALERT_RECIPIENTS_KEY,
+        )
+    },
+    order_deadline.ORDER_DEADLINE_TIME_KEY: order_deadline.validate_setting_value,
+}
 
 
 @router.get("", response_model=AppSettingListResponse)
@@ -70,28 +98,12 @@ async def update_setting(
                 detail="発送準備日数は0〜365の整数で指定してください",
             ) from None
 
-    # Validate external order notification settings.
-    # AppException を使うことで、フロントの共通エラー envelope（error.message）に
-    # 日本語メッセージが乗り、422 として画面に表示できる。
-    if key in (NOTIFICATION_ENABLED_KEY, NOTIFICATION_RECIPIENTS_KEY):
+    # 機能ごとの設定値の検証。AppException を使うことで、フロントの共通エラー envelope
+    # （error.message）に日本語メッセージが乗り、422 として画面に表示できる。
+    validator = _SETTING_VALIDATORS.get(key)
+    if validator is not None:
         try:
-            validate_setting_value(key, data.value)
-        except ValueError as e:
-            raise AppException(422, "VALIDATION_ERROR", str(e)) from None
-
-    # Validate manufacturer daily digest settings (送信時刻・マスタスイッチ).
-    if key in (DIGEST_ENABLED_KEY, DIGEST_SEND_TIME_KEY):
-        try:
-            validate_digest_setting_value(key, data.value)
-        except ValueError as e:
-            raise AppException(422, "VALIDATION_ERROR", str(e)) from None
-
-    # Validate order deadline time (order_deadline_time).
-    # 空文字は無効化として許可。それ以外は HH:MM 形式のみ。既存注文の再計算はしない
-    # （〆切変更は新規注文にのみ適用する方針）。
-    if key == order_deadline.ORDER_DEADLINE_TIME_KEY:
-        try:
-            order_deadline.validate_setting_value(data.value)
+            validator(data.value)
         except ValueError as e:
             raise AppException(422, "VALIDATION_ERROR", str(e)) from None
 

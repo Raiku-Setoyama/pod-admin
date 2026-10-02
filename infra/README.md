@@ -594,7 +594,13 @@ OS は動いたままで、生成 API のプロセス一式だけが外から強
 |---|---|---|
 | VM の中で戻す | 監視タスク `IllustratorAPIWatchdog`（SYSTEM・2 分ごと）が `127.0.0.1:8000/health` を見て、3 回続けて NG なら生成 API のタスクを起動し直す | `illustrator-vm` の `scripts/setup_windows/` |
 | 止まっても失わない | ワーカーは毎回 `/health` を確かめ、NG なら取り出さない。届かなかった生成は `pending` へ戻して自動で再試行し、5 回届かなければ `failed` | `api/app/worker.py` |
-| 人に知らせる | 下の 4 つのアラートをメールで送る | `modules/manufacturing-monitoring` |
+| 人に知らせる | 下の 4 つのアラートを、**管理画面で設定した宛先**へメールで送る | `modules/manufacturing-monitoring` と `api/app/routers/internal.py` |
+
+**宛先は管理画面「設定 → 製造データ生成のアラート」で変える**（apply は要らない）。
+経路は Cloud Monitoring → Webhook（Basic 認証。パスワードは `INTERNAL_API_SECRET`）→
+API の `POST /api/v1/internal/monitoring-alerts` → SendGrid である。発生と回復の両方で届く。
+宛先が未登録なら何も送られない。**「ワーカーが動いていない」だけは**、API や DB ごと
+止まっている場合に備えて、Terraform の `fallback_emails` にも Monitoring から直接送る。
 
 アラートはワーカーのログの目印を数えている。**目印の文字列とフィルタは対になっている**
 （変えるときは両方）。
