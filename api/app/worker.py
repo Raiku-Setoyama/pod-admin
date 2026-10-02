@@ -46,7 +46,7 @@ from sqlalchemy import text
 import app.models  # noqa: F401  # 全モデルをマッパー登録に載せる（docstring 参照）
 from app.config import settings
 from app.database import get_engine
-from app.logging_config import TEXT_FORMAT
+from app.logging_config import TEXT_FORMAT, quiet_noisy_dependencies
 from app.services.illustrator_vm_client import IllustratorVmClient
 from app.services.manufacturing_data_service import (
     GenerationOutcome,
@@ -71,6 +71,9 @@ async def process_pending(*, max_runtime_seconds: float, max_items: int) -> int:
     """生成待ちの製造データを順に処理し、処理した件数を返す.
 
     打ち切っても取りこぼしにはならない。残りは pending のまま次回の起動が拾う。
+
+    VM に届かなかったときは、その場で周回を打ち切る。**戻された行は再試行の予定時刻を
+    持つので、次回の起動が同じ行を取り直して数秒で使い切ることはない。**
 
     取り出した時点で行は generating になりリースが打たれるので、次の周回で同じ行が
     返ってくることはない。処理の途中で落ちても、リースが切れれば pending へ戻る。
@@ -105,6 +108,11 @@ async def process_pending(*, max_runtime_seconds: float, max_items: int) -> int:
             # 処理件数に数えない（数えると滞留の警告が出なくなる）。
             logger.warning("illustrator-vm became unreachable; leaving the rest for the next run")
             break
+        if outcome is GenerationOutcome.RESCHEDULED:
+            # VM 以外の依存先に届かなかった。**その行だけの話かもしれないので周回は続ける。**
+            # 生成待ちへ戻しただけなので、DEFERRED と同じく処理件数には数えない。
+            logger.warning("a dependency was unreachable for this row; moving on to the next")
+            continue
         processed += 1
 
     return processed
@@ -205,6 +213,7 @@ def main() -> None:
     """ジョブのエントリポイント（`python -m app.worker`）."""
     # 素のテキストのまま出す（JSON にしない）。ログベース指標が textPayload で数えている。
     logging.basicConfig(level=logging.INFO, format=TEXT_FORMAT)
+    quiet_noisy_dependencies()
     warning = settings.lease_margin_warning()
     if warning:
         logger.warning("%s", warning)

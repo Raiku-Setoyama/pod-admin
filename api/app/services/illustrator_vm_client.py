@@ -26,6 +26,8 @@ from typing import Any
 
 import httpx
 
+from app.utils.exceptions import TransientDependencyError
+
 logger = logging.getLogger(__name__)
 
 # VM が完了・失敗を示すステータス値（表記ゆれを吸収）
@@ -37,7 +39,7 @@ class IllustratorVmError(Exception):
     """illustrator-vm 呼び出しに関するエラー."""
 
 
-class IllustratorVmUnavailableError(IllustratorVmError):
+class IllustratorVmUnavailableError(IllustratorVmError, TransientDependencyError):
     """VM に届かない・応答しないエラー（**入力ではなく VM 側の都合**）.
 
     接続できない・タイムアウト・502/503/504（キュー満杯・前段の不調）・完了待ちの打ち切りが該当する。
@@ -47,6 +49,10 @@ class IllustratorVmUnavailableError(IllustratorVmError):
     422 などの 4xx（入力の誤り）、500（VM が入力の処理中に落ちた可能性がある）、
     VM がジョブの失敗を報告した場合は
     親クラスの IllustratorVmError のまま投げる。何度やり直しても結果が変わらないため。
+
+    ``TransientDependencyError`` も継がせてあるのは、**生成待ちへ戻す判断を依存先ごとに
+    書き分けないため**である。VM だけでなく GCS や元データの配信元が一時的に落ちた場合も
+    同じ扱いが要る（manufacturing_data_service はこの型 1 つだけを見る）。
     """
 
 

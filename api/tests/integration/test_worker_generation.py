@@ -25,9 +25,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import worker
+from app.config import settings
 from app.models.manufacturing_data import MfgDataStatus
 from app.repositories.manufacturing_data_repository import ManufacturingDataRepository
 from app.services.manufacturing_data_service import (
+    GenerationOutcome,
     claim_next_generation,
     pending_generation_summary,
     reclaim_expired_generation_leases,
@@ -40,6 +42,7 @@ async def _insert_row(
     *,
     seq: int = 0,
     lease_offset_seconds: int | None = None,
+    next_attempt_offset_seconds: int | None = None,
 ) -> str:
     """製造データ行を1件作る.
 
@@ -47,6 +50,7 @@ async def _insert_row(
     並ばせるため（取り出しは古い順なので、取り出し順が決定的になる）。seq でその中の順序を決める。
 
     ``lease_offset_seconds`` は現在時刻からの相対でリース期限を打つ。負なら期限切れ。
+    ``next_attempt_offset_seconds`` は同じく再試行の予定時刻。負なら「もう取り出してよい」。
     """
     md_id = str(uuid4())
     lease = (
@@ -54,16 +58,21 @@ async def _insert_row(
         if lease_offset_seconds is None
         else f"NOW() + ({lease_offset_seconds} * INTERVAL '1 second')"
     )
+    next_attempt = (
+        "NULL"
+        if next_attempt_offset_seconds is None
+        else f"NOW() + ({next_attempt_offset_seconds} * INTERVAL '1 second')"
+    )
     await session.execute(
         text(
             f"""
             INSERT INTO manufacturing_data
                 (id, product_code, product_type, status, attempts,
-                 lease_expires_at, created_at, updated_at)
+                 lease_expires_at, next_attempt_at, created_at, updated_at)
             VALUES
-                (:id, :code, 'sticker', :status, 0, {lease},
+                (:id, :code, 'sticker', :status, 0, {lease}, {next_attempt},
                  NOW() - INTERVAL '1 hour' + (:seq * INTERVAL '1 second'), NOW())
-            """  # noqa: S608 - lease は上のリテラル 2 択のみ。外部入力は入らない
+            """  # noqa: S608 - lease/next_attempt は上のリテラル 2 択のみ。外部入力は入らない
         ),
         {"id": md_id, "code": f"WORKER-{md_id[:8]}", "status": status, "seq": seq},
     )
@@ -76,6 +85,18 @@ async def _row(session: AsyncSession, md_id: str) -> Any:
         text(
             "SELECT status, attempts, lease_expires_at FROM manufacturing_data "
             "WHERE id = :id"
+        ),
+        {"id": md_id},
+    )
+    return result.fetchone()
+
+
+async def _retry_row(session: AsyncSession, md_id: str) -> Any:
+    """再試行まわりの列だけを読む（``_row`` を広げると既存の分解代入が全部壊れる）."""
+    result = await session.execute(
+        text(
+            "SELECT status, attempts, next_attempt_at, error_message "
+            "FROM manufacturing_data WHERE id = :id"
         ),
         {"id": md_id},
     )
@@ -340,9 +361,12 @@ class TestLeaseFencing:
             assert first is not None
             _, stale_token = first
 
-            # 1 本目が生成に手間取っている間に、リースが切れて 2 本目が再確保する
+            # 1 本目が生成に手間取っている間に、リースが切れて 2 本目が再確保する。
+            # 巻き戻しは再試行の間隔を空けるので、ここではそれを 0 にして即座に取り直す
+            # （検証したいのはフェンシングであって、間隔ではない）。
             await asyncio.sleep(1.2)
-            await reclaim_expired_generation_leases()
+            with patch.object(settings, "MFG_RETRY_BASE_SECONDS", 0):
+                await reclaim_expired_generation_leases()
             second = await claim_next_generation(1800)
             assert second is not None
             assert second[0] == md_id
@@ -478,3 +502,318 @@ class TestWorkerRun:
 
         assert second == 0
         assert runs == 1
+
+
+class TestRetryScheduling:
+    """到達不能で戻された行が、いつ取り出せるようになるか（実DB）.
+
+    予定時刻の比較は PostgreSQL のサーバ時刻で行われるため、モックでは検証できない。
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_row_scheduled_for_later_is_not_claimed(
+        self, db_session: AsyncSession, quiet_queue: None
+    ) -> None:
+        """再試行の予定時刻が未来なら取り出さない（落ちている VM を叩き続けない）."""
+        md_id = await _insert_row(
+            db_session, MfgDataStatus.PENDING.value, next_attempt_offset_seconds=3600
+        )
+        try:
+            assert await claim_next_generation(60) is None
+        finally:
+            await _cleanup(db_session, [md_id])
+
+    @pytest.mark.asyncio
+    async def test_a_row_whose_schedule_has_passed_is_claimed(
+        self, db_session: AsyncSession, quiet_queue: None
+    ) -> None:
+        """予定時刻を過ぎたら取り出す（VM が戻れば自力で再開する）."""
+        md_id = await _insert_row(
+            db_session, MfgDataStatus.PENDING.value, next_attempt_offset_seconds=-1
+        )
+        try:
+            claimed = await claim_next_generation(60)
+            assert claimed is not None
+            assert claimed[0] == md_id
+
+            # 確保したら予定は消化済みになる。残すとリース失効で戻ったときに引きずる。
+            status, _, next_attempt, _ = await _retry_row(db_session, md_id)
+            assert status == MfgDataStatus.GENERATING.value
+            assert next_attempt is None
+        finally:
+            await _cleanup(db_session, [md_id])
+
+    @pytest.mark.asyncio
+    async def test_a_scheduled_row_does_not_block_the_ones_behind_it(
+        self, db_session: AsyncSession, quiet_queue: None
+    ) -> None:
+        """**先頭詰まりが起きないこと。** 予定待ちの行は飛ばして後続を処理する.
+
+        これが無いと、特定の入力でだけ VM が 5xx を返す 1 行が待ち行列の先頭に居座り、
+        その後ろの受注がすべて止まる。
+        """
+        blocked = await _insert_row(
+            db_session,
+            MfgDataStatus.PENDING.value,
+            seq=0,
+            next_attempt_offset_seconds=3600,
+        )
+        behind = await _insert_row(db_session, MfgDataStatus.PENDING.value, seq=1)
+        try:
+            claimed = await claim_next_generation(60)
+            assert claimed is not None
+            # 古い順なら blocked が先に返るはずのところを、予定待ちなので飛ばす。
+            assert claimed[0] == behind
+        finally:
+            await _cleanup(db_session, [blocked, behind])
+
+    @pytest.mark.asyncio
+    async def test_a_crashed_row_is_put_back_behind_a_wait(
+        self, db_session: AsyncSession, quiet_queue: None
+    ) -> None:
+        """**クラッシュで戻した行も間隔を空ける。**
+
+        空けないと、ワーカーを落とす行（巨大な画像で OOM になる等）が即座に取り直され、
+        取り出しは古い順なので待ち行列の先頭に居座り続ける。**後続がその 1 行で止まる。**
+        生成の途中で落ちた行は失敗ハンドラを通らないので、ここが唯一の歯止めである。
+        """
+        crashed = await _insert_row(
+            db_session, MfgDataStatus.GENERATING.value, seq=0, lease_offset_seconds=-1
+        )
+        behind = await _insert_row(db_session, MfgDataStatus.PENDING.value, seq=1)
+        try:
+            assert await reclaim_expired_generation_leases() >= 1
+
+            status, _, next_attempt, _ = await _retry_row(db_session, crashed)
+            assert status == MfgDataStatus.PENDING.value
+            assert next_attempt is not None
+
+            # 先頭に居座らず、後続が先に進む
+            claimed = await claim_next_generation(60)
+            assert claimed is not None
+            assert claimed[0] == behind
+        finally:
+            await _cleanup(db_session, [crashed, behind])
+
+    @pytest.mark.asyncio
+    async def test_a_crashed_row_comes_back_once_the_wait_has_passed(
+        self, db_session: AsyncSession, quiet_queue: None
+    ) -> None:
+        """待ったうえで、ちゃんと戻ってくる（取りこぼしにはしない）."""
+        md_id = await _insert_row(
+            db_session, MfgDataStatus.GENERATING.value, lease_offset_seconds=-1
+        )
+        try:
+            with patch.object(settings, "MFG_RETRY_BASE_SECONDS", 0):
+                assert await reclaim_expired_generation_leases() >= 1
+            claimed = await claim_next_generation(60)
+            assert claimed is not None
+            assert claimed[0] == md_id
+        finally:
+            await _cleanup(db_session, [md_id])
+
+
+class TestRetryFailed:
+    """失敗した行の一括リトライ（VM 停止明けの復旧操作）."""
+
+    @pytest.mark.asyncio
+    async def test_all_failed_rows_go_back_to_the_queue(
+        self, db_session: AsyncSession
+    ) -> None:
+        failed = [
+            await _insert_row(db_session, MfgDataStatus.FAILED.value, seq=i)
+            for i in range(3)
+        ]
+        try:
+            repo = ManufacturingDataRepository(db_session)
+            restored = await repo.retry_failed()
+            await db_session.commit()
+
+            assert restored >= 3
+            for md_id in failed:
+                status, attempts, next_attempt, error = await _retry_row(
+                    db_session, md_id
+                )
+                assert status == MfgDataStatus.PENDING.value
+                # 人の判断による仕切り直しなので、数え直しも待ち時間も手放す。
+                assert attempts == 0
+                assert next_attempt is None
+                assert error is None
+        finally:
+            await _cleanup(db_session, failed)
+
+    @pytest.mark.asyncio
+    async def test_only_the_named_rows_are_restored(
+        self, db_session: AsyncSession
+    ) -> None:
+        target = await _insert_row(db_session, MfgDataStatus.FAILED.value, seq=0)
+        other = await _insert_row(db_session, MfgDataStatus.FAILED.value, seq=1)
+        try:
+            repo = ManufacturingDataRepository(db_session)
+            assert await repo.retry_failed([target]) == 1
+            await db_session.commit()
+
+            assert (await _retry_row(db_session, target))[0] == MfgDataStatus.PENDING.value
+            assert (await _retry_row(db_session, other))[0] == MfgDataStatus.FAILED.value
+        finally:
+            await _cleanup(db_session, [target, other])
+
+    @pytest.mark.asyncio
+    async def test_rows_that_are_not_failed_are_left_alone(
+        self, db_session: AsyncSession
+    ) -> None:
+        """**ready を巻き戻さない。** 行は複数の注文で共有されるため、巻き戻すと
+        その行を参照する他の注文の発注可否まで落ちる。
+        """
+        ready = await _insert_row(db_session, MfgDataStatus.READY.value)
+        generating = await _insert_row(
+            db_session, MfgDataStatus.GENERATING.value, lease_offset_seconds=600
+        )
+        try:
+            repo = ManufacturingDataRepository(db_session)
+            assert await repo.retry_failed([ready, generating]) == 0
+            await db_session.commit()
+
+            assert (await _retry_row(db_session, ready))[0] == MfgDataStatus.READY.value
+            assert (await _retry_row(db_session, generating))[
+                0
+            ] == MfgDataStatus.GENERATING.value
+        finally:
+            await _cleanup(db_session, [ready, generating])
+
+
+class TestWorkerStopsWhenTheVmIsDown:
+    """VM に届かないと分かった時点で周回を降りる（実DB）."""
+
+    @pytest.mark.asyncio
+    async def test_the_run_stops_at_the_first_unreachable_row(
+        self, db_session: AsyncSession, quiet_queue: None
+    ) -> None:
+        """**同じ答えのために 1 件 15 分を積み増さない。**
+
+        残りは pending のまま次回の起動が拾うので、取りこぼしにはならない。
+        """
+        ids = [
+            await _insert_row(db_session, MfgDataStatus.PENDING.value, seq=i)
+            for i in range(3)
+        ]
+        attempted: list[str] = []
+
+        async def vm_is_down(md_id: str, lease_token: Any) -> Any:
+            attempted.append(md_id)
+            await db_session.execute(
+                text(
+                    "UPDATE manufacturing_data SET status = 'pending', "
+                    "lease_expires_at = NULL, "
+                    "next_attempt_at = NOW() + INTERVAL '1 hour' WHERE id = :id"
+                ),
+                {"id": md_id},
+            )
+            await db_session.commit()
+            return GenerationOutcome.DEFERRED
+
+        try:
+            with patch.object(worker, "run_generation", vm_is_down):
+                processed = await worker.process_pending(
+                    max_runtime_seconds=60, max_items=0
+                )
+
+            # 生成待ちへ戻しただけの行は処理件数に数えない（数えると滞留の警告が出ない）。
+            assert processed == 0
+            assert attempted == ids[:1]  # 2 件目以降には手を付けない
+            # 手つかずの行はそのまま待っている
+            for md_id in ids[1:]:
+                status, attempts, next_attempt, _ = await _retry_row(db_session, md_id)
+                assert status == MfgDataStatus.PENDING.value
+                assert attempts == 0
+                assert next_attempt is None
+        finally:
+            await _cleanup(db_session, ids)
+
+    @pytest.mark.asyncio
+    async def test_a_single_bad_row_does_not_stop_the_others(
+        self, db_session: AsyncSession, quiet_queue: None
+    ) -> None:
+        """入力が悪い 1 行では降りない（VM は生きているため）."""
+        ids = [
+            await _insert_row(db_session, MfgDataStatus.PENDING.value, seq=i)
+            for i in range(3)
+        ]
+        attempted: list[str] = []
+
+        async def bad_input(md_id: str, lease_token: Any) -> Any:
+            attempted.append(md_id)
+            await db_session.execute(
+                text(
+                    "UPDATE manufacturing_data SET status = 'failed', "
+                    "lease_expires_at = NULL WHERE id = :id"
+                ),
+                {"id": md_id},
+            )
+            await db_session.commit()
+            return GenerationOutcome.FAILED
+
+        try:
+            with patch.object(worker, "run_generation", bad_input):
+                processed = await worker.process_pending(
+                    max_runtime_seconds=60, max_items=0
+                )
+
+            assert processed == 3
+            assert attempted == ids
+        finally:
+            await _cleanup(db_session, ids)
+
+
+class TestCrashLoopIsNotEndless:
+    """**ワーカーを落とし続ける行を、永久に回さない。**
+
+    生成の途中で落ちた行は失敗ハンドラを一度も通らないので、巻き戻しの側が
+    上限を見なければ `failed` にならない。そのままだと管理画面にも通知にも出ず、
+    それを参照する注文が発注準備中で止まり続ける。
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_row_under_the_cap_goes_back_to_the_queue(
+        self, db_session: AsyncSession, quiet_queue: None
+    ) -> None:
+        md_id = await _insert_row(
+            db_session, MfgDataStatus.GENERATING.value, lease_offset_seconds=-1
+        )
+        try:
+            await db_session.execute(
+                text("UPDATE manufacturing_data SET attempts = 1 WHERE id = :id"),
+                {"id": md_id},
+            )
+            await db_session.commit()
+
+            assert await reclaim_expired_generation_leases() >= 1
+            status, _, _, _ = await _retry_row(db_session, md_id)
+            assert status == MfgDataStatus.PENDING.value
+        finally:
+            await _cleanup(db_session, [md_id])
+
+    @pytest.mark.asyncio
+    async def test_a_row_at_the_cap_is_ended_instead(
+        self, db_session: AsyncSession, quiet_queue: None
+    ) -> None:
+        """上限に達していたら failed にして人の目に入れる（無限に回さない）."""
+        md_id = await _insert_row(
+            db_session, MfgDataStatus.GENERATING.value, lease_offset_seconds=-1
+        )
+        try:
+            await db_session.execute(
+                text("UPDATE manufacturing_data SET attempts = :n WHERE id = :id"),
+                {"id": md_id, "n": settings.WORKER_MAX_GENERATION_ATTEMPTS},
+            )
+            await db_session.commit()
+
+            await reclaim_expired_generation_leases()
+
+            status, _, next_attempt, error = await _retry_row(db_session, md_id)
+            assert status == MfgDataStatus.FAILED.value
+            assert next_attempt is None
+            # 入力の誤りと区別が付く文言であること（見に行く先が違う）。
+            assert "中断" in error
+        finally:
+            await _cleanup(db_session, [md_id])

@@ -102,6 +102,12 @@ module "stack" {
 
   sendgrid_from_email = "noreply@rksyo.com"
   contact_email       = local.ops_email
+
+  # API のアラート（5xx・外形監視）の宛先。**空にすると 1 本も作られない。**
+  # `terraform output alerting_active` が false になるので、作られていないことには
+  # 気づける。製造データ生成の宛先はここではなく管理画面で設定する
+  # （下の manufacturing_monitoring）。
+  alert_emails = [local.ops_email]
 }
 
 # 製造データ生成 VM を迎えるためのネットワーク（REQ-0055 の 1 本目）。

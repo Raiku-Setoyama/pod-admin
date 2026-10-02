@@ -135,3 +135,71 @@ resource "google_compute_instance" "this" {
     ]
   }
 }
+
+# ブートディスクの日次スナップショット。
+#
+# **このディスクはシステムで唯一の再現不能資産である。** 上に Illustrator の
+# インストールと Adobe CC のサインイン状態が乗っており、作り直すとハードウェア ID が
+# 変わってライセンス認証をやり直すことになる。
+#
+# 既にある守り（`deletion_protection` と `ignore_changes`）が防ぐのは**消えること**
+# だけで、**中身が壊れること**（Windows Update の失敗、ファイルシステムの破損、誤操作）は
+# 防がない。復旧の拠り所は移送のために手で作ったイメージ 1 つしかなく、
+# それ以後の変更は一切入っていない。
+#
+# **これは新しい要求ではない。** 移送元のディスクには
+# `illustrator-vm-daily-snapshot`（日次・14 日保持・03:00 JST）が付いていた。
+# イメージはディスクを運ぶが、ディスクに付いたリソースポリシーは運ばないため落ちた。
+# 同じ設定をここで復元する（REQ-0062）。
+resource "google_compute_resource_policy" "daily_snapshot" {
+  project = var.project_id
+  region  = var.region
+  name    = "${local.instance_name}-daily-snapshot"
+
+  snapshot_schedule_policy {
+    schedule {
+      daily_schedule {
+        days_in_cycle = 1
+        # **UTC で指定する。** 18:00 UTC = 03:00 JST（移送元と同じ時刻）。
+        # 業務時間外に取ることで、生成中のディスクを掴む機会を減らす。
+        start_time = "18:00"
+      }
+    }
+
+    retention_policy {
+      max_retention_days = 14
+
+      # **ディスクを消してもスナップショットは残す。** 誤操作でディスクごと
+      # 消えたときこそ、このスナップショットが唯一の復旧手段になる。
+      # 一緒に消える設定にすると、最も要る場面で何も残らない。
+      on_source_disk_delete = "KEEP_AUTO_SNAPSHOTS"
+    }
+
+    snapshot_properties {
+      labels            = local.labels
+      storage_locations = [var.region]
+
+      # **VSS（アプリ整合）は使わない。** Windows の VSS を要求すると、
+      # ゲスト側のエージェントが応答しないときにスナップショットそのものが失敗する。
+      # ここで守りたいのは「OS とライセンス認証の状態」であり、
+      # 生成中のジョブの整合性ではない（生成はやり直せる）。
+      # **取れないスナップショットより、整合が緩くても取れるスナップショットを選ぶ。**
+      guest_flush = false
+    }
+  }
+}
+
+resource "google_compute_disk_resource_policy_attachment" "boot_disk_snapshot" {
+  project = var.project_id
+  zone    = local.zone
+  name    = google_compute_resource_policy.daily_snapshot.name
+
+  # **ディスクは Terraform の管理下に無い**（`boot_disk.initialize_params` で
+  # 作られるため独立した実体を持たない）。独立した `google_compute_disk` へ
+  # 移す案もあるが、その移行自体が置き換えを伴いかねず、この要件の目的に反する。
+  #
+  # ポリシーの貼り付けはディスクを作り直さない**その場の操作**なので、
+  # 構造を変えずに守りだけを足せる。名前は instance の boot_disk から導く
+  # （既定ではインスタンス名と同じだが、**その前提をここに書き写さない**）。
+  disk = basename(google_compute_instance.this.boot_disk[0].source)
+}

@@ -55,12 +55,13 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE: int = 100 * 1024 * 1024  # 100MB
 
     # File Storage (GCS) — ローカル/本番ともに GCS でファイル永続化
-    # Railway のローカルディスクは再デプロイで消えるため、製造データ/チャット添付/出荷
+    # コンテナのローカルディスクは再デプロイで消えるため、製造データ/チャット添付/出荷
     # ファイルを GCS に永続化する。ローカル開発も本番と同様に GCS を使い、バケットは
     # 本番と分ける（例: prod / dev）。GCS_BUCKET が空の場合のみローカル保存へ
     # フォールバックする（CI/オフライン用）。
     GCS_BUCKET: str = ""
-    # サービスアカウント鍵JSON文字列（Railway シークレット想定）。空なら ADC へフォールバック。
+    # サービスアカウント鍵JSON文字列。**本番では使わない**（Cloud Run の実行 SA から
+    # ADC で解決する）。空なら ADC へフォールバックする。
     GCS_CREDENTIALS_JSON: str = ""
     # バケット内のキー前置（任意の名前空間。例: "prod"）。DBの file_path は非依存のまま。
     GCS_PREFIX: str = ""
@@ -124,6 +125,23 @@ class Settings(BaseSettings):
     # ワーカーが目印のログ（manufacturing_data_stalled）を出し、アラートが拾う。
     WORKER_STALL_ALERT_MINUTES: int = 60
 
+    # 生成待ちへ戻した行を、次に試すまで待たせる時間。
+    #
+    # **上限（WORKER_MAX_GENERATION_ATTEMPTS）と組で効く。** 既定は 300s から倍々で
+    # 3600s 止まりなので、5 回ぶんでおよそ 2 時間の停止に耐える。VM が完全に落ちている
+    # 間は死活確認が取り出しを止めるので回数を消費せず、この窓は「VM は生きているのに
+    # 特定の行だけ届かない」場合と、VM 以外の依存先（保存先・元データの配信元）の
+    # 一時的な不調に効く。
+    #
+    # 待たせる時刻を持たせているのは、取り出しが created_at の昇順だからである。
+    # 時刻が無いと、戻した行が毎回いちばん先に選ばれ、その 1 行が上限を使い切るまで
+    # 後ろの行が 1 件も処理されない。
+    #
+    # 1 回目の再試行までの待ち時間（秒）。以降は試行ごとに倍にする。
+    MFG_RETRY_BASE_SECONDS: float = 300.0
+    # 待ち時間の上限（秒）。これ以上は伸ばさない。
+    MFG_RETRY_MAX_SECONDS: float = 3600.0
+
     @property
     def generation_worst_case_seconds(self) -> float:
         """1 件の生成にかかりうる最大秒数の見積もり.
@@ -142,6 +160,9 @@ class Settings(BaseSettings):
         """リース期限の余裕が足りなければ警告文を返す（足りていれば None）.
 
         設定同士の危険な組み合わせを、人間のレビュー任せにしない。
+
+        **再試行の待ち時間（MFG_RETRY_*）はここに関係しない。** リースは 1 回の生成を
+        持っている間だけの所有権であり、待ち時間は行を手放したあとの話である。
         """
         worst_case = self.generation_worst_case_seconds
         if self.WORKER_LEASE_SECONDS >= worst_case * 2:

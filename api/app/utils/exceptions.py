@@ -4,6 +4,22 @@ from typing import Any
 from uuid import UUID
 
 
+class TransientDependencyError(Exception):
+    """**外部依存が一時的に応答しなかった**ことを表す基底.
+
+    「同じ入力でも、相手が戻れば成功する」失敗だけがこれを継がせる。
+    入力が悪くて何度やっても失敗するものは継がせない。
+
+    **判定を 1 か所に集めるための型である。** これが無いと、呼び出し側が
+    「どのライブラリがどの例外を投げるか」を知っていなければならず、
+    依存が増えるたびに判定の側を直すことになる（しかも直し忘れは
+    「再試行されない」という気づきにくい側に倒れる）。
+
+    境界（HTTP クライアント・ストレージ）がそれぞれ自分の例外をこの型へ翻訳し、
+    利用側は ``isinstance(exc, TransientDependencyError)`` だけを見る。
+    """
+
+
 class AppException(Exception):
     """Base exception for application errors."""
 
