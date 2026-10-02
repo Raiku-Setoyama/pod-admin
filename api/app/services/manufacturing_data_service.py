@@ -87,6 +87,17 @@ _DEFAULT_SOURCE_MAX_BYTES = 25 * 1024 * 1024  # 25MB
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
+def _reset_to_pending(md: ManufacturingData) -> None:
+    """行を生成待ちへ戻す（人や受注が生成をやり直させるとき）.
+
+    VM 不達の試行回数（_defer_or_fail の上限）もここで数え直す。生成待ちへ戻す経路を
+    増やすときは、この関数を通す。
+    """
+    md.status = MfgDataStatus.PENDING.value
+    md.error_message = None
+    md.attempts = 0
+
+
 def _redact_url(url: str) -> str:
     """ログ用にクエリ文字列（署名付きトークン等）を落としたURLを返す."""
     return url.split("?", 1)[0]
@@ -214,9 +225,7 @@ class ManufacturingDataService:
         if existing:
             # 失敗行は元データを更新して再生成対象にする。それ以外はそのまま再利用。
             if existing.status == MfgDataStatus.FAILED.value:
-                existing.status = MfgDataStatus.PENDING.value
-                existing.error_message = None
-                existing.attempts = 0
+                _reset_to_pending(existing)
                 existing.source_images = _merge_uploaded_layers(
                     existing.source_images, item.source_images
                 )
@@ -393,6 +402,7 @@ class ManufacturingDataService:
         取り出し自体が起きず、この回数は消費されない。
         """
         detail = str(exc)[:900]
+        values: dict[str, Any]
         if md.attempts >= settings.WORKER_MAX_GENERATION_ATTEMPTS:
             logger.error(
                 "%s id=%s reason=vm_unavailable attempts=%d: %s",
@@ -401,30 +411,28 @@ class ManufacturingDataService:
                 md.attempts,
                 detail,
             )
-            applied = await self._finish(
-                md,
-                lease_token,
-                status=MfgDataStatus.FAILED.value,
-                error_message=(
+            outcome = GenerationOutcome.FAILED
+            values = {
+                "status": MfgDataStatus.FAILED.value,
+                "error_message": (
                     f"製造データ作成サーバーに {md.attempts} 回接続できませんでした: {detail}"
                 )[:1000],
+            }
+        else:
+            logger.warning(
+                "%s id=%s attempts=%d: %s", LOG_MARK_DEFERRED, md.id, md.attempts, detail
             )
-            await self._commit()
-            return GenerationOutcome.FAILED if applied else GenerationOutcome.SKIPPED
+            outcome = GenerationOutcome.DEFERRED
+            # 戻す行は誰も処理していないので、vm_job_id も外す（次の取り出しで投入し直す）。
+            values = {
+                "status": MfgDataStatus.PENDING.value,
+                "vm_job_id": None,
+                "error_message": f"製造データ作成サーバーに接続できず再試行待ち: {detail}"[:1000],
+            }
 
-        logger.warning(
-            "%s id=%s attempts=%d: %s", LOG_MARK_DEFERRED, md.id, md.attempts, detail
-        )
-        # 戻す行は誰も処理していないので、vm_job_id も外す（次の取り出しで投入し直す）。
-        applied = await self._finish(
-            md,
-            lease_token,
-            status=MfgDataStatus.PENDING.value,
-            vm_job_id=None,
-            error_message=f"製造データ作成サーバーに接続できず再試行待ち: {detail}"[:1000],
-        )
+        applied = await self._finish(md, lease_token, **values)
         await self._commit()
-        return GenerationOutcome.DEFERRED if applied else GenerationOutcome.SKIPPED
+        return outcome if applied else GenerationOutcome.SKIPPED
 
     async def _finish(
         self, md: ManufacturingData, lease_token: datetime, **values: Any
@@ -560,10 +568,7 @@ class ManufacturingDataService:
                 f"(current status: {md.status}); retry is only allowed for failed rows"
             )
 
-        md.status = MfgDataStatus.PENDING.value
-        md.error_message = None
-        # 人が再駆動したので、VM 不達の試行回数を数え直す（_defer_or_fail の上限）。
-        md.attempts = 0
+        _reset_to_pending(md)
         await self._md_repo.update(md)
         await self._commit()
         return ManufacturingDataResponse.model_validate(md)
@@ -704,9 +709,7 @@ class ManufacturingDataService:
         参照する「発注済み」明細は「発注準備中」へ戻す（demote）ことで、未完成の製造データで
         メーカー発注されるのを防ぐ。生成完了時に generate() が再び「発注済み」へ昇格させる。
         """
-        md.status = MfgDataStatus.PENDING.value
-        md.error_message = None
-        md.attempts = 0
+        _reset_to_pending(md)
         await self._md_repo.update(md)
         await self._order_repo.sync_item_status_for_manufacturing_data(md.id, ready=False)
         await self._commit()

@@ -98,12 +98,13 @@ async def process_pending(*, max_runtime_seconds: float, max_items: int) -> int:
 
         md_id, lease_token = claimed
         outcome = await run_generation(md_id, lease_token)
-        processed += 1
         if outcome is GenerationOutcome.DEFERRED:
             # 死活確認は通ったのに届かなかった。VM が不調になったので、残りは次回の
-            # 起動に回す（次回はまず死活確認で止まる）。
+            # 起動に回す（次回はまず死活確認で止まる）。生成待ちへ戻しただけなので
+            # 処理件数に数えない（数えると滞留の警告が出なくなる）。
             logger.warning("illustrator-vm became unreachable; leaving the rest for the next run")
             break
+        processed += 1
 
     return processed
 
@@ -129,14 +130,16 @@ async def check_vm_health() -> bool:
 async def report_pending(*, processed: int) -> None:
     """生成待ちの滞留をログに残す（長く動いていなければ目印つきで警告する）.
 
-    この起動で 1 件でも処理していれば警告しない。大量の受注を順に捌いている最中は、
+    この起動で 1 件でも処理していれば何もしない。大量の受注を順に捌いている最中は、
     後ろの行が 60 分待つことがあるが、それは止まっているのではない。
     """
+    if processed > 0:
+        return
     count, oldest = await pending_generation_summary()
-    if count == 0 or oldest is None:
+    if oldest is None:  # 生成待ちが 0 件
         return
     idle_minutes = (datetime.now(UTC) - oldest).total_seconds() / 60
-    if processed == 0 and idle_minutes >= settings.WORKER_STALL_ALERT_MINUTES:
+    if idle_minutes >= settings.WORKER_STALL_ALERT_MINUTES:
         logger.warning(
             "%s pending=%d oldest_idle_minutes=%.0f", LOG_MARK_STALLED, count, idle_minutes
         )

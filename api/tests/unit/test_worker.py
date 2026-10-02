@@ -18,16 +18,6 @@ from app.services.illustrator_vm_client import IllustratorVmClient, VmHealth
 from app.services.manufacturing_data_service import GenerationOutcome
 
 
-@pytest.fixture(autouse=True)
-def _no_db_side_effects() -> Iterator[None]:
-    """VM の死活確認と滞留の報告は、個別のテストが差し替えない限り何もしない."""
-    with (
-        patch.object(worker, "check_vm_health", AsyncMock(return_value=True)),
-        patch.object(worker, "report_pending", AsyncMock()),
-    ):
-        yield
-
-
 def _conn(*, acquired: bool) -> MagicMock:
     """pg_try_advisory_lock の戻り値を差し替えた接続の代役."""
     result = MagicMock()
@@ -142,12 +132,21 @@ class TestProcessPending:
         ):
             count = await worker.process_pending(max_runtime_seconds=60, max_items=0)
 
-        assert count == 1
+        assert count == 0  # 生成待ちへ戻しただけなので処理件数に数えない
         assert run.await_count == 1
         assert queue.await_count == 1  # 残りは取り出さない（試行回数を無駄に消費しない）
 
 
 class TestRunOnce:
+    @pytest.fixture(autouse=True)
+    def _no_side_effects(self) -> Iterator[None]:
+        """VM の死活確認と滞留の報告は、個別のテストが差し替えない限り何もしない."""
+        with (
+            patch.object(worker, "check_vm_health", AsyncMock(return_value=True)),
+            patch.object(worker, "report_pending", AsyncMock()),
+        ):
+            yield
+
     @pytest.mark.asyncio
     async def test_does_nothing_when_another_worker_holds_the_lock(self) -> None:
         """2 本目は降りる。直列な VM を複数のワーカーで奪い合わないため."""
@@ -241,12 +240,6 @@ class TestRunOnce:
 
 
 class TestCheckVmHealth:
-    @pytest.fixture(autouse=True)
-    def _real_check(self) -> Iterator[None]:
-        # モジュール共通の差し替えを外し、本物の check_vm_health を呼ぶ
-        with patch.object(worker, "check_vm_health", _REAL_CHECK_VM_HEALTH):
-            yield
-
     @pytest.mark.asyncio
     async def test_logs_ng_with_the_marker(self, caplog: pytest.LogCaptureFixture) -> None:
         client = MagicMock()
@@ -277,11 +270,6 @@ class TestCheckVmHealth:
 
 
 class TestReportPending:
-    @pytest.fixture(autouse=True)
-    def _real_report(self) -> Iterator[None]:
-        with patch.object(worker, "report_pending", _REAL_REPORT_PENDING):
-            yield
-
     @pytest.mark.asyncio
     async def test_warns_when_the_oldest_pending_row_is_idle_too_long(
         self, caplog: pytest.LogCaptureFixture
@@ -298,12 +286,12 @@ class TestReportPending:
     async def test_quiet_while_draining_a_backlog(self, caplog: pytest.LogCaptureFixture) -> None:
         """この起動で処理が進んでいるなら、古い行が待っていても止まってはいない."""
         idle = datetime.now(UTC) - timedelta(minutes=settings.WORKER_STALL_ALERT_MINUTES + 5)
-        with patch.object(
-            worker, "pending_generation_summary", AsyncMock(return_value=(30, idle))
-        ):
+        summary = AsyncMock(return_value=(30, idle))
+        with patch.object(worker, "pending_generation_summary", summary):
             await worker.report_pending(processed=4)
 
         assert "manufacturing_data_stalled" not in caplog.text
+        summary.assert_not_called()  # 処理が進んでいるなら数えに行かない
 
     @pytest.mark.asyncio
     async def test_quiet_when_recent(self, caplog: pytest.LogCaptureFixture) -> None:
@@ -314,8 +302,3 @@ class TestReportPending:
             await worker.report_pending(processed=0)
 
         assert "manufacturing_data_stalled" not in caplog.text
-
-
-# autouse の差し替え前に本物を控えておく（TestCheckVmHealth / TestReportPending が使う）
-_REAL_CHECK_VM_HEALTH = worker.check_vm_health
-_REAL_REPORT_PENDING = worker.report_pending

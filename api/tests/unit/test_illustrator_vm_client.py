@@ -244,16 +244,30 @@ class TestUnavailableVsInputError:
         assert "ConnectTimeout" in str(exc.value)
 
     @pytest.mark.asyncio
-    async def test_5xx_is_retried_then_unavailable(self) -> None:
+    async def test_502_is_retried_then_unavailable(self) -> None:
         calls = {"n": 0}
 
         def handler(request: httpx.Request) -> Any:
             calls["n"] += 1
-            return httpx.Response(500, text="Internal Server Error")
+            return httpx.Response(502, text="Bad Gateway")
 
         with pytest.raises(IllustratorVmUnavailableError):
             await _client(handler).get_status("job-1")
         assert calls["n"] == 3
+
+    @pytest.mark.asyncio
+    async def test_500_is_not_retried_nor_unavailable(self) -> None:
+        """500 は VM が入力の処理中に落ちた可能性がある。何度投げても同じなので再試行しない."""
+        calls = {"n": 0}
+
+        def handler(request: httpx.Request) -> Any:
+            calls["n"] += 1
+            return httpx.Response(500, json={"detail": "boom"})
+
+        with pytest.raises(IllustratorVmError) as exc:
+            await _client(handler).get_status("job-1")
+        assert not isinstance(exc.value, IllustratorVmUnavailableError)
+        assert calls["n"] == 1
 
     @pytest.mark.asyncio
     async def test_422_is_an_input_error_not_unavailable(self) -> None:

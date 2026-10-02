@@ -215,6 +215,22 @@ class TestGenerateDriver:
         md.lease_expires_at = _LEASE
         return md
 
+    async def _generate_with_submit_error(
+        self, md: Any, exc: Exception, *, finish_ok: bool = True
+    ) -> tuple[Any, Any]:
+        """VM への投入が exc で失敗する状況で generate を 1 回走らせ、(svc, 結果) を返す."""
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        if not finish_ok:
+            md_repo.finish_generation.return_value = False  # リースを失っている
+
+        vm_client = MagicMock()
+        vm_client.submit = AsyncMock(side_effect=exc)
+
+        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
+        svc._download_source_images = AsyncMock(return_value={"color": b"c", "cutline": b"k"})
+        return svc, await svc.generate("md-1", _LEASE)
+
     @pytest.mark.asyncio
     async def test_successful_generation_marks_ready(self) -> None:
         md = self._claimed_md()
@@ -254,16 +270,7 @@ class TestGenerateDriver:
     @pytest.mark.asyncio
     async def test_vm_failure_marks_failed_with_message(self) -> None:
         md = self._claimed_md()
-        md_repo = AsyncMock()
-        md_repo.find_by_id.return_value = md
-
-        vm_client = MagicMock()
-        vm_client.submit = AsyncMock(side_effect=IllustratorVmError("VM 503"))
-
-        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
-        svc._download_source_images = AsyncMock(return_value={"color": b"c", "cutline": b"k"})
-
-        await svc.generate("md-1", _LEASE)
+        await self._generate_with_submit_error(md, IllustratorVmError("VM 503"))
 
         assert md.status == MfgDataStatus.FAILED.value
         assert "VM 503" in md.error_message
@@ -278,18 +285,9 @@ class TestGenerateDriver:
         """
         md = self._claimed_md()
         md.vm_job_id = "stale-job"
-        md_repo = AsyncMock()
-        md_repo.find_by_id.return_value = md
-
-        vm_client = MagicMock()
-        vm_client.submit = AsyncMock(
-            side_effect=IllustratorVmUnavailableError("VM POST /api/process failed: ConnectTimeout")
+        svc, outcome = await self._generate_with_submit_error(
+            md, IllustratorVmUnavailableError("VM POST /api/process failed: ConnectTimeout")
         )
-
-        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
-        svc._download_source_images = AsyncMock(return_value={"color": b"c", "cutline": b"k"})
-
-        outcome = await svc.generate("md-1", _LEASE)
 
         assert outcome is mds.GenerationOutcome.DEFERRED
         assert md.status == MfgDataStatus.PENDING.value
@@ -303,16 +301,9 @@ class TestGenerateDriver:
     async def test_unreachable_vm_fails_after_the_attempt_limit(self) -> None:
         md = self._claimed_md()
         md.attempts = settings.WORKER_MAX_GENERATION_ATTEMPTS
-        md_repo = AsyncMock()
-        md_repo.find_by_id.return_value = md
-
-        vm_client = MagicMock()
-        vm_client.submit = AsyncMock(side_effect=IllustratorVmUnavailableError("down"))
-
-        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
-        svc._download_source_images = AsyncMock(return_value={"color": b"c", "cutline": b"k"})
-
-        outcome = await svc.generate("md-1", _LEASE)
+        _, outcome = await self._generate_with_submit_error(
+            md, IllustratorVmUnavailableError("down")
+        )
 
         assert outcome is mds.GenerationOutcome.FAILED
         assert md.status == MfgDataStatus.FAILED.value
@@ -321,17 +312,9 @@ class TestGenerateDriver:
     @pytest.mark.asyncio
     async def test_lost_lease_while_deferring_is_skipped(self) -> None:
         md = self._claimed_md()
-        md_repo = AsyncMock()
-        md_repo.find_by_id.return_value = md
-        md_repo.finish_generation.return_value = False
-
-        vm_client = MagicMock()
-        vm_client.submit = AsyncMock(side_effect=IllustratorVmUnavailableError("down"))
-
-        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
-        svc._download_source_images = AsyncMock(return_value={"color": b"c", "cutline": b"k"})
-
-        outcome = await svc.generate("md-1", _LEASE)
+        _, outcome = await self._generate_with_submit_error(
+            md, IllustratorVmUnavailableError("down"), finish_ok=False
+        )
 
         assert outcome is mds.GenerationOutcome.SKIPPED
         assert md.status == MfgDataStatus.GENERATING.value  # 他のワーカーの行を書き換えない

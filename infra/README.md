@@ -505,7 +505,7 @@ WHERE status = 'failed' AND updated_at > '<窓に入った時刻>';
 | 旧 VM に付いていたもの | 実測（2026-09-07） | 扱い |
 |---|---|---|
 | `illustrator-vm-daily-snapshot` | 日次・14 日保持・03:00 JST。**旧ディスクに付いていた** | REQ-0062 |
-| Uptime Check `illustrator-api-health` ＋ 自動再起動 | 外部 IP 前提。**そのままは移せない** | 作り直した（下記「製造データ生成が止まったとき」） |
+| Uptime Check `illustrator-api-health` ＋ 自動再起動 | 外部 IP 前提。**そのままは移せない** | 別の形で置き換えた（下記「製造データ生成が止まったとき」）。外からの自動リセットは無い |
 | `illustrator-vm-nightly-restart` | 毎晩 03:50→03:55 の stop/start | **戻さない**（`illustrator-vm` の Issue #5） |
 
 スナップショットは REQ-0062 が追う。

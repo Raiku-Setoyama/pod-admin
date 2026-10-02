@@ -87,24 +87,64 @@ locals {
   metric_type = { for k, m in google_logging_metric.this : k => "logging.googleapis.com/user/${m.name}" }
 }
 
-# ---- 原因で見る ---------------------------------------------------------------
+# ---- アラート ------------------------------------------------------------------
+#
+# 原因で見る: vm_down / worker_silent
+# 結果で見る: generation_failed / generation_stalled（原因を問わず「発注できない」を拾う）
+#
+# worker_silent だけは「ログが途絶えた」を見るので condition_absent になる。
+# 残りは「目印が閾値を超えた」なので同じ形で、下の map から作る。
 
-# ワーカーは 5 分ごとに起動して /health を叩く。15 分で 3 回 NG なら、
-# 一過性の瞬断ではなく止まっている。
-resource "google_monitoring_alert_policy" "vm_down" {
+locals {
+  threshold_alerts = {
+    # ワーカーは 5 分ごとに起動して /health を叩く。15 分で 3 回 NG なら、
+    # 一過性の瞬断ではなく止まっている。
+    vm_down = {
+      display_name   = "製造データ生成 VM が応答しない"
+      condition_name = "illustrator_vm_health が 15 分で 3 回 NG"
+      metric         = "illustrator_vm_health_ng"
+      threshold      = 2
+      window         = "900s"
+      doc_prefix     = ""
+    }
+    # failed に確定した（入力の誤り、または VM に何度やっても届かなかった）。
+    # 管理画面では注文詳細の「要対応」にしか出ないので、ここで人に届ける。
+    generation_failed = {
+      display_name   = "製造データの生成が失敗した"
+      condition_name = "manufacturing_data_failed が出た"
+      metric         = "manufacturing_data_failed"
+      threshold      = 0
+      window         = "300s"
+      doc_prefix     = "管理画面で「要対応」になった注文のエラー内容を確認し、元画像の差し替えか再生成を行う。"
+    }
+    # 生成待ちが長く動いていない（WORKER_STALL_ALERT_MINUTES、既定 60 分）。
+    generation_stalled = {
+      display_name   = "製造データが生成待ちのまま止まっている"
+      condition_name = "manufacturing_data_stalled が出た"
+      metric         = "manufacturing_data_stalled"
+      threshold      = 0
+      window         = "600s"
+      doc_prefix     = ""
+    }
+  }
+}
+
+resource "google_monitoring_alert_policy" "threshold" {
+  for_each = local.threshold_alerts
+
   project      = var.project_id
-  display_name = "製造データ生成 VM が応答しない"
+  display_name = each.value.display_name
   combiner     = "OR"
 
   conditions {
-    display_name = "illustrator_vm_health が 15 分で 3 回 NG"
+    display_name = each.value.condition_name
     condition_threshold {
-      filter          = "metric.type=\"${local.metric_type["illustrator_vm_health_ng"]}\""
+      filter          = "metric.type=\"${local.metric_type[each.value.metric]}\""
       comparison      = "COMPARISON_GT"
-      threshold_value = 2
+      threshold_value = each.value.threshold
       duration        = "0s"
       aggregations {
-        alignment_period     = "900s"
+        alignment_period     = each.value.window
         per_series_aligner   = "ALIGN_SUM"
         cross_series_reducer = "REDUCE_SUM"
       }
@@ -117,7 +157,7 @@ resource "google_monitoring_alert_policy" "vm_down" {
 
   documentation {
     mime_type = "text/markdown"
-    content   = local.runbook
+    content   = trimspace("${each.value.doc_prefix}\n\n${local.runbook}")
   }
 
   notification_channels = local.channels
@@ -151,76 +191,6 @@ resource "google_monitoring_alert_policy" "worker_silent" {
   documentation {
     mime_type = "text/markdown"
     content   = "Cloud Scheduler `${var.worker_job_name}` が ENABLED か、Cloud Run Job の実行が失敗していないかを確認する。\n\n${local.runbook}"
-  }
-
-  notification_channels = local.channels
-}
-
-# ---- 結果で見る ---------------------------------------------------------------
-
-# 生成が failed に確定した（入力の誤り、または VM に何度やっても届かなかった）。
-# 管理画面では注文詳細の「要対応」にしか出ないので、ここで人に届ける。
-resource "google_monitoring_alert_policy" "generation_failed" {
-  project      = var.project_id
-  display_name = "製造データの生成が失敗した"
-  combiner     = "OR"
-
-  conditions {
-    display_name = "manufacturing_data_failed が出た"
-    condition_threshold {
-      filter          = "metric.type=\"${local.metric_type["manufacturing_data_failed"]}\""
-      comparison      = "COMPARISON_GT"
-      threshold_value = 0
-      duration        = "0s"
-      aggregations {
-        alignment_period     = "300s"
-        per_series_aligner   = "ALIGN_SUM"
-        cross_series_reducer = "REDUCE_SUM"
-      }
-    }
-  }
-
-  alert_strategy {
-    auto_close = "1800s"
-  }
-
-  documentation {
-    mime_type = "text/markdown"
-    content   = "管理画面で「要対応」になった注文のエラー内容を確認し、元画像の差し替えか再生成を行う。\n\n${local.runbook}"
-  }
-
-  notification_channels = local.channels
-}
-
-# 生成待ちが長く動いていない（WORKER_STALL_ALERT_MINUTES、既定 60 分）。
-# 原因を問わず「発注できない状態が続いている」ことを拾う最後の網。
-resource "google_monitoring_alert_policy" "generation_stalled" {
-  project      = var.project_id
-  display_name = "製造データが生成待ちのまま止まっている"
-  combiner     = "OR"
-
-  conditions {
-    display_name = "manufacturing_data_stalled が出た"
-    condition_threshold {
-      filter          = "metric.type=\"${local.metric_type["manufacturing_data_stalled"]}\""
-      comparison      = "COMPARISON_GT"
-      threshold_value = 0
-      duration        = "0s"
-      aggregations {
-        alignment_period     = "600s"
-        per_series_aligner   = "ALIGN_SUM"
-        cross_series_reducer = "REDUCE_SUM"
-      }
-    }
-  }
-
-  alert_strategy {
-    auto_close = "1800s"
-  }
-
-  documentation {
-    mime_type = "text/markdown"
-    content   = local.runbook
   }
 
   notification_channels = local.channels

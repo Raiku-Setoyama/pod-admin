@@ -17,6 +17,10 @@ locals {
   # **module の出力を経由しない。** そうすると stack 全体が VM の作成待ちに
   # 直列化する。local なら plan の時点で確定するので、依存の辺が増えない。
   illustrator_vm_internal_ip = "10.20.0.10"
+
+  # 運用の連絡先。アプリの連絡先（contact_email）と、製造データ生成のアラートの宛先を兼ねる。
+  # 片方だけ変えると、もう片方が古い宛先に届き続けて誰も気づかない。
+  ops_email = "raiku.setoyama@ironiwa.co.jp"
 }
 
 provider "google" {
@@ -97,7 +101,7 @@ module "stack" {
   }
 
   sendgrid_from_email = "noreply@rksyo.com"
-  contact_email       = "raiku.setoyama@ironiwa.co.jp"
+  contact_email       = local.ops_email
 }
 
 # 製造データ生成 VM を迎えるためのネットワーク（REQ-0055 の 1 本目）。
@@ -153,6 +157,6 @@ module "manufacturing_monitoring" {
   project_id      = local.project_id
   worker_job_name = module.stack.worker_job_name
 
-  # 当面は連絡先（contact_email）と同じ宛先に送る。増やすときはここに足す。
-  alert_emails = ["raiku.setoyama@ironiwa.co.jp"]
+  # 宛先を増やすときはここに足す。
+  alert_emails = [local.ops_email]
 }
