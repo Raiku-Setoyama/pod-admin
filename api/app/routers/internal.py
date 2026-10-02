@@ -10,9 +10,17 @@ from fastapi import APIRouter, Depends
 
 from app.dependencies import (
     get_manufacturer_daily_digest_service,
+    get_monitoring_alert_notification_service,
+    verify_internal_basic_auth,
     verify_internal_secret,
 )
+from app.schemas.monitoring_alert import MonitoringWebhookPayload
 from app.services.manufacturer_daily_digest import ManufacturerDailyDigestService
+from app.services.monitoring_alert_notification import (
+    AlertDelivery,
+    MonitoringAlertNotificationService,
+)
+from app.utils.exceptions import AppException
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 
@@ -37,3 +45,23 @@ async def run_manufacturer_daily_digest(
             （手動再実行・テスト用）。
     """
     return await service.run_daily_digest(force=force)
+
+
+# 認証を先に通す（未認証のリクエストで DB セッションやメール送信の準備をしない）
+@router.post("/monitoring-alerts", dependencies=[Depends(verify_internal_basic_auth)])
+async def receive_monitoring_alert(
+    payload: MonitoringWebhookPayload,
+    service: Annotated[
+        MonitoringAlertNotificationService, Depends(get_monitoring_alert_notification_service)
+    ],
+) -> dict[str, str]:
+    """Cloud Monitoring のアラート（Webhook）を受け、管理画面で設定した宛先へメールで送る.
+
+    宛先の設定は管理画面「設定 → 製造データ生成のアラート」（app_settings）。
+    送れなかったときは 503 を返す（Monitoring に失敗として残す）。宛先が無い・無効に
+    しているのは設定どおりの結果なので 200 を返す。
+    """
+    delivery = await service.notify(payload.incident)
+    if delivery in (AlertDelivery.SEND_FAILED, AlertDelivery.EMAIL_NOT_CONFIGURED):
+        raise AppException(503, "ALERT_NOT_DELIVERED", f"alert was not delivered: {delivery.value}")
+    return {"delivery": delivery.value}

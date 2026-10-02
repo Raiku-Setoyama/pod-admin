@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import enum
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -32,7 +33,11 @@ from app.schemas.manufacturing_data import (
     ManufacturingDataListResponse,
     ManufacturingDataResponse,
 )
-from app.services.illustrator_vm_client import IllustratorVmClient, IllustratorVmError
+from app.services.illustrator_vm_client import (
+    IllustratorVmClient,
+    IllustratorVmError,
+    IllustratorVmUnavailableError,
+)
 from app.utils.exceptions import ConflictError, NotFoundError, ValidationError
 from app.utils.file_storage import FileStorage, build_file_storage
 from app.utils.mfg_product_mapping import MfgMappingError, build_vm_mapping
@@ -43,6 +48,26 @@ logger = logging.getLogger(__name__)
 
 class SourceImageTooLargeError(Exception):
     """元データ画像がサイズ上限を超えた場合のエラー."""
+
+
+class GenerationOutcome(enum.Enum):
+    """1 件の生成を試みた結果（ワーカーが次の行へ進むかの判断に使う）."""
+
+    READY = "ready"
+    FAILED = "failed"
+    # VM に届かなかったので生成待ちへ戻した。**同じ起動の中で次の行へ進まない**合図。
+    # VM が不調なまま次々に取り出すと、試行回数だけを無駄に消費する。
+    DEFERRED = "deferred"
+    # 確保されていない行だった・リースを失った等、何もしなかった。
+    SKIPPED = "skipped"
+
+
+# ログに残す目印。LOG_MARK_FAILED は Cloud Logging のログベース指標
+# （infra/modules/manufacturing-monitoring）がこの文字列で数えるので、
+# **変えるときは指標のフィルタも同時に変える。** LOG_MARK_DEFERRED は検索用で、指標は無い
+# （VM の不達は死活確認の指標が拾う）。
+LOG_MARK_FAILED = "manufacturing_data_failed"
+LOG_MARK_DEFERRED = "manufacturing_data_deferred"
 
 
 # 生成済みファイルの保存先プレフィックス（FileStorage 上）
@@ -60,6 +85,17 @@ _DEFAULT_SOURCE_MAX_BYTES = 25 * 1024 * 1024  # 25MB
 # PNG のシグネチャ。差し替えアップロードが本当に PNG かを中身で確認する
 # （VM は PNG レイヤーしか受け付けないため、拡張子や Content-Type は信用しない）。
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def _reset_to_pending(md: ManufacturingData) -> None:
+    """行を生成待ちへ戻す（人や受注が生成をやり直させるとき）.
+
+    VM 不達の試行回数（_defer_or_fail の上限）もここで数え直す。生成待ちへ戻す経路を
+    増やすときは、この関数を通す。
+    """
+    md.status = MfgDataStatus.PENDING.value
+    md.error_message = None
+    md.attempts = 0
 
 
 def _redact_url(url: str) -> str:
@@ -189,8 +225,7 @@ class ManufacturingDataService:
         if existing:
             # 失敗行は元データを更新して再生成対象にする。それ以外はそのまま再利用。
             if existing.status == MfgDataStatus.FAILED.value:
-                existing.status = MfgDataStatus.PENDING.value
-                existing.error_message = None
+                _reset_to_pending(existing)
                 existing.source_images = _merge_uploaded_layers(
                     existing.source_images, item.source_images
                 )
@@ -256,8 +291,12 @@ class ManufacturingDataService:
 
     # === 生成ドライバ（バックグラウンド） ===
 
-    async def generate(self, md_id: str, lease_token: datetime) -> None:
-        """**確保済みの**製造データを1件生成し、状態を ready/failed に確定させる.
+    async def generate(self, md_id: str, lease_token: datetime) -> GenerationOutcome:
+        """**確保済みの**製造データを1件生成し、結果を行に書き戻して返す.
+
+        成功なら ready、入力の誤りなら failed に確定させる。VM に届かなかったときは
+        確定させずに pending へ戻し（DEFERRED）、ワーカーの次の取り出しに委ねる
+        （_defer_or_fail）。
 
         呼び出し側（ワーカー）が claim_next_generation で行を generating へ確保し、
         リースを打ってから呼ぶ。**この関数は確保をしない。**二重生成の防止は取り出しの
@@ -270,7 +309,7 @@ class ManufacturingDataService:
         md = await self._md_repo.find_by_id(md_id)
         if md is None:
             logger.warning("manufacturing data %s not found; skip generation", md_id)
-            return
+            return GenerationOutcome.SKIPPED
         if md.status != MfgDataStatus.GENERATING.value:
             # 取り出しの直後にしか呼ばれないはずなので、ここに来るのは呼び出し側の誤りである。
             logger.warning(
@@ -278,7 +317,7 @@ class ManufacturingDataService:
                 md_id,
                 md.status,
             )
-            return
+            return GenerationOutcome.SKIPPED
 
         try:
             if self._vm_client is None:
@@ -327,15 +366,18 @@ class ManufacturingDataService:
                 error_message=None,
             )
             if not applied:
-                return
+                return GenerationOutcome.SKIPPED
             # 生成完了を参照明細へ波及: 「発注準備中」→「発注済み」（発注可能に）。
             await self._order_repo.sync_item_status_for_manufacturing_data(
                 md_id, ready=True
             )
             await self._commit()
             logger.info("manufacturing data %s generated (%s)", md_id, filename)
+            return GenerationOutcome.READY
+        except IllustratorVmUnavailableError as exc:
+            return await self._defer_or_fail(md, lease_token, exc)
         except Exception as exc:  # noqa: BLE001 - 失敗は必ず行に記録して終える
-            logger.exception("manufacturing data generation failed for %s", md_id)
+            logger.exception("%s id=%s", LOG_MARK_FAILED, md_id)
             await self._finish(
                 md,
                 lease_token,
@@ -343,6 +385,54 @@ class ManufacturingDataService:
                 error_message=str(exc)[:1000],
             )
             await self._commit()
+            return GenerationOutcome.FAILED
+
+    async def _defer_or_fail(
+        self, md: ManufacturingData, lease_token: datetime, exc: Exception
+    ) -> GenerationOutcome:
+        """VM に届かなかった生成を、生成待ちへ戻す（試行回数が尽きたら failed）.
+
+        **VM の不調は入力の誤りではない。**failed に確定させると、VM が戻っても誰かが
+        1 件ずつ「再生成」を押すまで発注が止まったままになる（2026-09-27〜10-02 の障害）。
+        生成待ちへ戻せば、VM の復旧後にワーカーが自動で拾い直す。
+
+        ただし無限には待たない。``attempts`` は取り出しのたびに増えるので、
+        ``WORKER_MAX_GENERATION_ATTEMPTS`` 回取り出して一度も届かなければ failed にして
+        人に渡す。ワーカーは VM の死活を確かめてから取り出すので、VM が止まっている間は
+        取り出し自体が起きず、この回数は消費されない。
+        """
+        detail = str(exc)[:900]
+        values: dict[str, Any]
+        if md.attempts >= settings.WORKER_MAX_GENERATION_ATTEMPTS:
+            logger.error(
+                "%s id=%s reason=vm_unavailable attempts=%d: %s",
+                LOG_MARK_FAILED,
+                md.id,
+                md.attempts,
+                detail,
+            )
+            outcome = GenerationOutcome.FAILED
+            values = {
+                "status": MfgDataStatus.FAILED.value,
+                "error_message": (
+                    f"製造データ作成サーバーに {md.attempts} 回接続できませんでした: {detail}"
+                )[:1000],
+            }
+        else:
+            logger.warning(
+                "%s id=%s attempts=%d: %s", LOG_MARK_DEFERRED, md.id, md.attempts, detail
+            )
+            outcome = GenerationOutcome.DEFERRED
+            # 戻す行は誰も処理していないので、vm_job_id も外す（次の取り出しで投入し直す）。
+            values = {
+                "status": MfgDataStatus.PENDING.value,
+                "vm_job_id": None,
+                "error_message": f"製造データ作成サーバーに接続できず再試行待ち: {detail}"[:1000],
+            }
+
+        applied = await self._finish(md, lease_token, **values)
+        await self._commit()
+        return outcome if applied else GenerationOutcome.SKIPPED
 
     async def _finish(
         self, md: ManufacturingData, lease_token: datetime, **values: Any
@@ -478,8 +568,7 @@ class ManufacturingDataService:
                 f"(current status: {md.status}); retry is only allowed for failed rows"
             )
 
-        md.status = MfgDataStatus.PENDING.value
-        md.error_message = None
+        _reset_to_pending(md)
         await self._md_repo.update(md)
         await self._commit()
         return ManufacturingDataResponse.model_validate(md)
@@ -620,8 +709,7 @@ class ManufacturingDataService:
         参照する「発注済み」明細は「発注準備中」へ戻す（demote）ことで、未完成の製造データで
         メーカー発注されるのを防ぐ。生成完了時に generate() が再び「発注済み」へ昇格させる。
         """
-        md.status = MfgDataStatus.PENDING.value
-        md.error_message = None
+        _reset_to_pending(md)
         await self._md_repo.update(md)
         await self._order_repo.sync_item_status_for_manufacturing_data(md.id, ready=False)
         await self._commit()
@@ -688,7 +776,7 @@ class ManufacturingDataService:
         )
 
 
-async def run_generation(md_id: str, lease_token: datetime) -> None:
+async def run_generation(md_id: str, lease_token: datetime) -> GenerationOutcome:
     """新規セッションを開き、1件の製造データを生成する.
 
     ワーカー（app/worker.py）から呼ばれる。呼び出し元のセッションや ORM を持ち込まず、
@@ -705,10 +793,11 @@ async def run_generation(md_id: str, lease_token: datetime) -> None:
             vm_client=IllustratorVmClient.from_settings(settings),
         )
         try:
-            await service.generate(md_id, lease_token)
+            return await service.generate(md_id, lease_token)
         except Exception:  # noqa: BLE001 - バックグラウンドは絶対に落とさない
             await session.rollback()
             logger.exception("run_generation crashed for %s", md_id)
+            return GenerationOutcome.SKIPPED
 
 
 async def claim_next_generation(lease_seconds: float) -> tuple[str, datetime] | None:
@@ -740,3 +829,10 @@ async def reclaim_expired_generation_leases() -> int:
         reclaimed = await ManufacturingDataRepository(session).reclaim_expired_leases()
         await session.commit()
     return reclaimed
+
+
+async def pending_generation_summary() -> tuple[int, datetime | None]:
+    """生成待ちの件数と最も古い ``updated_at`` を返す（ワーカーの滞留検知用）."""
+    session_maker = get_session_maker()
+    async with session_maker() as session:
+        return await ManufacturingDataRepository(session).pending_summary()

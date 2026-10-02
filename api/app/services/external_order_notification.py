@@ -9,7 +9,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from email_validator import EmailNotValidError, validate_email
+from app.services.recipient_settings import (
+    parse_recipients,
+    validate_enabled_value,
+    validate_recipients_value,
+)
 
 if TYPE_CHECKING:
     from app.repositories.app_setting_repository import AppSettingRepository
@@ -22,17 +26,6 @@ logger = logging.getLogger(__name__)
 NOTIFICATION_ENABLED_KEY = "external_order_notification_enabled"
 NOTIFICATION_RECIPIENTS_KEY = "external_order_notification_recipients"
 
-# recipients は app_settings.value (String(500)) に収める
-RECIPIENTS_MAX_LENGTH = 500
-
-
-def parse_recipients(value: str | None) -> list[str]:
-    """カンマ区切り文字列を宛先アドレスのリストへ変換する（空要素は除去）."""
-    if not value:
-        return []
-    return [addr.strip() for addr in value.split(",") if addr.strip()]
-
-
 def validate_setting_value(key: str, value: str) -> None:
     """外部注文通知の設定値を検証する.
 
@@ -40,20 +33,9 @@ def validate_setting_value(key: str, value: str) -> None:
     呼び出し側（ルーター）でキャッチして 422 に変換する。
     """
     if key == NOTIFICATION_ENABLED_KEY:
-        if value not in ("true", "false"):
-            raise ValueError('通知の有効/無効は "true" または "false" で指定してください')
+        validate_enabled_value(value)
     elif key == NOTIFICATION_RECIPIENTS_KEY:
-        if len(value) > RECIPIENTS_MAX_LENGTH:
-            raise ValueError(
-                f"通知先メールアドレスは合計{RECIPIENTS_MAX_LENGTH}文字以内で指定してください"
-            )
-        for addr in parse_recipients(value):
-            try:
-                validate_email(addr, check_deliverability=False)
-            except EmailNotValidError:
-                raise ValueError(
-                    f"メールアドレスの形式が正しくありません: {addr}"
-                ) from None
+        validate_recipients_value(value)
 
 
 class ExternalOrderNotificationService:

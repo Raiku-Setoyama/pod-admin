@@ -115,6 +115,22 @@ class ManufacturingDataRepository:
         )
         return len(result.scalars().all())
 
+    async def pending_summary(self) -> tuple[int, datetime | None]:
+        """生成待ちの件数と、その中で最も長く動いていない行の ``updated_at`` を返す.
+
+        ``created_at`` ではなく ``updated_at`` を見る。再生成で生成待ちへ戻した古い行が
+        「何週間も放置されている」と誤って数えられないようにするため。取り出しと
+        生成待ちへの差し戻しのたびに ``updated_at`` は動くので、これが古いままなら、
+        その行には誰も手を付けていない。
+        """
+        result = await self._db.execute(
+            select(func.count(), func.min(ManufacturingData.updated_at)).where(
+                ManufacturingData.status == MfgDataStatus.PENDING.value
+            )
+        )
+        count, oldest = result.one()
+        return int(count), oldest
+
     async def find_by_cache_key(
         self,
         order_source_id: str | None,

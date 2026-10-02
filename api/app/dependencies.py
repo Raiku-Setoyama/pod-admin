@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from fastapi import Depends, Header
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -38,6 +39,7 @@ from app.services.manufacturer_order_service import ManufacturerOrderService
 from app.services.manufacturer_portal_service import ManufacturerPortalService
 from app.services.manufacturer_service import ManufacturerService
 from app.services.manufacturing_data_service import ManufacturingDataService
+from app.services.monitoring_alert_notification import MonitoringAlertNotificationService
 from app.services.order_image_service import OrderImageService
 from app.services.order_list_service import OrderListService
 from app.services.order_service import OrderService
@@ -188,6 +190,14 @@ def get_email_service() -> EmailService | None:
         admin_base_url=settings.ADMIN_BASE_URL,
         manufacturer_login_url=settings.MANUFACTURER_LOGIN_URL,
     )
+
+
+def get_monitoring_alert_notification_service(
+    app_setting_repo: Annotated[AppSettingRepository, Depends(get_app_setting_repository)],
+    email_service: Annotated[EmailService | None, Depends(get_email_service)],
+) -> MonitoringAlertNotificationService:
+    """Get the Cloud Monitoring alert notification service."""
+    return MonitoringAlertNotificationService(app_setting_repo, email_service)
 
 
 def get_external_order_notification_service(
@@ -419,8 +429,30 @@ async def verify_internal_secret(
     INTERNAL_API_SECRET が未設定なら内部エンドポイントは無効（403）。
     ヘッダー X-Internal-Secret が一致しなければ 401。定数時間比較を用いる。
     """
+    _check_internal_secret(x_internal_secret)
+
+
+def _check_internal_secret(presented: str | None) -> None:
+    """共有シークレット（INTERNAL_API_SECRET）を定数時間で照合する.
+
+    未設定なら内部エンドポイントは無効（403）、一致しなければ 401。
+    """
     secret = settings.INTERNAL_API_SECRET
     if not secret:
         raise ForbiddenError("Internal API is not configured")
-    if not x_internal_secret or not secrets.compare_digest(x_internal_secret, secret):
+    if not presented or not secrets.compare_digest(presented, secret):
         raise UnauthorizedError("Invalid internal secret")
+
+
+_internal_basic = HTTPBasic(auto_error=False)
+
+
+async def verify_internal_basic_auth(
+    credentials: Annotated[HTTPBasicCredentials | None, Depends(_internal_basic)],
+) -> None:
+    """内部エンドポイント用の共有シークレット認証（Basic 認証版）.
+
+    Cloud Monitoring の Webhook は任意のヘッダーを付けられず、Basic 認証しか使えない。
+    パスワードに INTERNAL_API_SECRET を使う（ユーザー名は見ない）。
+    """
+    _check_internal_secret(credentials.password if credentials else None)

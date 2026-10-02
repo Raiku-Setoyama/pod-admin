@@ -7,7 +7,11 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from app.services.illustrator_vm_client import IllustratorVmClient, IllustratorVmError
+from app.services.illustrator_vm_client import (
+    IllustratorVmClient,
+    IllustratorVmError,
+    IllustratorVmUnavailableError,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -223,6 +227,135 @@ class TestNonJsonResponse:
 
         with pytest.raises(IllustratorVmError):
             await _client(handler).get_status("job-1")
+
+
+class TestUnavailableVsInputError:
+    """VM に届かない失敗と、入力の誤りを型で分ける（呼び出し側が再試行可否を決める）."""
+
+    @pytest.mark.asyncio
+    async def test_connect_timeout_is_unavailable_and_names_the_exception(self) -> None:
+        """ConnectTimeout は str() が空なので、型名を添えないと原因が読めない."""
+
+        def handler(request: httpx.Request) -> None:
+            raise httpx.ConnectTimeout("")
+
+        with pytest.raises(IllustratorVmUnavailableError) as exc:
+            await _client(handler).get_status("job-1")
+        assert "ConnectTimeout" in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_502_is_retried_then_unavailable(self) -> None:
+        calls = {"n": 0}
+
+        def handler(request: httpx.Request) -> Any:
+            calls["n"] += 1
+            return httpx.Response(502, text="Bad Gateway")
+
+        with pytest.raises(IllustratorVmUnavailableError):
+            await _client(handler).get_status("job-1")
+        assert calls["n"] == 3
+
+    @pytest.mark.asyncio
+    async def test_500_is_not_retried_nor_unavailable(self) -> None:
+        """500 は VM が入力の処理中に落ちた可能性がある。何度投げても同じなので再試行しない."""
+        calls = {"n": 0}
+
+        def handler(request: httpx.Request) -> Any:
+            calls["n"] += 1
+            return httpx.Response(500, json={"detail": "boom"})
+
+        with pytest.raises(IllustratorVmError) as exc:
+            await _client(handler).get_status("job-1")
+        assert not isinstance(exc.value, IllustratorVmUnavailableError)
+        assert calls["n"] == 1
+
+    @pytest.mark.asyncio
+    async def test_422_is_an_input_error_not_unavailable(self) -> None:
+        def handler(request: httpx.Request) -> Any:
+            return httpx.Response(422, json={"detail": "bad size"})
+
+        with pytest.raises(IllustratorVmError) as exc:
+            await _client(handler).get_status("job-1")
+        assert not isinstance(exc.value, IllustratorVmUnavailableError)
+
+    @pytest.mark.asyncio
+    async def test_failed_job_is_not_unavailable(self) -> None:
+        """VM がジョブの失敗を報告したなら、VM には届いている。"""
+
+        def handler(request: httpx.Request) -> Any:
+            return httpx.Response(200, json={"status": "failed", "error": "boom"})
+
+        with pytest.raises(IllustratorVmError) as exc:
+            await _client(handler).wait_until_complete("job-1")
+        assert not isinstance(exc.value, IllustratorVmUnavailableError)
+
+    @pytest.mark.asyncio
+    async def test_wait_timeout_is_unavailable(self) -> None:
+        def handler(request: httpx.Request) -> Any:
+            return httpx.Response(200, json={"status": "processing"})
+
+        client = IllustratorVmClient(
+            "http://vm.test",
+            poll_interval=0,
+            max_poll_seconds=-1,
+            transport=httpx.MockTransport(handler),
+        )
+        with pytest.raises(IllustratorVmUnavailableError):
+            await client.wait_until_complete("job-1")
+
+    @pytest.mark.asyncio
+    async def test_download_transport_error_is_unavailable(self) -> None:
+        def handler(request: httpx.Request) -> None:
+            raise httpx.ConnectError("refused")
+
+        with pytest.raises(IllustratorVmUnavailableError) as exc:
+            await _client(handler).download("job-1")
+        assert "ConnectError" in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_download_404_is_not_unavailable(self) -> None:
+        def handler(request: httpx.Request) -> Any:
+            return httpx.Response(404, json={"detail": "job not found"})
+
+        with pytest.raises(IllustratorVmError) as exc:
+            await _client(handler).download("job-1")
+        assert not isinstance(exc.value, IllustratorVmUnavailableError)
+        assert "job not found" in str(exc.value)
+
+
+class TestHealth:
+    @pytest.mark.asyncio
+    async def test_healthy(self) -> None:
+        def handler(request: httpx.Request) -> Any:
+            assert request.url.path == "/health"
+            return httpx.Response(200, json={"status": "healthy"})
+
+        health = await _client(handler).health()
+        assert health.ok
+
+    @pytest.mark.asyncio
+    async def test_503_unhealthy_is_ng(self) -> None:
+        """応答はするが生成できない状態（ワーカー停止・ディスク不足）も NG."""
+
+        def handler(request: httpx.Request) -> Any:
+            return httpx.Response(503, json={"status": "unhealthy"})
+
+        health = await _client(handler).health()
+        assert not health.ok
+        assert "503" in health.detail
+
+    @pytest.mark.asyncio
+    async def test_unreachable_is_ng_without_retry(self) -> None:
+        calls = {"n": 0}
+
+        def handler(request: httpx.Request) -> None:
+            calls["n"] += 1
+            raise httpx.ConnectTimeout("")
+
+        health = await _client(handler).health()
+        assert not health.ok
+        assert health.detail == "ConnectTimeout"
+        assert calls["n"] == 1  # 死活確認は 1 回で判断する（ワーカー起動を待たせない）
 
 
 class TestFromSettings:

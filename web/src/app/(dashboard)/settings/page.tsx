@@ -29,6 +29,8 @@ import type {
 
 const NOTIFICATION_ENABLED_KEY = "external_order_notification_enabled";
 const NOTIFICATION_RECIPIENTS_KEY = "external_order_notification_recipients";
+const ALERT_ENABLED_KEY = "monitoring_alert_enabled";
+const ALERT_RECIPIENTS_KEY = "monitoring_alert_recipients";
 const DIGEST_ENABLED_KEY = "manufacturer_daily_digest_enabled";
 const DIGEST_SEND_TIME_KEY = "manufacturer_daily_digest_send_time";
 const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -61,6 +63,13 @@ export default function SettingsPage() {
   const [notificationInitialized, setNotificationInitialized] = useState(false);
   const [isSavingNotification, setIsSavingNotification] = useState(false);
   const [notificationError, setNotificationError] = useState<string | null>(null);
+
+  // 製造データ生成のアラート（既定で有効。明示的に無効にしたときだけ止まる）
+  const [alertEnabled, setAlertEnabled] = useState(true);
+  const [alertRecipients, setAlertRecipients] = useState<string[]>([]);
+  const [alertInitialized, setAlertInitialized] = useState(false);
+  const [isSavingAlert, setIsSavingAlert] = useState(false);
+  const [alertError, setAlertError] = useState<string | null>(null);
 
   // メーカー日次発注通知（全社共通）
   const [digestEnabled, setDigestEnabled] = useState(false);
@@ -113,6 +122,19 @@ export default function SettingsPage() {
       setNotificationInitialized(true);
     }
   }, [settingsData, notificationInitialized]);
+
+  // 製造データ生成のアラートの初回反映
+  useEffect(() => {
+    if (settingsData && !alertInitialized) {
+      const enabledSetting = settingsData.items.find((s) => s.key === ALERT_ENABLED_KEY);
+      setAlertEnabled(enabledSetting?.value !== "false");
+      const recipientsSetting = settingsData.items.find(
+        (s) => s.key === ALERT_RECIPIENTS_KEY,
+      );
+      setAlertRecipients(parseRecipients(recipientsSetting?.value));
+      setAlertInitialized(true);
+    }
+  }, [settingsData, alertInitialized]);
 
   // メーカー日次発注通知の初回反映
   useEffect(() => {
@@ -204,6 +226,29 @@ export default function SettingsPage() {
       toast.error(message);
     } finally {
       setIsSavingNotification(false);
+    }
+  };
+
+  const handleSaveAlert = async () => {
+    setIsSavingAlert(true);
+    setAlertError(null);
+    try {
+      await apiClient(`/settings/${ALERT_ENABLED_KEY}`, {
+        method: "PUT",
+        body: { value: alertEnabled ? "true" : "false" },
+      });
+      await apiClient(`/settings/${ALERT_RECIPIENTS_KEY}`, {
+        method: "PUT",
+        body: { value: alertRecipients.join(",") },
+      });
+      toast.success("製造データ生成のアラート設定を更新しました");
+      mutateSettings();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "更新に失敗しました";
+      setAlertError(message);
+      toast.error(message);
+    } finally {
+      setIsSavingAlert(false);
     }
   };
 
@@ -389,6 +434,59 @@ export default function SettingsPage() {
               size="sm"
             >
               {isSavingNotification ? "保存中..." : "保存"}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* 製造データ生成のアラート */}
+        <Card>
+          <CardHeader>
+            <CardTitle>製造データ生成のアラート</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              製造データ作成サーバーが応答しない・生成が失敗した・生成待ちが止まっているときに、指定したメールアドレスへ通知します。回復したときにも通知します。
+            </p>
+
+            <div className="flex items-center gap-3">
+              <Switch
+                id="alert-enabled"
+                checked={alertEnabled}
+                onCheckedChange={setAlertEnabled}
+              />
+              <Label htmlFor="alert-enabled">アラートを有効にする</Label>
+            </div>
+
+            <div className="space-y-2">
+              <EmailListInput
+                id="alert-recipient-email"
+                label="アラートの通知先メールアドレス"
+                description="複数登録できます。入力して「追加」を押すか Enter で登録してください。"
+                emails={alertRecipients}
+                onChange={setAlertRecipients}
+                placeholder="例: ops@example.com"
+                emptyText="通知先が登録されていません。"
+              />
+
+              {alertEnabled && alertRecipients.length === 0 && (
+                <p className="text-sm text-amber-600">
+                  宛先が未登録のため、現在はアラートが送信されません。
+                </p>
+              )}
+              {!alertEnabled && (
+                <p className="text-sm text-amber-600">
+                  無効にすると、製造データの生成が止まっても通知されません。
+                </p>
+              )}
+              {alertError && (
+                <p className="text-sm text-destructive" role="alert">
+                  {alertError}
+                </p>
+              )}
+            </div>
+
+            <Button onClick={handleSaveAlert} disabled={isSavingAlert} size="sm">
+              {isSavingAlert ? "保存中..." : "保存"}
             </Button>
           </CardContent>
         </Card>
