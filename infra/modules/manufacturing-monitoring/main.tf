@@ -99,10 +99,11 @@ resource "google_monitoring_notification_channel" "fallback_email" {
 locals {
   channels = [google_monitoring_notification_channel.webhook.id]
 
-  # **リソース種別では絞らない。** ログベース指標がどの監視対象リソースの下に
-  # 書かれるかは元ログの種別に依存し、保証されていない。絞り込みがずれると
-  # 「失敗しても鳴らない／ワーカーが動いていないと鳴り続ける」になる。
-  # ワーカーのログへの絞り込みは指標の側（google_logging_metric の filter）で済ませている。
+  # アラートのフィルタにはリソース種別の指定が必須である（無いと API が 400 を返す）。
+  # ログベース指標は元ログのリソース種別の下に書かれ、ワーカーのログは cloud_run_job
+  # （指標の記述子の monitoredResourceTypes で確認済み。2026-10-02）。
+  # **ワーカーの実行基盤を変えたら、ここも変える。** ずれると鳴らなくなる。
+  metric_resource_type = "cloud_run_job"
 
   # 指標の型。ログベース指標はこの名前で Monitoring に現れる。
   metric_type = { for k, m in google_logging_metric.this : k => "logging.googleapis.com/user/${m.name}" }
@@ -160,7 +161,7 @@ resource "google_monitoring_alert_policy" "threshold" {
   conditions {
     display_name = each.value.condition_name
     condition_threshold {
-      filter          = "metric.type=\"${local.metric_type[each.value.metric]}\""
+      filter          = "metric.type=\"${local.metric_type[each.value.metric]}\" AND resource.type=\"${local.metric_resource_type}\""
       comparison      = "COMPARISON_GT"
       threshold_value = each.value.threshold
       duration        = "0s"
@@ -195,7 +196,7 @@ resource "google_monitoring_alert_policy" "worker_silent" {
   conditions {
     display_name = "illustrator_vm_health のログが 30 分出ていない"
     condition_absent {
-      filter   = "metric.type=\"${local.metric_type["illustrator_vm_health_probe"]}\""
+      filter   = "metric.type=\"${local.metric_type["illustrator_vm_health_probe"]}\" AND resource.type=\"${local.metric_resource_type}\""
       duration = "1800s"
       aggregations {
         alignment_period     = "300s"
