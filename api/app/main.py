@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
+from app.logging_config import configure_logging
 from app.routers import (
     auth,
     chat,
@@ -26,6 +27,9 @@ from app.routers import (
     settings as settings_router,
 )
 from app.utils.exceptions import AppException
+
+# アプリの INFO ログを Cloud Logging に残す（設定しないと WARNING 以上しか出ない）
+configure_logging()
 
 # 中断された製造データ生成の復旧は、API の起動時ではなくワーカー（app/worker.py）が行う。
 # API は複数インスタンスが同時に起動しうるので、起動フックで復旧を走らせると、
