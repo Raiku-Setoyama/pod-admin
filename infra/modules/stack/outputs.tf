@@ -41,3 +41,8 @@ output "github_actions_service_account" {
   description = "デプロイ用ワークフローの service_account に指定する値"
   value       = module.service_accounts.emails["pod-admin-deployer"]
 }
+
+output "worker_job_name" {
+  description = "製造データ生成ワーカーの Cloud Run Job 名（監視のログ絞り込みに使う）"
+  value       = module.worker_job.name
+}

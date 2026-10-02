@@ -31,3 +31,7 @@ output "github_actions_workload_identity_provider" {
 output "github_actions_service_account" {
   value = module.stack.github_actions_service_account
 }
+
+output "worker_job_name" {
+  value = module.stack.worker_job_name
+}

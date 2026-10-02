@@ -116,6 +116,13 @@ class Settings(BaseSettings):
     # 既定の 40 分は、現在の ILLUSTRATOR_VM_* 設定での最悪値（約 920 秒）の 2.6 倍。
     # 長くするほど安全だが、ワーカーがクラッシュしてから拾い直されるまでの待ち時間も伸びる。
     WORKER_LEASE_SECONDS: float = 2400.0
+    # VM に届かなかった生成を生成待ちへ戻す回数の上限。取り出しのたびに attempts が
+    # 増え、この回数に達しても届かなければ failed にして人に渡す。
+    # ワーカーは VM の死活を確かめてから取り出すので、VM が止まっている間は消費されない。
+    WORKER_MAX_GENERATION_ATTEMPTS: int = 5
+    # 生成待ちのまま放置されているとみなす分数。最も古い生成待ちがこれを超えたら
+    # ワーカーが目印のログ（manufacturing_data_stalled）を出し、アラートが拾う。
+    WORKER_STALL_ALERT_MINUTES: int = 60
 
     @property
     def generation_worst_case_seconds(self) -> float:

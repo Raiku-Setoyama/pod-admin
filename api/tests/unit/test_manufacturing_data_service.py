@@ -9,10 +9,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from app.config import settings
 from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
 from app.models.order import OrderItem, OrderItemStatus
 from app.services import manufacturing_data_service as mds
-from app.services.illustrator_vm_client import IllustratorVmError
+from app.services.illustrator_vm_client import IllustratorVmError, IllustratorVmUnavailableError
 from app.services.manufacturing_data_service import ManufacturingDataService
 from app.utils.exceptions import ConflictError, NotFoundError
 
@@ -269,6 +270,73 @@ class TestGenerateDriver:
         assert md.lease_expires_at is None  # 失敗でも所有権は返す
 
     @pytest.mark.asyncio
+    async def test_unreachable_vm_defers_to_pending_instead_of_failing(self) -> None:
+        """VM に届かないのは入力の誤りではない。failed にせず生成待ちへ戻す.
+
+        2026-09-27〜10-02 の障害では failed に確定させたため、VM の復旧後も
+        人が 1 件ずつ再生成を押すまで発注が止まったままになった。
+        """
+        md = self._claimed_md()
+        md.vm_job_id = "stale-job"
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+
+        vm_client = MagicMock()
+        vm_client.submit = AsyncMock(
+            side_effect=IllustratorVmUnavailableError("VM POST /api/process failed: ConnectTimeout")
+        )
+
+        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
+        svc._download_source_images = AsyncMock(return_value={"color": b"c", "cutline": b"k"})
+
+        outcome = await svc.generate("md-1", _LEASE)
+
+        assert outcome is mds.GenerationOutcome.DEFERRED
+        assert md.status == MfgDataStatus.PENDING.value
+        assert md.vm_job_id is None
+        assert "ConnectTimeout" in md.error_message
+        assert md.lease_expires_at is None
+        # 発注可否は変えない（生成待ちのまま）
+        svc._order_repo.sync_item_status_for_manufacturing_data.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unreachable_vm_fails_after_the_attempt_limit(self) -> None:
+        md = self._claimed_md()
+        md.attempts = settings.WORKER_MAX_GENERATION_ATTEMPTS
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+
+        vm_client = MagicMock()
+        vm_client.submit = AsyncMock(side_effect=IllustratorVmUnavailableError("down"))
+
+        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
+        svc._download_source_images = AsyncMock(return_value={"color": b"c", "cutline": b"k"})
+
+        outcome = await svc.generate("md-1", _LEASE)
+
+        assert outcome is mds.GenerationOutcome.FAILED
+        assert md.status == MfgDataStatus.FAILED.value
+        assert "接続できませんでした" in md.error_message
+
+    @pytest.mark.asyncio
+    async def test_lost_lease_while_deferring_is_skipped(self) -> None:
+        md = self._claimed_md()
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        md_repo.finish_generation.return_value = False
+
+        vm_client = MagicMock()
+        vm_client.submit = AsyncMock(side_effect=IllustratorVmUnavailableError("down"))
+
+        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
+        svc._download_source_images = AsyncMock(return_value={"color": b"c", "cutline": b"k"})
+
+        outcome = await svc.generate("md-1", _LEASE)
+
+        assert outcome is mds.GenerationOutcome.SKIPPED
+        assert md.status == MfgDataStatus.GENERATING.value  # 他のワーカーの行を書き換えない
+
+    @pytest.mark.asyncio
     async def test_not_configured_vm_marks_failed(self) -> None:
         md = self._claimed_md()
         md_repo = AsyncMock()
@@ -386,6 +454,8 @@ class TestRetry:
         assert md.status == MfgDataStatus.PENDING.value
         assert md.error_message is None
         assert resp.status == MfgDataStatus.PENDING.value
+        # 人が再駆動したので、VM 不達の試行回数は数え直す
+        assert md.attempts == 0
 
     @pytest.mark.asyncio
     async def test_retry_missing_raises(self) -> None:
@@ -433,11 +503,13 @@ class TestRegenerate:
         order_repo = AsyncMock()
         order_repo.has_manufacturing_or_delivered_items.return_value = False
 
+        md.attempts = 3
         svc = _service(md_repo, order_repo)
         resp = await svc.regenerate("md-1")
 
         assert md.status == MfgDataStatus.PENDING.value
         assert md.error_message is None
+        assert md.attempts == 0  # 作り直しなので VM 不達の試行回数も数え直す
         # 降格は 1 回だけ（生成の起動もこの 1 回に対応する）
         order_repo.sync_item_status_for_manufacturing_data.assert_awaited_once_with(
             "md-1", ready=False

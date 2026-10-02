@@ -18,6 +18,15 @@
     （``claim_next_generation`` の 1 文）とリースが保証している。VM が並列化されたら、
     ロックを外すだけで並列ワーカーに移行できる。
 
+VM の死活確認（2026-09-27〜10-02 の障害を受けて追加）:
+    起動のたびに、取り出しより先に illustrator-vm の /health を 1 回叩き、結果を
+    ``illustrator_vm_health status=ok|ng`` の形でログに残す。**生成待ちが無くても叩く。**
+    注文が来ないと VM に触れず、止まっていても誰も気づけなかったためである。
+    Cloud Logging のログベース指標とアラート（infra/modules/manufacturing-monitoring）がこの行を数える。
+
+    NG のときは取り出さない。生成待ちは pending のまま VM の復旧を待ち、次の起動で
+    自動的に拾われる（取り出して失敗させると、人が 1 件ずつ再生成を押すまで止まる）。
+
 モデルの読み込み:
     ``app.models`` を import する。モデルどうしは文字列で関連を張っているため、一部しか
     読み込まれていないとクエリの組み立てで名前を解決できずに落ちる。実際にはこの入口が
@@ -30,14 +39,18 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import UTC, datetime
 
 from sqlalchemy import text
 
 import app.models  # noqa: F401  # 全モデルをマッパー登録に載せる（docstring 参照）
 from app.config import settings
 from app.database import get_engine
+from app.services.illustrator_vm_client import IllustratorVmClient
 from app.services.manufacturing_data_service import (
+    GenerationOutcome,
     claim_next_generation,
+    pending_generation_summary,
     reclaim_expired_generation_leases,
     run_generation,
 )
@@ -46,6 +59,11 @@ logger = logging.getLogger(__name__)
 
 # このワーカー専用のアドバイザリロックのキー。他の用途と衝突しない固定値を持つ。
 _ADVISORY_LOCK_KEY = 8_240_517_301
+
+# ログの目印。Cloud Logging のログベース指標（infra/modules/manufacturing-monitoring）が
+# この文字列で数えるので、**変えるときは指標のフィルタも同時に変える。**
+LOG_MARK_VM_HEALTH = "illustrator_vm_health"
+LOG_MARK_STALLED = "manufacturing_data_stalled"
 
 
 async def process_pending(*, max_runtime_seconds: float, max_items: int) -> int:
@@ -79,10 +97,51 @@ async def process_pending(*, max_runtime_seconds: float, max_items: int) -> int:
             break
 
         md_id, lease_token = claimed
-        await run_generation(md_id, lease_token)
+        outcome = await run_generation(md_id, lease_token)
         processed += 1
+        if outcome is GenerationOutcome.DEFERRED:
+            # 死活確認は通ったのに届かなかった。VM が不調になったので、残りは次回の
+            # 起動に回す（次回はまず死活確認で止まる）。
+            logger.warning("illustrator-vm became unreachable; leaving the rest for the next run")
+            break
 
     return processed
+
+
+async def check_vm_health() -> bool:
+    """illustrator-vm の死活を確かめ、結果を目印つきでログに残す.
+
+    VM が設定されていない環境（ステージング等）では確認せず True を返す
+    （取り出した行は generate() が「未設定」で failed にする。従来どおり）。
+    """
+    client = IllustratorVmClient.from_settings(settings)
+    if client is None:
+        logger.info("%s status=disabled", LOG_MARK_VM_HEALTH)
+        return True
+    health = await client.health()
+    if health.ok:
+        logger.info("%s status=ok", LOG_MARK_VM_HEALTH)
+    else:
+        logger.warning("%s status=ng detail=%s", LOG_MARK_VM_HEALTH, health.detail)
+    return health.ok
+
+
+async def report_pending(*, processed: int) -> None:
+    """生成待ちの滞留をログに残す（長く動いていなければ目印つきで警告する）.
+
+    この起動で 1 件でも処理していれば警告しない。大量の受注を順に捌いている最中は、
+    後ろの行が 60 分待つことがあるが、それは止まっているのではない。
+    """
+    count, oldest = await pending_generation_summary()
+    if count == 0 or oldest is None:
+        return
+    idle_minutes = (datetime.now(UTC) - oldest).total_seconds() / 60
+    if processed == 0 and idle_minutes >= settings.WORKER_STALL_ALERT_MINUTES:
+        logger.warning(
+            "%s pending=%d oldest_idle_minutes=%.0f", LOG_MARK_STALLED, count, idle_minutes
+        )
+    else:
+        logger.info("pending manufacturing data: %d (oldest idle %.0f min)", count, idle_minutes)
 
 
 async def run_once() -> int:
@@ -91,6 +150,10 @@ async def run_once() -> int:
     アドバイザリロックを取れなければ、別のワーカーが動いているので何もせずに戻る
     （正しさの条件ではない。モジュールの docstring を参照）。
     """
+    # 取り出しの可否に関わらず毎回確かめる（ロックを取れずに降りる起動でも）。
+    # ログが途絶えたこと自体を「ワーカーが動いていない」として検知するためである。
+    vm_healthy = await check_vm_health()
+
     engine = get_engine()
     async with engine.connect() as conn:
         acquired = bool(
@@ -114,10 +177,16 @@ async def run_once() -> int:
             reclaimed = await reclaim_expired_generation_leases()
             if reclaimed:
                 logger.info("reclaimed %d generation(s) with an expired lease", reclaimed)
-            return await process_pending(
-                max_runtime_seconds=settings.WORKER_MAX_RUNTIME_SECONDS,
-                max_items=settings.WORKER_MAX_ITEMS,
-            )
+            processed = 0
+            if vm_healthy:
+                processed = await process_pending(
+                    max_runtime_seconds=settings.WORKER_MAX_RUNTIME_SECONDS,
+                    max_items=settings.WORKER_MAX_ITEMS,
+                )
+            else:
+                logger.warning("illustrator-vm is unhealthy; leaving pending rows untouched")
+            await report_pending(processed=processed)
+            return processed
         finally:
             # **この解放は必須である。** SQLAlchemy の close は DBAPI 接続をプールへ
             # 返すだけで閉じないため、セッションに紐づくアドバイザリロックは

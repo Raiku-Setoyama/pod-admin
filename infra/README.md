@@ -397,19 +397,16 @@ VM を作るときは `modules/network` の `illustrator_target_tag` 出力か�
 
 #### なぜワーカーを止めるのか
 
-VM が応答しない間に pod-admin のワーカーが動くと、`generate()` の例外ハンドラが
-製造データの行を `failed` にする（`api/app/services/manufacturing_data_service.py`）。
+**止めなくても行は失敗しなくなった**（2026-10 の障害対応）。ワーカーは取り出しの前に
+VM の `/health` を確かめ、NG なら取り出さない。取り出した後で VM に届かなくなっても、
+行は `failed` ではなく `pending` へ戻り、VM の復旧後に自動で拾い直される
+（`api/app/services/manufacturing_data_service.py` の `_defer_or_fail`）。
 
-**ワーカーは `failed` を拾い直さない。** `claim_next_generation` は `pending` しか取らず、
-`reclaim_expired_leases()` が戻すのはリースの切れた `generating` だけである。
-復旧の道はあるが、**どちらも自動ではない。**
+それでも止めるのは、**更新の途中の VM に生成を投げないため**である。`git pull` の直後や
+Illustrator の再起動中に投げたジョブは、成否が読めない。
 
-- 管理画面から `POST /manufacturing-data/{id}/retry`（**1 件ずつ**。一括は無い）
-- 同じキャッシュキーで受注が入り直せば `_resolve_or_create()` が `pending` に戻す
-
-被害は **1 回の起動あたり最大 20 件**である（`worker_max_items`。`worker_max_runtime_seconds`
-は 600 秒）。**一瞬の瞬断では落ちない** — `IllustratorVmClient` が接続エラーと 503 を
-3 回まで再試行する。効いてくるのは、再起動のように数分単位で止まるときである。
+**止めたら 30 分以内に戻す。** 戻し忘れはアラート「製造データ生成ワーカーが動いていない」
+（`modules/manufacturing-monitoring`）が拾う。
 
 #### 窓に入る前（本番は動いたまま）
 
@@ -492,8 +489,8 @@ gcloud scheduler jobs describe pod-admin-worker \
 kill $RDP_TUNNEL $API_TUNNEL
 ```
 
-**窓の間に落ちた行がないかを数える。** 落ちていたら 1 件ずつ `retry` を叩く
-（自動では戻らない）。
+**窓の間に落ちた行がないかを数える。** VM に届かなかった行は自動で再試行されるので、
+ここに出るのは入力の誤りなど、再試行しても直らないものだけである。
 
 ```sql
 SELECT id, product_code, error_message FROM manufacturing_data
@@ -508,10 +505,10 @@ WHERE status = 'failed' AND updated_at > '<窓に入った時刻>';
 | 旧 VM に付いていたもの | 実測（2026-09-07） | 扱い |
 |---|---|---|
 | `illustrator-vm-daily-snapshot` | 日次・14 日保持・03:00 JST。**旧ディスクに付いていた** | REQ-0062 |
-| Uptime Check `illustrator-api-health` ＋ 自動再起動 | 外部 IP 前提。**そのままは移せない** | REQ-0063 |
+| Uptime Check `illustrator-api-health` ＋ 自動再起動 | 外部 IP 前提。**そのままは移せない** | 作り直した（下記「製造データ生成が止まったとき」） |
 | `illustrator-vm-nightly-restart` | 毎晩 03:50→03:55 の stop/start | **戻さない**（`illustrator-vm` の Issue #5） |
 
-死活監視の作り直しは REQ-0063、スナップショットは REQ-0062 が追う。
+スナップショットは REQ-0062 が追う。
 **この表は「何が旧環境にあったか」の記録であり、現状の宣言ではない。**
 いま何があるかは `terraform plan` と `gcloud compute resource-policies list` が正本である。
 
@@ -580,6 +577,54 @@ cd C:\illustrator-vm\scripts\setup_windows
 
 移送先の VM で自動ログオンは**働いている**。イメージから起こした直後、人が一度も
 RDP せずに生成 API が 1 分ほどで `healthy` になった（REQ-0055）。**この状態を壊さないこと。**
+
+## 製造データ生成が止まったとき
+
+**2026-09-27 に VM 上の生成 API が止まり、10-02 まで 5 日間誰も気づかなかった。**
+OS は動いたままで、生成 API のプロセス一式だけが外から強制終了されていた
+（誰が終了させたかは記録が無く特定できていない）。そのうえ次の 3 つが重なった。
+
+- 生成 API を起動し直すのは Windows のログオン時だけで、ほかに起動し直す経路が無かった
+- ワーカーは注文が来たときしか VM に触れず、失敗は行に書かれるだけだった
+- 移送で外部 IP 前提の監視が外れ、人に届く経路が 1 つも無かった
+
+対策は 3 層に分かれている。**どれか 1 つが効かなくても、次の層が拾う。**
+
+| 層 | 何をするか | どこにあるか |
+|---|---|---|
+| VM の中で戻す | 監視タスク `IllustratorAPIWatchdog`（SYSTEM・2 分ごと）が `127.0.0.1:8000/health` を見て、3 回続けて NG なら生成 API のタスクを起動し直す | `illustrator-vm` の `scripts/setup_windows/` |
+| 止まっても失わない | ワーカーは毎回 `/health` を確かめ、NG なら取り出さない。届かなかった生成は `pending` へ戻して自動で再試行し、5 回届かなければ `failed` | `api/app/worker.py` |
+| 人に知らせる | 下の 4 つのアラートをメールで送る | `modules/manufacturing-monitoring` |
+
+アラートはワーカーのログの目印を数えている。**目印の文字列とフィルタは対になっている**
+（変えるときは両方）。
+
+| アラート | 鳴る条件 | 目印 |
+|---|---|---|
+| 製造データ生成 VM が応答しない | 15 分で 3 回 NG | `illustrator_vm_health status=ng` |
+| 製造データ生成ワーカーが動いていない | 死活確認のログが 30 分出ていない | `illustrator_vm_health status=` |
+| 製造データの生成が失敗した | `failed` に確定した | `manufacturing_data_failed` |
+| 製造データが生成待ちのまま止まっている | 最も古い生成待ちが 60 分動いていない（その起動で 1 件も処理していないとき） | `manufacturing_data_stalled` |
+
+### 鳴ったら
+
+1. **生成 API の生死を確かめる。** 上の「外部 IP を持たない VM に入る」のトンネルで
+   `curl -sS localhost:18000/health`
+2. 応答しなければ、**VM の監視タスクが数分で起動し直す。** 10 分待っても戻らなければ
+   VM を再起動する（自動ログオンで約 8 分後に生成 API が上がる。2026-10-02 に実測）
+
+   ```bash
+   gcloud compute instances reset illustrator-vm --zone=asia-northeast1-a --project=tosyo-api-504104
+   ```
+
+   リセットの前に、原因調査用にディスクのスナップショットを取っておくとよい
+   （`gcloud compute disks snapshot illustrator-vm --zone=asia-northeast1-a ...`）
+3. **VM に届かなかった生成は放っておいてよい。** VM が戻れば次のワーカーが拾う。
+   管理画面で「要対応」になったものだけ、エラー内容を見て再生成する
+4. 止まった原因は Cloud Logging で追える。Windows のイベントログ
+   （`logName:"windows_event_log"`）と、Ops Agent が送る `server.log`
+   （`illustrator-vm` の `setup_ops_agent_logging.ps1` を入れた後）、
+   プロセスごとのメモリ（`agent.googleapis.com/processes/rss_usage`）でいつ消えたかが分かる
 
 ## Terraform が管理しないもの
 

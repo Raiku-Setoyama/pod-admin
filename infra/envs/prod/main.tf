@@ -143,3 +143,16 @@ module "illustrator_vm" {
   # Illustrator のインストールと Adobe のサインイン状態が途中で写っていない。
   source_image = "projects/${local.project_id}/global/images/illustrator-vm-20260902"
 }
+
+# 製造データ生成の監視とアラート（2026-09-27〜10-02 の障害を受けて追加）。
+# VM の生成 API が止まったまま 5 日間誰も気づかなかった。**人に届く経路を作る。**
+# 本番だけが呼ぶ理由は module "network" と同じ（ADR-0036）。
+module "manufacturing_monitoring" {
+  source = "../../modules/manufacturing-monitoring"
+
+  project_id      = local.project_id
+  worker_job_name = module.stack.worker_job_name
+
+  # 当面は連絡先（contact_email）と同じ宛先に送る。増やすときはここに足す。
+  alert_emails = ["raiku.setoyama@ironiwa.co.jp"]
+}
