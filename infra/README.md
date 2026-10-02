@@ -478,6 +478,49 @@ VM を作るときは `modules/network` の `illustrator_target_tag` 出力か�
 「コード更新時の再起動手順」である。ここには写さない。**
 ここに書くのは **pod-admin 側で先にやること**と、**移送で変わった入口**だけである。
 
+#### RDP を使わずに更新する（VM Manager）
+
+**通常はこちらを使う。** パスワードも RDP も要らない（2026-10-02 に本番で実施）。
+VM Manager（OS Config）の OS ポリシーで更新分の git bundle を VM へ届け、VM の上で
+fast-forward してから `illustrator-vm` の `scripts/setup_windows/deploy_update.ps1` を動かす。
+`git pull` を使わないのは、VM の GitHub の資格情報が対話なしでは使えないためである。
+仕組みの詳細は `infra/scripts/illustrator-vm-update-policy.py` の docstring。
+
+```bash
+P=tosyo-api-504104
+# 1) VM の今の HEAD を調べる（直近の更新の記録。RDP での更新でも残る。無ければ RDP で git rev-parse HEAD）
+gcloud logging read 'logName:"windows_event_log" AND jsonPayload.SourceName="IllustratorDeploy" AND jsonPayload.EventID=2000' \
+  --project=$P --limit=1 --format='value(jsonPayload.Message)'   # "更新を開始する（HEAD <commit>）"
+# 2) OS ポリシーを作る（illustrator-vm の clone は git fetch しておく）。作成・削除のコマンドが表示される
+python3 infra/scripts/illustrator-vm-update-policy.py --repo ../illustrator-vm --base <1 の commit> --out /tmp/policy.yaml
+# 3) 生成を止めてから、表示された create を実行する
+#    （deploy_update.ps1 自身も生成中のジョブが終わるのを待つが、新しい投入を止めておく）
+gcloud scheduler jobs pause pod-admin-worker --location=asia-northeast1 --project=$P
+```
+
+エージェントは 10 分ほどでポリシーを拾う。Cloud Logging で進み具合を見る。
+
+```bash
+gcloud logging read 'logName:"windows_event_log" AND (jsonPayload.SourceName="PodAdminDeploy" OR jsonPayload.SourceName="IllustratorDeploy")' \
+  --project=$P --freshness=30m --format='value(timestamp,jsonPayload.EventID,jsonPayload.Message)'
+# 2000 開始（HEAD は更新後）→ 2001 各段階 → 2010 完了。失敗は 902（fetch）/ 903（merge）/ 2011
+```
+
+**終わったら必ず片付ける。** OS ポリシーは残すと定期的に再評価される。
+
+```bash
+# 2) で表示された delete を実行してから、一時ファイルと一時タスクを消す
+python3 infra/scripts/illustrator-vm-update-policy.py --cleanup --out /tmp/cleanup.yaml
+#   表示された create を実行 → 10 分ほどで消える（OSConfigAgent のログで COMPLIANT）→ 表示された delete を実行
+gcloud scheduler jobs resume pod-admin-worker --location=asia-northeast1 --project=$P
+```
+
+**OS ポリシーの上限**に注意する。スクリプト・ファイルの中身は 1 つ 1024 文字まで、
+1 つのポリシーのリソースは 10 個まで。生成スクリプトはこれに合わせて分割する。
+更新分が大きいと（テンプレートの .ai を差し替えた等）分割の数が増える。
+
+以下は RDP で入って手で更新する場合の手順である。
+
 #### なぜワーカーを止めるのか
 
 **止めなくても行は失敗しなくなった**（2026-10 の障害対応）。ワーカーは取り出しの前に

@@ -46,7 +46,7 @@ from sqlalchemy import text
 import app.models  # noqa: F401  # 全モデルをマッパー登録に載せる（docstring 参照）
 from app.config import settings
 from app.database import get_engine
-from app.logging_config import configure_logging
+from app.logging_config import TEXT_FORMAT, quiet_noisy_dependencies
 from app.services.illustrator_vm_client import IllustratorVmClient
 from app.services.manufacturing_data_service import (
     GenerationOutcome,
@@ -211,7 +211,9 @@ async def run_once() -> int:
 
 def main() -> None:
     """ジョブのエントリポイント（`python -m app.worker`）."""
-    configure_logging()
+    # 素のテキストのまま出す（JSON にしない）。ログベース指標が textPayload で数えている。
+    logging.basicConfig(level=logging.INFO, format=TEXT_FORMAT)
+    quiet_noisy_dependencies()
     warning = settings.lease_margin_warning()
     if warning:
         logger.warning("%s", warning)

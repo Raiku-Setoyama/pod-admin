@@ -45,6 +45,10 @@ module "services" {
     "compute.googleapis.com",
     # 外部 IP を外すと RDP の入口が無くなる。IAP TCP forwarding で代替する。
     "iap.googleapis.com",
+    # VM Manager。RDP を使わずに VM の中のアプリを更新するために使う
+    # （infra/README.md「VM の中のアプリを更新する」）。有効でないと VM の
+    # OS Config エージェントが 5 分ごとに PermissionDenied を出し続ける。
+    "osconfig.googleapis.com",
   ]
 }
 

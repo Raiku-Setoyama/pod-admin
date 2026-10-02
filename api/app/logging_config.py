@@ -1,134 +1,69 @@
-"""アプリケーションログの出力設定.
+"""アプリのログを Cloud Logging で読める形で出す.
 
-**uvicorn はルートロガーを設定しない。** 自前の `uvicorn.*` ロガーだけを構成し、
-`disable_existing_loggers: False` で他をそのまま残す。結果として、アプリが出す
-``logger.info(...)`` は**ハンドラのないルート**に伝播し、Python の最後の砦
-（`logging.lastResort`、WARNING 以上・書式なし）でしか拾われない。
+**設定しないと INFO が消える。** uvicorn が設定するのは自分のロガー（uvicorn.*）だけで、
+`app.*` のロガーはハンドラの無いルートへ流れる。そのとき Python は最後の手段として
+WARNING 以上だけを書式なしで stderr に出すので、INFO（メール送信の成否など）は
+どこにも残らなかった（2026-10-02 に判明）。
 
-つまり、この設定を入れるまで本番では次の状態だった。
-
-- ``logger.info`` は**どこにも出ない**（生成の成功・再試行の予定・復旧の件数が消える）
-- ``logger.warning`` / ``logger.exception`` は出るが、**時刻もロガー名も重大度も付かない**
-  素の stderr なので、Cloud Logging では一律 ERROR として並ぶ
-
-障害のあとで何が起きたかを読むための材料が無いまま本番に出すことになるので、
-**入口で 1 度だけ設定する。**
-
-**設定は Settings ではなく環境変数から直接読む。** ログが最も要るのは Settings の
-読み込みそのものが失敗したとき（必須の環境変数が無いなど）であり、そこに依存させると
-その失敗だけが記録されないまま落ちる。
-
-Cloud Run **サービス**では構造化ログ（1 行 1 JSON）にする。`severity` と `message` は
-Cloud Logging が解釈する予約キーであり、これがあるとログエクスプローラで
-重大度の絞り込みとメッセージ検索がそのまま効く。
-
-**ワーカー（Cloud Run Job）は素のテキストのままにする。** 切り替えの判定に使っている
-``K_SERVICE`` はサービスにしか入らない環境変数なので、Job では自動的にテキストになる。
-**これは偶然ではなく、そうでなければならない。** 製造データ生成のアラートは
-``infra/modules/manufacturing-monitoring`` のログベース指標で、ワーカーのログを
-``textPayload`` で絞っている。JSON にすると ``jsonPayload`` 側に移り、**指標が 1 件も
-当たらなくなる**（apply も CI も通り、アラートが二度と鳴らないという形でしか表に出ない）。
-書式を変えるときは、あちらのフィルタも同時に変える。
+Cloud Run では 1 行 1 個の JSON を stdout に書くと、Cloud Logging が ``severity`` を
+重大度として、``message`` を本文として読む。素のテキストを stderr に書くと、
+INFO まで ERROR 扱いになる。手元（Cloud Run 以外）では人が読みやすい素のテキストにする。
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import logging.config
 import os
-from typing import Any
+import sys
 
-# 構造化ログに写さない LogRecord の属性（標準属性と、自前で別名にしたもの）。
-#
-# `color_message` は uvicorn が自分のログに毎回添える ANSI エスケープ入りの複製である。
-# **message と同じ内容なので、載せても読めないものが 1 行ごとに増えるだけ**であり、
-# Cloud Logging の取り込みは従量なので静かに費用になる。
-_RESERVED = frozenset(
-    logging.LogRecord("", 0, "", 0, "", None, None).__dict__
-) | {"message", "asctime", "taskName", "color_message"}
+# 素のテキストの書式。ワーカー（app/worker.py）も同じものを使う。
+TEXT_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 
 
 class CloudLoggingFormatter(logging.Formatter):
-    """1 行 1 JSON で書き出す（Cloud Logging が構造化ログとして読む）."""
+    """1 行 1 個の JSON（Cloud Logging の構造化ログ）にする."""
 
     def format(self, record: logging.LogRecord) -> str:
-        payload: dict[str, Any] = {
-            # **Python の水準名をそのまま渡せる。** DEBUG / INFO / WARNING / ERROR /
-            # CRITICAL は Cloud Logging の severity と綴りまで一致している。
-            # 自前の水準を足した場合は解釈されず DEFAULT 扱いになるだけで、害はない。
-            "severity": record.levelname,
-            "message": record.getMessage(),
-            "logger": record.name,
-        }
+        message = record.getMessage()
         if record.exc_info:
-            # **例外は message に畳み込む。** 別キーに置くと、ログエクスプローラの
-            # 既定表示（message だけ）でスタックトレースが見えなくなる。
-            payload["message"] += "\n" + self.formatException(record.exc_info)
-        # logger.info("...", extra={"md_id": ...}) で足した値をそのまま載せる。
-        payload.update(
-            {k: v for k, v in record.__dict__.items() if k not in _RESERVED}
+            # 本文にスタックトレースを含めると Error Reporting が拾う
+            message = f"{message}\n{self.formatException(record.exc_info)}"
+        return json.dumps(
+            {"severity": record.levelname, "message": message, "logger": record.name},
+            ensure_ascii=False,
         )
-        return json.dumps(payload, ensure_ascii=False, default=str)
 
 
-def _default_format() -> str:
-    """実行環境から出力形式を決める（Cloud Run なら JSON、手元ならテキスト）.
+# ルートに水準を与えると、これまで捨てられていた依存ライブラリの INFO が一斉に出る。
+#
+# **とくに httpx は 1 リクエスト 1 行である。** 製造データ 1 件の生成は VM の完了待ちを
+# 5 秒間隔で最大 360 秒ポーリングするので、それだけで 70 行を超える。読む人は居ないうえに、
+# Cloud Logging の取り込みは従量なので静かに費用になる。
+_NOISY = ("httpx", "httpcore", "urllib3", "google", "asyncio")
 
-    ``K_SERVICE`` は Cloud Run が必ず入れる環境変数である。**設定し忘れが起きない**
-    ように、人が渡す値ではなく実行環境そのものから決める。
+
+def quiet_noisy_dependencies() -> None:
+    """依存ライブラリのロガーを WARNING に落とす.
+
+    **ルートにハンドラを付けるすべての経路から呼ぶ。** ワーカー（app/worker.py）は
+    basicConfig を使っていて configure_logging を通らないので、あちらでも呼んでいる。
     """
-    return "json" if os.getenv("K_SERVICE") else "text"
+    for name in _NOISY:
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
-def configure_logging(level: str | None = None, log_format: str | None = None) -> None:
-    """ルートロガーを構成する（プロセスの入口で 1 度だけ呼ぶ）.
-
-    **冪等である。** dictConfig はルートのハンドラを置き換えるので、2 度呼んでも
-    ハンドラは重複しない。
-    """
-    level = (level or os.getenv("LOG_LEVEL") or "INFO").upper()
-    log_format = (log_format or os.getenv("LOG_FORMAT") or _default_format()).lower()
-
-    formatter: dict[str, Any] = (
-        {"()": CloudLoggingFormatter}
-        if log_format == "json"
-        else {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}
+def configure_logging(level: int = logging.INFO) -> None:
+    """ルートロガーにハンドラを付ける（何度呼んでも 1 つだけ）."""
+    # K_SERVICE は Cloud Run の**サービス**（API）にだけ入る。ワーカー（Job）には使わない:
+    # ワーカーのログは素のテキストのまま、ログベース指標が textPayload で数えている
+    # （infra/modules/manufacturing-monitoring）。JSON にすると指標が数えられなくなる。
+    on_cloud_run = bool(os.getenv("K_SERVICE"))
+    handler = logging.StreamHandler(sys.stdout if on_cloud_run else sys.stderr)
+    handler.setFormatter(
+        CloudLoggingFormatter() if on_cloud_run else logging.Formatter(TEXT_FORMAT)
     )
-
-    logging.config.dictConfig(
-        {
-            "version": 1,
-            # **既存のロガーを殺さない。** uvicorn と SQLAlchemy は import の時点で
-            # 自分のロガーを作っており、無効化すると起動ログごと消える。
-            "disable_existing_loggers": False,
-            "formatters": {"app": formatter},
-            "handlers": {
-                "stdout": {
-                    "class": "logging.StreamHandler",
-                    "formatter": "app",
-                    "stream": "ext://sys.stdout",
-                }
-            },
-            "root": {"handlers": ["stdout"], "level": level},
-            "loggers": {
-                # uvicorn は既定で自前のハンドラを持つ。**外して root に流す**ことで、
-                # アプリのログと同じ書式・同じ重大度の付き方に揃える。
-                # 揃えないと、同じ 1 リクエストの記録が 2 つの形式に分かれる。
-                "uvicorn": {"handlers": [], "propagate": True},
-                "uvicorn.error": {"handlers": [], "propagate": True},
-                # **アクセスログは出さない。** Cloud Run が同じ内容（経路・状態・所要）を
-                # 自前のリクエストログとして必ず出すので、通すと全リクエストが二重に課金される。
-                "uvicorn.access": {"handlers": [], "propagate": True, "level": "WARNING"},
-                # 依存ライブラリの INFO を止める。**ルートに水準を与えた副作用として、
-                # これまで捨てられていた他人のログが一斉に出るようになる。**
-                # とくに httpx は 1 リクエスト 1 行で、製造データ 1 件の生成が
-                # VM のポーリングだけで 70 行を超える（5 秒間隔・最大 360 秒）。
-                # 読む人が居ないうえに、Cloud Logging の取り込みは従量である。
-                **{
-                    name: {"level": "WARNING"}
-                    for name in ("httpx", "httpcore", "urllib3", "google", "asyncio")
-                },
-            },
-        }
-    )
+    root = logging.getLogger()
+    root.handlers = [handler]
+    root.setLevel(level)
+    quiet_noisy_dependencies()

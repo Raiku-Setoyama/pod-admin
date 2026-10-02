@@ -115,7 +115,7 @@ resource "google_compute_instance" "this" {
   }
 
   metadata = {
-    # 移送元と同じ。Ops Agent のポリシーがこれを見る。
+    # 移送元と同じ。Ops Agent のポリシーと、VM Manager（OS ポリシーでの更新）がこれを見る。
     enable-osconfig = "TRUE"
   }
 

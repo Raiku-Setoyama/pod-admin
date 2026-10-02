@@ -1,178 +1,98 @@
-"""Unit tests for the application logging configuration.
-
-**この設定が無いと本番でアプリのログが出ない。** uvicorn はルートロガーを構成しないため、
-``logger.info`` はハンドラのないルートへ伝播して捨てられる。ここで検証しているのは
-「出ること」そのものであり、書式の好みではない。
-"""
+"""Unit tests for app.logging_config (Cloud Logging 向けのログ出力)."""
 
 import json
 import logging
-from collections.abc import Callable, Iterator
-from typing import Any
+import sys
+from collections.abc import Iterator
 
 import pytest
 
-from app.logging_config import configure_logging
+from app.logging_config import (
+    CloudLoggingFormatter,
+    configure_logging,
+    quiet_noisy_dependencies,
+)
 
 
 @pytest.fixture(autouse=True)
 def _restore_root_logger() -> Iterator[None]:
-    """テストがルートロガーを書き換えるので、元の構成へ戻す."""
     root = logging.getLogger()
     handlers, level = root.handlers[:], root.level
     yield
-    root.handlers[:] = handlers
-    root.setLevel(level)
+    root.handlers, root.level = handlers, level
 
 
-class TestLogsActuallyReachTheOutput:
-    def test_info_from_an_app_logger_is_emitted(
-        self, capsys: pytest.CaptureFixture[str]
+def _record(level: int, msg: str, exc_info: object = None) -> logging.LogRecord:
+    return logging.LogRecord("app.x", level, __file__, 1, msg, None, exc_info)  # type: ignore[arg-type]
+
+
+class TestCloudLoggingFormatter:
+    def test_info_is_json_with_severity(self) -> None:
+        line = CloudLoggingFormatter().format(_record(logging.INFO, "アラートを送った"))
+        assert json.loads(line) == {
+            "severity": "INFO",
+            "message": "アラートを送った",
+            "logger": "app.x",
+        }
+
+    def test_exception_includes_traceback_in_message(self) -> None:
+        try:
+            raise ValueError("boom")
+        except ValueError:
+            record = _record(logging.ERROR, "failed", sys.exc_info())
+        payload = json.loads(CloudLoggingFormatter().format(record))
+        assert payload["severity"] == "ERROR"
+        assert payload["message"].startswith("failed\nTraceback")
+        assert "ValueError: boom" in payload["message"]
+
+
+class TestConfigureLogging:
+    def test_json_to_stdout_on_cloud_run(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("K_SERVICE", "pod-admin-api")
+        configure_logging()
+
+        (handler,) = logging.getLogger().handlers
+        assert isinstance(handler.formatter, CloudLoggingFormatter)
+        assert getattr(handler, "stream", None) is sys.stdout
+        assert logging.getLogger().level == logging.INFO
+
+    def test_plain_text_locally(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("K_SERVICE", raising=False)
+        configure_logging()
+
+        (handler,) = logging.getLogger().handlers
+        assert not isinstance(handler.formatter, CloudLoggingFormatter)
+
+    def test_info_from_app_loggers_is_emitted(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """**これが本来の目的である。** 設定前は INFO がどこにも出ない."""
-        configure_logging(level="INFO", log_format="text")
-        logging.getLogger("app.services.some_service").info("generated md-1")
+        """設定前に消えていた app.* の INFO が出ること（今回の不具合そのもの）."""
+        monkeypatch.setenv("K_SERVICE", "pod-admin-api")
+        configure_logging()
 
-        assert "generated md-1" in capsys.readouterr().out
+        logging.getLogger("app.services.monitoring_alert_notification").info("sent")
 
-    def test_the_level_can_be_raised_to_drop_noise(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        configure_logging(level="WARNING", log_format="text")
-        log = logging.getLogger("app.noisy")
-        log.info("chatter")
-        log.warning("something is wrong")
-
-        out = capsys.readouterr().out
-        assert "chatter" not in out
-        assert "something is wrong" in out
+        assert json.loads(capsys.readouterr().out.strip())["message"] == "sent"
 
 
-class TestStructuredOutput:
-    """Cloud Logging が読む形（severity / message）で出ているか.
+class TestNoisyDependencies:
+    """**ルートに水準を与えた副作用で、依存ライブラリの INFO が一斉に出る。**
 
-    ログベースのアラート（infra/modules/monitoring）がこの形に依存している。
+    httpx は 1 リクエスト 1 行で、製造データ 1 件の生成が VM の完了待ちだけで 70 行を
+    超える（5 秒間隔・最大 360 秒）。読む人は居ないうえに取り込みは従量である。
     """
 
-    def _emit(
-        self, capsys: pytest.CaptureFixture[str], emit: Callable[[], None]
-    ) -> dict[str, Any]:
-        configure_logging(level="INFO", log_format="json")
-        emit()
-        entry: dict[str, Any] = json.loads(
-            capsys.readouterr().out.strip().splitlines()[-1]
-        )
-        return entry
+    def test_httpx_info_is_silenced(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("K_SERVICE", raising=False)
+        configure_logging()
 
-    def test_severity_and_message_are_top_level_keys(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        entry = self._emit(
-            capsys,
-            lambda: logging.getLogger("app.worker").warning("the VM is unreachable"),
-        )
+        assert logging.getLogger("httpx").getEffectiveLevel() == logging.WARNING
+        # 自分たちのログは落とさない
+        assert logging.getLogger("app.worker").getEffectiveLevel() == logging.INFO
 
-        assert entry["severity"] == "WARNING"
-        assert entry["message"] == "the VM is unreachable"
-        assert entry["logger"] == "app.worker"
+    def test_callable_without_configure_logging(self) -> None:
+        """ワーカーは basicConfig を使い configure_logging を通らないので、単体で呼べること."""
+        logging.getLogger("httpx").setLevel(logging.INFO)
+        quiet_noisy_dependencies()
 
-    def test_format_arguments_are_interpolated(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """**素の %s のまま出さない。** 出すと検索もアラートも当たらない."""
-        entry = self._emit(
-            capsys,
-            lambda: logging.getLogger("app").info("generated %s (%s)", "md-1", "a.ai"),
-        )
-
-        assert entry["message"] == "generated md-1 (a.ai)"
-
-    def test_a_traceback_is_kept_with_the_message(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        def boom() -> None:
-            try:
-                raise ValueError("boom")
-            except ValueError:
-                logging.getLogger("app").exception("generation crashed")
-
-        entry = self._emit(capsys, boom)
-
-        assert entry["severity"] == "ERROR"
-        # 既定表示は message しか出さないので、追跡情報は message 側に畳む。
-        assert "generation crashed" in entry["message"]
-        assert "ValueError: boom" in entry["message"]
-
-    def test_extra_fields_are_carried_through(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        entry = self._emit(
-            capsys,
-            lambda: logging.getLogger("app").info(
-                "claimed", extra={"manufacturing_data_id": "md-1"}
-            ),
-        )
-
-        assert entry["manufacturing_data_id"] == "md-1"
-
-
-class TestItIsSafeToCallTwice:
-    def test_handlers_do_not_pile_up(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """**入口が 2 つある**（API と worker）。重複して呼んでも二重に出さない."""
-        configure_logging(level="INFO", log_format="text")
-        configure_logging(level="INFO", log_format="text")
-        logging.getLogger("app").info("once")
-
-        assert capsys.readouterr().out.count("once") == 1
-
-
-class TestThirdPartyNoiseIsCapped:
-    """ルートに水準を与えた副作用で、依存ライブラリのログが一斉に出ないこと.
-
-    **これは費用と可読性の両方の問題である。** httpx は 1 リクエスト 1 行を INFO で
-    出すので、製造データ 1 件の生成（VM を 5 秒間隔で最大 360 秒ポーリング）だけで
-    70 行を超える。Cloud Logging の取り込みは従量制である。
-    """
-
-    @pytest.mark.parametrize("library", ["httpx", "httpcore", "urllib3", "google"])
-    def test_library_info_is_dropped(
-        self, capsys: pytest.CaptureFixture[str], library: str
-    ) -> None:
-        configure_logging(level="INFO", log_format="text")
-        logging.getLogger(library).info("HTTP Request: GET http://vm:8000/api/status/1")
-
-        assert capsys.readouterr().out == ""
-
-    def test_library_warnings_still_get_through(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """**黙らせるのは INFO までである。** 本当の異常は読めなければ意味がない."""
-        configure_logging(level="INFO", log_format="text")
-        logging.getLogger("httpx").warning("connection pool is exhausted")
-
-        assert "connection pool is exhausted" in capsys.readouterr().out
-
-    def test_app_info_is_unaffected(self, capsys: pytest.CaptureFixture[str]) -> None:
-        configure_logging(level="INFO", log_format="text")
-        logging.getLogger("app.services.manufacturing_data_service").info("generated")
-
-        assert "generated" in capsys.readouterr().out
-
-
-class TestUvicornNoiseIsNotCarried:
-    def test_the_ansi_duplicate_of_the_message_is_dropped(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """uvicorn が添える `color_message` を載せない.
-
-        message と同じ内容の ANSI エスケープ入りの複製で、**読めないものが
-        1 行ごとに増えるだけ**である。取り込みは従量なので静かに費用になる。
-        """
-        configure_logging(level="INFO", log_format="json")
-        logging.getLogger("uvicorn.error").warning(
-            "Uvicorn running on %s", "http://x", extra={"color_message": "\x1b[1m%s\x1b[0m"}
-        )
-
-        entry = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
-        assert "color_message" not in entry
-        assert entry["message"] == "Uvicorn running on http://x"
+        assert logging.getLogger("httpx").getEffectiveLevel() == logging.WARNING
