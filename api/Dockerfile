@@ -70,6 +70,12 @@ COPY . .
 # Install project
 RUN uv sync --frozen --no-dev
 
+# 起動時に `uv run` が環境を同期し直さないようにする（REQ-0057）。同期し直すと、既定で開発用
+# （mypy / ruff など）まで PyPI から入れ直し、全ファイルをコンパイルし直す。Cloud Run では
+# 起動のたびに約 15 秒かかり、PyPI に届かなければ起動できない。Terraform 側の Job の
+# `uv run ...`（migrate / worker）にも同じく効く。
+ENV UV_NO_SYNC=1
+
 # Run with uvicorn (production mode)
 # マイグレーションはここで実行しない。複数インスタンスが同時に起動すると alembic が競合し、
 # 起動そのものを壊す。デプロイ前の独立したステップ（Cloud Run Job）で
