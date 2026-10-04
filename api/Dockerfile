@@ -81,4 +81,6 @@ ENV UV_NO_SYNC=1
 # 起動そのものを壊す。デプロイ前の独立したステップ（Cloud Run Job）で
 # `uv run alembic upgrade head` を実行する。
 # 製造データ生成ワーカーは同じイメージのまま `uv run python -m app.worker` で起動する。
-CMD ["sh", "-c", "uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# exec で sh を置き換え、Cloud Run の SIGTERM を uvicorn まで届ける（sh が PID 1 のままだと
+# 合図を受け流し、猶予の後に強制終了される）。
+CMD ["sh", "-c", "exec uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
