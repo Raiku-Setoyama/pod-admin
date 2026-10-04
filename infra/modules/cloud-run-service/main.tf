@@ -89,11 +89,13 @@ resource "google_cloud_run_v2_service" "this" {
 
       dynamic "startup_probe" {
         for_each = var.startup_probe_path == null ? [] : [1]
+        # 1 秒ごとに確かめ、準備ができた直後にトラフィックを流す（5 秒ごとだと最大 5 秒待たせる。
+        # REQ-0057）。待てる長さは 60 秒のまま。timeout は period 以下でなければならない。
         content {
-          initial_delay_seconds = 5
-          period_seconds        = 5
-          timeout_seconds       = 3
-          failure_threshold     = 12
+          initial_delay_seconds = 0
+          period_seconds        = 1
+          timeout_seconds       = 1
+          failure_threshold     = 60
           http_get {
             path = var.startup_probe_path
             port = var.container_port
