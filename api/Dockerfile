@@ -70,10 +70,12 @@ COPY . .
 # Install project
 RUN uv sync --frozen --no-dev
 
-# 起動時に `uv run` が環境を同期し直さないようにする（REQ-0057）。同期し直すと、既定で開発用
-# （mypy / ruff など）まで PyPI から入れ直し、全ファイルをコンパイルし直す。Cloud Run では
-# 起動のたびに約 15 秒かかり、PyPI に届かなければ起動できない。Terraform 側の Job の
-# `uv run ...`（migrate / worker）にも同じく効く。
+# アプリ自身のコードもビルド時にコンパイルしておく（UV_COMPILE_BYTECODE は依存だけが対象で、
+# PYTHONDONTWRITEBYTECODE=1 のため実行時にも保存されず、起動のたびにコンパイルし直す）
+RUN python -m compileall -q app
+
+# 起動時に `uv run` が環境を同期し直さない（開発用まで PyPI から入れ直してしまう。REQ-0057）。
+# Terraform 側の migrate / worker Job の `uv run ...` にも効く。
 ENV UV_NO_SYNC=1
 
 # Run with uvicorn (production mode)
