@@ -1,7 +1,7 @@
 """Unit tests for ManufacturingDataService and the manufacturing readiness gate."""
 
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -15,7 +15,11 @@ from app.models.order import OrderItem, OrderItemStatus
 from app.services import manufacturing_data_service as mds
 from app.services.illustrator_vm_client import IllustratorVmError, IllustratorVmUnavailableError
 from app.services.manufacturing_data_service import ManufacturingDataService
-from app.utils.exceptions import ConflictError, NotFoundError
+from app.utils.exceptions import (
+    ConflictError,
+    NotFoundError,
+    TransientDependencyError,
+)
 
 
 def _v2_item(
@@ -310,6 +314,96 @@ class TestGenerateDriver:
         assert "接続できませんでした" in md.error_message
 
     @pytest.mark.asyncio
+    async def test_deferred_row_is_given_a_retry_time(self) -> None:
+        """戻す行には次に試す時刻を入れる（先頭詰まりを防ぐ）.
+
+        取り出しは created_at の昇順なので、時刻を入れずに戻すと同じ行が毎回いちばん先に
+        選ばれ、その 1 行が上限を使い切るまで後ろの行が 1 件も処理されない。
+        """
+        md = self._claimed_md()
+        before = datetime.now(UTC)
+        _, outcome = await self._generate_with_submit_error(
+            md, IllustratorVmUnavailableError("down")
+        )
+
+        assert outcome is mds.GenerationOutcome.DEFERRED
+        assert md.next_attempt_at is not None
+        # 1 回目（attempts=1）は base そのぶんだけ先。
+        assert md.next_attempt_at >= before + timedelta(seconds=settings.MFG_RETRY_BASE_SECONDS)
+
+    @pytest.mark.asyncio
+    async def test_retry_delay_doubles_and_stops_at_the_cap(self) -> None:
+        delay = ManufacturingDataService._retry_delay
+        assert delay(1) == settings.MFG_RETRY_BASE_SECONDS
+        assert delay(2) == settings.MFG_RETRY_BASE_SECONDS * 2
+        assert delay(3) == settings.MFG_RETRY_BASE_SECONDS * 4
+        # 試行回数がいくら増えても上限を超えない（SQL 側と違い overflow はしないが、
+        # 落ちている相手を何日も待たせない意味で上限を効かせる）。
+        assert delay(99) == settings.MFG_RETRY_MAX_SECONDS
+
+    @pytest.mark.asyncio
+    async def test_unavailable_storage_defers_but_keeps_the_run_going(self) -> None:
+        """保存先が一時的に落ちた行も生成待ちへ戻す。**ただし周回は続ける.**
+
+        VM と違い、落ちているのはその行が参照している先だけかもしれない。VM と同じ扱いに
+        すると 1 行の都合で起動まるごとを捨てることになる。
+        """
+        md = self._claimed_md()
+        _, outcome = await self._generate_with_submit_error(
+            md, TransientDependencyError("GCS is unavailable (upload): 503")
+        )
+
+        assert outcome is mds.GenerationOutcome.RESCHEDULED
+        assert md.status == MfgDataStatus.PENDING.value
+        assert md.next_attempt_at is not None
+        assert "依存先に接続できず再試行待ち" in md.error_message
+
+    @pytest.mark.asyncio
+    async def test_unreachable_asset_host_defers(self) -> None:
+        """元データの配信元に届かない場合も恒久的な失敗にしない.
+
+        この層は元データの取得だけ自分で httpx を呼ぶので、翻訳する境界が無い
+        （is_transient_failure がここで境界を兼ねる）。
+        """
+        md = self._claimed_md()
+        _, outcome = await self._generate_with_submit_error(
+            md, httpx.ConnectError("asset host is down")
+        )
+
+        assert outcome is mds.GenerationOutcome.RESCHEDULED
+        assert md.status == MfgDataStatus.PENDING.value
+
+    @pytest.mark.parametrize(
+        ("error", "transient"),
+        [
+            pytest.param(TransientDependencyError("GCS 503"), True, id="保存先が落ちている"),
+            pytest.param(httpx.ConnectError("refused"), True, id="配信元に繋がらない"),
+            pytest.param(httpx.ReadTimeout("slow"), True, id="配信元が応答しない"),
+            pytest.param(
+                httpx.HTTPStatusError(
+                    "boom", request=httpx.Request("GET", "https://x"),
+                    response=httpx.Response(503),
+                ),
+                True,
+                id="配信元が5xx",
+            ),
+            pytest.param(
+                httpx.HTTPStatusError(
+                    "nope", request=httpx.Request("GET", "https://x"),
+                    response=httpx.Response(404),
+                ),
+                False,
+                id="URLが誤っている（4xx）",
+            ),
+            pytest.param(ValueError("bad png"), False, id="入力が壊れている"),
+        ],
+    )
+    def test_is_transient_failure_classification(
+        self, error: Exception, transient: bool
+    ) -> None:
+        assert mds.is_transient_failure(error) is transient
+
+    @pytest.mark.asyncio
     async def test_lost_lease_while_deferring_is_skipped(self) -> None:
         md = self._claimed_md()
         _, outcome = await self._generate_with_submit_error(
@@ -415,6 +509,34 @@ class TestGenerateDriver:
 
 
 class TestRetry:
+    @pytest.mark.asyncio
+    async def test_retry_clears_the_pending_retry_schedule(self) -> None:
+        """**人が押した再生成は待たせない。**
+
+        生成待ちへ戻した行は next_attempt_at を持ち、取り出しはその時刻まで飛ばす。
+        人の操作でここを消し忘れると、画面上は「生成待ち」なのに最長 1 時間動かない
+        （押しても何も起きないように見える）。
+        """
+        md = ManufacturingData(product_code="p", product_type="sticker")
+        md.id = "md-1"
+        md.status = MfgDataStatus.FAILED.value
+        md.error_message = "依存先に接続できず再試行待ち: boom"
+        md.attempts = 3
+        md.next_attempt_at = datetime.now(UTC) + timedelta(hours=1)
+        md.lease_expires_at = None
+        md.created_at = datetime.now(UTC)
+        md.updated_at = datetime.now(UTC)
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+
+        svc = _service(md_repo)
+        await svc.retry("md-1")
+
+        assert md.status == MfgDataStatus.PENDING.value
+        assert md.next_attempt_at is None  # 次の取り出しで拾われる
+        assert md.attempts == 0
+        assert md.error_message is None
+
     @pytest.mark.asyncio
     async def test_retry_resets_to_pending_without_generating_inline(self) -> None:
         from datetime import UTC, datetime

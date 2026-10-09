@@ -3,12 +3,54 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import CursorResult, and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
+
+# 行を「手つかずの生成待ち」へ戻すときに書く値。
+#
+# **4 か所が同じ状態を作っていた**（手動リトライ・再作成/元画像差し替え・失敗行の再受注・
+# 一括リトライ）。再試行まわりの列が増えるたびに 4 か所を直すことになり、
+# 1 か所忘れると「戻したのに前回の試行回数を引きずる」という気づきにくい形で残る。
+# **正本をここに 1 つ置き、ORM 経由の 3 か所は reset_to_pending() を通す。**
+_PENDING_RESET_VALUES: dict[str, Any] = {
+    "status": MfgDataStatus.PENDING.value,
+    "error_message": None,
+    # 人の判断による仕切り直しなので、到達不能の数え直しも待ち時間も手放す。
+    "attempts": 0,
+    "next_attempt_at": None,
+    "lease_expires_at": None,
+}
+
+
+def retry_delay_interval(attempts: Any) -> Any:
+    """試行回数から再試行までの待ち時間を作る（SQL 式）.
+
+    **サービス側の ``ManufacturingDataService._retry_delay`` と同じ形である。**
+    あちらは Python で 1 件ぶんを計算し、こちらは SQL で一括に適用する。
+    片方だけ変えると、生成の失敗で戻した行とクラッシュで戻した行で間隔が食い違う。
+    """
+    # **指数を先に頭打ちにする。** `least()` は両辺を評価するので、上限だけでは
+    # `pow()` の溢れを防げない。attempts はクラッシュで戻した行では上限を持たず
+    # 伸び続けるため、2^1024 を超えた時点で PostgreSQL が
+    # `value out of range: overflow` を投げ、**この 1 行が全件の巻き戻しごと
+    # ワーカーの起動を落とす。** 30 は上限秒数を遥かに超えるので挙動は変わらない。
+    exponent = func.least(func.greatest(attempts - 1, 0), 30)
+    seconds = func.least(
+        settings.MFG_RETRY_BASE_SECONDS * func.pow(2, exponent),
+        settings.MFG_RETRY_MAX_SECONDS,
+    )
+    return func.make_interval(0, 0, 0, 0, 0, 0, seconds)
+
+
+def reset_to_pending(md: ManufacturingData) -> None:
+    """読み込み済みの行を、手つかずの生成待ちへ戻す（永続化は呼び出し側）."""
+    for field, value in _PENDING_RESET_VALUES.items():
+        setattr(md, field, value)
 
 
 class ManufacturingDataRepository:
@@ -45,7 +87,16 @@ class ManufacturingDataRepository:
         """
         oldest_pending = (
             select(ManufacturingData.id)
-            .where(ManufacturingData.status == MfgDataStatus.PENDING.value)
+            .where(
+                ManufacturingData.status == MfgDataStatus.PENDING.value,
+                # 再試行の予定時刻が来ていない行は飛ばす。NULL は「今すぐ対象」。
+                # **これが待ち行列の先頭詰まりを防いでいる。** 到達不能で戻された行は
+                # 予定時刻ぶん後ろに下がるので、後続の行が先に処理される。
+                or_(
+                    ManufacturingData.next_attempt_at.is_(None),
+                    ManufacturingData.next_attempt_at <= func.now(),
+                ),
+            )
             .order_by(ManufacturingData.created_at)
             .limit(1)
             .with_for_update(skip_locked=True)
@@ -58,6 +109,9 @@ class ManufacturingDataRepository:
                 status=MfgDataStatus.GENERATING.value,
                 attempts=ManufacturingData.attempts + 1,
                 error_message=None,
+                # 確保した時点で予定は消化済み。**残すとリース失効で戻ってきた行が
+                # 過去の予定を引きずり**、再開の判定が読めなくなる。
+                next_attempt_at=None,
                 lease_expires_at=func.now() + timedelta(seconds=lease_seconds),
             )
             .returning(ManufacturingData.id, ManufacturingData.lease_expires_at)
@@ -99,21 +153,113 @@ class ManufacturingDataRepository:
 
         pending の行は対象にしない。戻す必要が無いうえ、同じ値で UPDATE すると
         バックログ全件の updated_at が動き、戻した件数も読めなくなる。
+
+        **戻すときは再試行の間隔を空ける。** 間隔を空けないと、ワーカーを落とす行
+        （巨大な画像で OOM になる等）が即座に取り直され、しかも取り出しは古い順なので
+        待ち行列の先頭に居座り続ける。**後続のすべてがその 1 行で止まる。**
+        生成の途中で落ちた行は ``_handle_failure`` を通らないので、
+        ここが唯一の歯止めである。
+
+        間隔は ``attempts`` から導く（確保のたびに増えるので、何度も落ちている行ほど
+        後ろへ下がる）。1 度きりのクラッシュなら 1 回目の間隔で戻ってくる。
+
+        **上限に達した行は failed で終わらせる。** ここで無条件に pending へ戻すと、
+        ワーカーを確実に落とす行（巨大な画像で OOM になる等）が永久に回り続ける。
+        その行は失敗ハンドラを一度も通らないので `failed` にならず、**管理画面にも
+        通知にも出ないまま、それを参照する注文が発注準備中で止まり続ける。**
+        「無限には粘らない」という約束（`WORKER_MAX_GENERATION_ATTEMPTS`）は、
+        失敗ハンドラを通る経路だけのものであってはならない。
         """
+        expired = [
+            ManufacturingData.status == MfgDataStatus.GENERATING.value,
+            or_(
+                ManufacturingData.lease_expires_at.is_(None),
+                ManufacturingData.lease_expires_at < func.now(),
+            ),
+        ]
+        # 先に上限超えを終端させる。**順序が逆だと、いま failed にした行を
+        # 同じ起動の中で pending に戻してしまう。**
+        await self._db.execute(
+            update(ManufacturingData)
+            .where(
+                *expired,
+                ManufacturingData.attempts >= settings.WORKER_MAX_GENERATION_ATTEMPTS,
+            )
+            .values(
+                status=MfgDataStatus.FAILED.value,
+                lease_expires_at=None,
+                next_attempt_at=None,
+                error_message=(
+                    f"生成の途中で {settings.WORKER_MAX_GENERATION_ATTEMPTS} 回中断しました"
+                    "（上限）。この製造データを処理するとワーカーが落ちている可能性があります。"
+                ),
+            )
+            .execution_options(synchronize_session=False)
+        )
+
         result = await self._db.execute(
             update(ManufacturingData)
             .where(
-                ManufacturingData.status == MfgDataStatus.GENERATING.value,
-                or_(
-                    ManufacturingData.lease_expires_at.is_(None),
-                    ManufacturingData.lease_expires_at < func.now(),
+                *expired,
+                ManufacturingData.attempts < settings.WORKER_MAX_GENERATION_ATTEMPTS,
+            )
+            .values(
+                status=MfgDataStatus.PENDING.value,
+                lease_expires_at=None,
+                next_attempt_at=func.now() + retry_delay_interval(
+                    ManufacturingData.attempts
                 ),
             )
-            .values(status=MfgDataStatus.PENDING.value, lease_expires_at=None)
-            .returning(ManufacturingData.id)
             .execution_options(synchronize_session=False)
         )
-        return len(result.scalars().all())
+        # RETURNING で id を運ばない。**件数しか使っていない。**
+        # UPDATE の戻りは実体としては CursorResult だが、async の execute() は
+        # 総称の Result として型付けされているため、ここで絞る。
+        return cast(CursorResult[Any], result).rowcount
+
+    async def retry_failed(self, ids: list[str] | None = None) -> int:
+        """失敗した生成を待ち行列へ戻し、戻した件数を返す.
+
+        ``ids`` を渡せばその行だけ、渡さなければ ``failed`` の全行が対象になる。
+
+        **対象は failed だけである。** ready/generating/pending を巻き戻すと、その行を
+        共有する他の注文の発注可否まで劣化する（ManufacturingDataService.retry と同じ理由）。
+
+        書き戻す値は _PENDING_RESET_VALUES が正本である（ORM 経由の 3 か所と揃える）。
+        """
+        conditions = [ManufacturingData.status == MfgDataStatus.FAILED.value]
+        if ids is not None:
+            if not ids:
+                return 0
+            conditions.append(ManufacturingData.id.in_(ids))
+
+        result = await self._db.execute(
+            update(ManufacturingData)
+            .where(*conditions)
+            .values(**_PENDING_RESET_VALUES)
+            .execution_options(synchronize_session=False)
+        )
+        # RETURNING で id を運ばない。**件数しか使っていない。** VM 停止明けの
+        # 一括復旧はこの経路が本命で、そこが最も行数の多い呼び出しになる。
+        return cast(CursorResult[Any], result).rowcount
+
+    async def count_by_status(self) -> dict[str, int]:
+        """ステータスごとの件数を返す（管理画面の集計用）.
+
+        **絞り込みを掛けない全件集計である。** 一覧が failed だけを映していても
+        「いま全体で何件溜まっているか」を出すためで、それがこの画面の用途だからである。
+
+        この表は**受注ごとではなく商品ごと**に 1 行を持つキャッシュ
+        （受注元 × 商品コード × サイズ × バリアント）なので、行数は商品の種類数で頭打ちになり、
+        受注が増えても伸びない。**受注量に比例して重くなる類の集計ではない。**
+        伸び始めたら status に索引があるので、部分集計へ落とす余地も残っている。
+        """
+        result = await self._db.execute(
+            select(ManufacturingData.status, func.count(ManufacturingData.id)).group_by(
+                ManufacturingData.status
+            )
+        )
+        return dict(result.tuples().all())
 
     async def pending_summary(self) -> tuple[int, datetime | None]:
         """生成待ちの件数と、その中で最も長く動いていない行の ``updated_at`` を返す.

@@ -33,7 +33,7 @@ dependencies = [
     "sendgrid>=6.11.0",
     # Japanese holidays
     "jpholiday>=0.1.9",
-    # Cloud Storage (本番=Railway でのファイル永続化。未設定なら未使用)
+    # Cloud Storage (本番=GCS でのファイル永続化。GCS_BUCKET 未設定ならローカル保存)
     "google-cloud-storage>=2.18.0",
 ]
 

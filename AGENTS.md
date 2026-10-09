@@ -524,9 +524,10 @@ mypy は `strict = true` で、対象は `app/` だけでなく `tests/` / `scri
 
 - **タスク管理は `REQ-XXXX` に一本化した。** 従来の GitHub Issue はこのリポジトリでは新規に使わない
   （移行前の Open Issue は段階2で要件に畳み込む）。作業 ID は要件 ID である。
-- **本番 API のデプロイは Railway。`api/` で `railway up` を実行する。** 環境変数変更による
-  自動再デプロイは hello-world が出て本番ダウンにつながるため、必ず `railway up` で反映する。
-  手順は `api/DEPLOY.md`。
+- **本番・ステージングとも GCP である**（REQ-0054 で 2026-09-01 に Railway / Vercel から移行済み）。
+  デプロイは GitHub Actions（本番は `deploy-prod.yml` の手動実行のみ）。
+  インフラは Terraform（`infra/`）で、**`apply` は作業者の手元で実行する**（ADR-0031）。
+  手順とデプロイの切り戻しは `infra/README.md`。
 - **Alembic のマイグレーションは多重ヘッドに注意。** 複数 PR が同じ親から分岐すると本番起動が
   crash（502）する。分岐したらマージマイグレーションで単一ヘッドに戻す。
 - ファイルの永続化は本番で GCS（`google-cloud-storage`）。未設定なら未使用。

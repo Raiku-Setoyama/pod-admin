@@ -13,6 +13,8 @@ from app.schemas.manufacturing_data import (
     ManufacturingDataDetailResponse,
     ManufacturingDataListResponse,
     ManufacturingDataResponse,
+    ManufacturingDataRetryFailedRequest,
+    ManufacturingDataRetryFailedResponse,
 )
 from app.services.manufacturing_data_service import ManufacturingDataService
 
@@ -37,6 +39,24 @@ async def list_manufacturing_data(
         order_source_id=order_source_id,
         product_code=product_code,
     )
+
+
+@router.post("/retry-failed", response_model=ManufacturingDataRetryFailedResponse)
+async def retry_failed_manufacturing_data(
+    body: ManufacturingDataRetryFailedRequest,
+    service: Annotated[ManufacturingDataService, Depends(get_manufacturing_data_service)],
+    current_user: Annotated[User, Depends(get_current_admin)],
+) -> ManufacturingDataRetryFailedResponse:
+    """失敗した製造データ生成をまとめて待ち行列へ戻す.
+
+    VM が止まっていた間に溜まった失敗を、1 件ずつ叩かずに戻すための入口である。
+    ``ids`` を省略すると failed の全件が対象になる。
+
+    **固定パスなので `/{mfg_data_id}` より前に置く。** 後ろに置くと、この URL が
+    ID として食われて 404 になる。
+    """
+    restored = await service.retry_failed(body.ids)
+    return ManufacturingDataRetryFailedResponse(restored=restored)
 
 
 @router.get("/{mfg_data_id}", response_model=ManufacturingDataDetailResponse)

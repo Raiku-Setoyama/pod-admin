@@ -35,6 +35,24 @@ class CloudLoggingFormatter(logging.Formatter):
         )
 
 
+# ルートに水準を与えると、これまで捨てられていた依存ライブラリの INFO が一斉に出る。
+#
+# **とくに httpx は 1 リクエスト 1 行である。** 製造データ 1 件の生成は VM の完了待ちを
+# 5 秒間隔で最大 360 秒ポーリングするので、それだけで 70 行を超える。読む人は居ないうえに、
+# Cloud Logging の取り込みは従量なので静かに費用になる。
+_NOISY = ("httpx", "httpcore", "urllib3", "google", "asyncio")
+
+
+def quiet_noisy_dependencies() -> None:
+    """依存ライブラリのロガーを WARNING に落とす.
+
+    **ルートにハンドラを付けるすべての経路から呼ぶ。** ワーカー（app/worker.py）は
+    basicConfig を使っていて configure_logging を通らないので、あちらでも呼んでいる。
+    """
+    for name in _NOISY:
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
 def configure_logging(level: int = logging.INFO) -> None:
     """ルートロガーにハンドラを付ける（何度呼んでも 1 つだけ）."""
     # K_SERVICE は Cloud Run の**サービス**（API）にだけ入る。ワーカー（Job）には使わない:
@@ -48,3 +66,4 @@ def configure_logging(level: int = logging.INFO) -> None:
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level)
+    quiet_noisy_dependencies()

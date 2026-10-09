@@ -163,6 +163,25 @@ variable "worker_schedule_paused" {
   type        = bool
 }
 
+variable "alert_emails" {
+  description = <<-EOT
+    アラートの宛先メールアドレス。**空だとアラートは 1 本も作られない。**
+    「監視してあるはず」という思い込みだけが残るのを避けるため、
+    鳴らない policy を置くのではなく、作らないほうへ倒してある。
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+variable "monitoring_enabled" {
+  description = <<-EOT
+    false なら監視と通知を作らない。ステージングで通知を鳴らさないための逃げ道。
+    **本番では true にすること。**
+  EOT
+  type        = bool
+  default     = true
+}
+
 variable "illustrator_vm_base_url" {
   description = "製造データ生成 VM の URL。空なら生成機能を無効にする"
   type        = string

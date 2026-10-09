@@ -47,4 +47,8 @@ module "stack" {
   illustrator_vm_base_url = ""
   worker_schedule         = "*/5 * * * *"
   worker_schedule_paused  = true
+
+  # **ステージングでは鳴らさない。** 使い捨て環境の失敗で本番の通知が埋まると、
+  # 本物のアラートを読み飛ばすようになる。
+  monitoring_enabled = false
 }
