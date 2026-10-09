@@ -435,6 +435,8 @@ gcloud scheduler jobs resume pod-admin-worker --location=asia-northeast1 --proje
 **OS ポリシーの上限**に注意する。スクリプト・ファイルの中身は 1 つ 1024 文字まで、
 1 つのポリシーのリソースは 10 個まで。生成スクリプトはこれに合わせて分割する。
 更新分が大きいと（テンプレートの .ai を差し替えた等）分割の数が増える。
+分割の番号は桁をそろえてある（理由はツールの docstring）。ツールを直したら
+`python3 infra/scripts/test_illustrator_vm_update_policy.py` で確かめる（品質ゲートでも走る）。
 
 以下は RDP で入って手で更新する場合の手順である。
 

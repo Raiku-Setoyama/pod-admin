@@ -13,6 +13,9 @@ OS ポリシーの上限に合わせて分割する:
     - スクリプト・ファイルの中身は 1 つ 1024 文字まで → base64 を 1000 文字ずつに分ける
     - 1 つのポリシーのリソースは 10 個まで → ポリシーを複数に分ける（記載順に適用される）
     分割したファイル名にはコミットを含める。前回の残りが混ざると復元が壊れるため。
+    分割の番号は桁をそろえる（CHUNK_DIGITS）。VM 側は**名前順**に並べて結合するので、
+    桁がそろっていないと 100 個を超えたところで `-10, -100, ..., -11` の順になり
+    bundle が壊れる（2026-10-08 に本番で発生。git fetch が 902 で失敗した）。
 
 VM の上では次の順に動く（SYSTEM が admin の対話セッションのタスクを起動する。
 admin で動かすのは、作業ツリーの持ち主が admin で、install_service.ps1 が実行ユーザーで
@@ -42,6 +45,7 @@ import yaml
 PROJECT = "tosyo-api-504104"
 ZONE = "asia-northeast1-a"
 CHUNK_CHARS = 1000
+CHUNK_DIGITS = 4  # 分割の番号の桁数。1000 文字 x 10^4 個 = 約 7MB の bundle まで名前順が崩れない
 MAX_RESOURCES = 10
 SCRIPT_LIMIT = 1024
 
@@ -95,6 +99,8 @@ def update_policy(repo: Path, base: str, ref: str) -> tuple[str, dict[str, Any]]
     ).stdout
     encoded = base64.b64encode(bundle).decode()
     chunks = [encoded[i : i + CHUNK_CHARS] for i in range(0, len(encoded), CHUNK_CHARS)]
+    if len(chunks) >= 10**CHUNK_DIGITS:
+        sys.exit(f"bundle が大きすぎる（{len(chunks)} 分割）。CHUNK_DIGITS を増やす")
 
     chunk_glob = f"{WORK_PREFIX}{rev}-*.b64"
     bundle_path = f"{WORK_PREFIX}{rev}.bundle"
@@ -103,8 +109,12 @@ def update_policy(repo: Path, base: str, ref: str) -> tuple[str, dict[str, Any]]
 
     resources: list[dict[str, Any]] = [
         {
-            "id": f"bundle-{i:02d}",
-            "file": {"path": f"{WORK_PREFIX}{rev}-{i:02d}.b64", "state": "PRESENT", "content": chunk},
+            "id": f"bundle-{i:0{CHUNK_DIGITS}d}",
+            "file": {
+                "path": f"{WORK_PREFIX}{rev}-{i:0{CHUNK_DIGITS}d}.b64",
+                "state": "PRESENT",
+                "content": chunk,
+            },
         }
         for i, chunk in enumerate(chunks)
     ]
