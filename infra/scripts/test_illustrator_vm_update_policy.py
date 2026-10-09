@@ -4,10 +4,8 @@
 実行: python3 infra/scripts/test_illustrator_vm_update_policy.py
 （scripts/quality-gate.sh が毎回実行する。依存は git と PyYAML だけ）
 
-VM 側は分割したファイルを**名前順**に並べて結合する（Get-ChildItem | Sort-Object Name）。
-分割の番号の桁がそろっていないと、100 個を超えたところで `-10, -100, -101, ..., -11` の順に
-並び、復元した bundle が壊れる（2026-10-08 に本番で発生。PodAdminDeploy 902）。
-ここでは VM と同じ手順で復元し、git がその bundle を読めることを確かめる。
+VM と同じ手順（分割ファイルを名前順に結合）で bundle を復元し、git が読めることを確かめる。
+なぜ名前順が問題になるかは illustrator-vm-update-policy.py の docstring を参照。
 """
 
 from __future__ import annotations
@@ -15,8 +13,6 @@ from __future__ import annotations
 import base64
 import importlib.util
 import os
-import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -29,12 +25,7 @@ _spec = importlib.util.spec_from_file_location(
 assert _spec and _spec.loader
 update_policy = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(update_policy)
-
-
-def git(repo: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
-    ).stdout.strip()
+git = update_policy.git
 
 
 def make_repo(root: Path, payload_bytes: int) -> tuple[Path, str]:
@@ -69,7 +60,8 @@ def chunk_files(policy: dict[str, Any]) -> list[tuple[str, str]]:
 
 def restore_like_vm(files: list[tuple[str, str]]) -> bytes:
     """VM の enforce と同じく、名前順に並べて結合し base64 を戻す."""
-    ordered = sorted(files, key=lambda f: f[0].rsplit("\\", 1)[-1])
+    # パスは同じ接頭辞（WORK_PREFIX + コミット）を持つので、パスの順＝ファイル名の順
+    ordered = sorted(files)
     return base64.b64decode("".join(content.strip() for _, content in ordered))
 
 
@@ -98,4 +90,4 @@ class UpdatePolicyTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    sys.exit(0 if unittest.main(exit=False).result.wasSuccessful() else 1)
+    unittest.main()

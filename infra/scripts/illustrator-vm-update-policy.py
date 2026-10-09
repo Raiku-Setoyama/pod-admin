@@ -109,7 +109,7 @@ def update_policy(repo: Path, base: str, ref: str) -> tuple[str, dict[str, Any]]
 
     resources: list[dict[str, Any]] = [
         {
-            "id": f"bundle-{i:02d}",
+            "id": f"bundle-{i:0{CHUNK_DIGITS}d}",
             "file": {
                 "path": f"{WORK_PREFIX}{rev}-{i:0{CHUNK_DIGITS}d}.b64",
                 "state": "PRESENT",
