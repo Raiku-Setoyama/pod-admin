@@ -75,7 +75,9 @@ dev = [
     "types-pyyaml>=6.0.12",
     # HTTP client for testing
     "httpx>=0.28.0",
-    "pypdf>=6.16.2",
+    # 製造データ生成の依存。`uv run mypy` / `uv run pytest` は extra を入れないため
+    # （API のイメージは --no-dev なので入らない）
+    "pod-admin-api[generator]",
 ]
 
 [build-system]

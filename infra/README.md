@@ -271,6 +271,11 @@ gcloud run jobs execute pod-admin-worker \
 3. **本番の `terraform apply`**: 監視の目印が `generator_health` に変わる。2 と 3 の間は、
    古い目印（`illustrator_vm_health`）のログが出ないので「ワーカーが動いていない」が鳴りうる。
    **2 の直後に 3 を行う**
+
+   **`apply` は 2 回に分ける。** 新しい指標・アラート・Job を `-target` で先に当て、10 分おいて残り
+   （古い指標の削除）を当てる。1 回で当てると次のどちらかで止まる（ログ指標を差し替えるときは毎回起きる）
+   - 古いログ指標の削除が、それを参照するアラートの書き換えより先に走る（`still used in an alerting policy`）
+   - 作ったばかりのログ指標は最大 10 分使えない（`Cannot find metric(s)`）
 4. 本番で 1 件生成されたことを確かめたら、**VM を停止する（削除しない）**
 
    ```bash
@@ -287,7 +292,7 @@ VM・ネットワーク・`ILLUSTRATOR_VM_BASE_URL`・ワーカーの VPC 接続
 gcloud compute instances start illustrator-vm --zone=asia-northeast1-a --project=tosyo-api-504104
 # 2) ワーカーのイメージを、REQ-0067 より前のコミットの API イメージへ戻す
 gcloud run jobs update pod-admin-worker --project tosyo-api-504104 --region asia-northeast1 \
-  --image=asia-northeast1-docker.pkg.dev/tosyo-api-504104/pod-admin/api:<REQ-0067 より前の SHA>
+  --image=asia-northeast1-docker.pkg.dev/tosyo-api-504104/pod-admin/api:c928903e4d002bb2141221df79c8cd04596496d3
 ```
 
 問題のあった製造データは、管理画面から再生成する。
