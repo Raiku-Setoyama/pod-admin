@@ -67,12 +67,14 @@ def _alpha(png: bytes, name: str, size: tuple[int, int] | None = None) -> npt.ND
     return arr
 
 
-def fill_white_plate(white_png: bytes, color_png: bytes, px_per_mm: float) -> WhitePlateFix:
+def fill_white_plate(white_png: bytes, color_png: bytes, art_mm: float) -> WhitePlateFix:
     """白版画像（不透明な部分が白版）の抜けを埋めた PNG を返す.
 
-    ``px_per_mm`` は白版画像の解像度（絵柄の一辺の mm に対する画素数）。
+    ``art_mm`` は絵柄の一辺（mm）。どの画像もこの大きさに引き伸ばして置くので、
+    白版画像の解像度（px/mm）は「幅 ÷ art_mm」になる。
     """
     white = _alpha(white_png, "white") > 127
+    px_per_mm = white.shape[1] / art_mm
     color = _alpha(color_png, "color", size=(white.shape[1], white.shape[0]))
 
     # 1. 絵のある穴

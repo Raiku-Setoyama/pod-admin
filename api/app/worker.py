@@ -50,7 +50,7 @@ from sqlalchemy import text
 import app.models  # noqa: F401  # 全モデルをマッパー登録に載せる（docstring 参照）
 from app.config import settings
 from app.database import get_engine
-from app.generator.errors import GeneratorUnavailableError
+from app.generator import GeneratorUnavailableError, check_available
 from app.logging_config import TEXT_FORMAT
 from app.services.manufacturing_data_service import (
     GenerationOutcome,
@@ -117,15 +117,8 @@ async def process_pending(*, max_runtime_seconds: float, max_items: int) -> int:
 async def check_generator_health() -> bool:
     """生成処理（VectorCraft）が動くかを確かめ、結果を目印つきでログに残す."""
     try:
-        # ワーカー用のイメージにしか無い依存を読み込むので、ここで import する
-        from app.generator.runner import check_available
-
-        await asyncio.to_thread(
-            check_available,
-            cli=settings.GENERATOR_VECTORCRAFT_CLI,
-            timeout_seconds=settings.GENERATOR_TIMEOUT_SECONDS,
-        )
-    except (GeneratorUnavailableError, ImportError) as exc:
+        await asyncio.to_thread(check_available)
+    except GeneratorUnavailableError as exc:
         logger.warning("%s status=ng detail=%s", LOG_MARK_GENERATOR_HEALTH, exc)
         return False
     logger.info("%s status=ok", LOG_MARK_GENERATOR_HEALTH)

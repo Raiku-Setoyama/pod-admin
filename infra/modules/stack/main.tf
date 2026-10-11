@@ -21,11 +21,11 @@ locals {
     managed-by = "terraform"
   }
 
-  # 1 件の製造データ生成にかかりうる最大秒数。
-  # **正本は api/app/config.py の Settings.generation_worst_case_seconds** であり、
-  # ここはその値を写したもの。GENERATOR_TIMEOUT_SECONDS を変えたら両方を直す
-  # （api/tests/unit/test_config.py がこの値を照合する）。
-  generation_worst_case_seconds = 120
+  # 1 件の製造データ生成（VectorCraft のセッション全体）の上限秒数。**正本はここである。**
+  # ワーカーに GENERATOR_TIMEOUT_SECONDS として渡し、同じ値から Job のタイムアウトを導出する。
+  generation_timeout_seconds = 120
+  # 1 件にかかりうる最大秒数。生成の上限に、元画像の取得（1 レイヤー最大 30 秒、並列）と保存の分を足す。
+  generation_worst_case_seconds = local.generation_timeout_seconds + 60
 
   # ワーカーは自分で降りる設計なので、Job のタイムアウトは
   # 「降りる判断をしてから、最後の 1 件を処理し終えるまで」を賄えばよい。
@@ -358,6 +358,7 @@ module "worker_job" {
   env_vars = merge(local.app_env_vars, {
     WORKER_MAX_RUNTIME_SECONDS = tostring(var.worker_max_runtime_seconds)
     WORKER_MAX_ITEMS           = tostring(var.worker_max_items)
+    GENERATOR_TIMEOUT_SECONDS  = tostring(local.generation_timeout_seconds)
 
     # 製造データは REQ-0067 からワーカーの中で生成する（ILLUSTRATOR_VM_BASE_URL は読まない）。
     # この値は、ワーカーのイメージを REQ-0067 より前のものへ戻して VM で生成し直す

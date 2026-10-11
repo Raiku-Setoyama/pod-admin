@@ -3,8 +3,6 @@
 import pytest
 
 from app.utils.mfg_product_mapping import (
-    INPUT_MODE_MULTI,
-    INPUT_MODE_SINGLE,
     MfgMappingError,
     build_generation_spec,
 )
@@ -16,8 +14,6 @@ class TestSingleImageProducts:
         assert m.product_type == "tshirt"
         assert m.size == "M"
         assert m.variant is None
-        assert m.input_mode == INPUT_MODE_SINGLE
-        assert m.output_ext == ".pdf"
         assert m.required_layers == ("design",)
 
     def test_tshirt_accepts_color_as_design(self) -> None:
@@ -31,7 +27,6 @@ class TestSingleImageProducts:
     def test_tote_bag_only_M(self) -> None:
         m = build_generation_spec("tote_bag", "M", {"design"})
         assert m.size == "M"
-        assert m.output_ext == ".pdf"
 
     def test_tshirt_invalid_size(self) -> None:
         with pytest.raises(MfgMappingError):
@@ -43,8 +38,6 @@ class TestAcrylicKeychain:
         m = build_generation_spec("acrylic_keychain", "50x50mm", {"color", "cutline"})
         assert m.size == "50x50"
         assert m.variant == "clear"
-        assert m.input_mode == INPUT_MODE_MULTI
-        assert m.output_ext == ".ai"
 
     def test_variant_color_with_white(self) -> None:
         m = build_generation_spec("acrylic_keychain", "100x100mm", {"color", "cutline", "white"})
@@ -62,7 +55,6 @@ class TestAcrylicStand:
         m = build_generation_spec("acrylic_stand", "70x70mm", {"color", "cutline"})
         assert m.size == "70mm"
         assert m.variant is None
-        assert m.input_mode == INPUT_MODE_MULTI
 
     def test_white_is_optional(self) -> None:
         m = build_generation_spec("acrylic_stand", "50x50mm", {"color", "cutline", "white"})

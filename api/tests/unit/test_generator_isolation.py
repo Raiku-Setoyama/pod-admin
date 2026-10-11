@@ -10,8 +10,10 @@ import sys
 
 import pytest
 
+from app import generator
 from app.generator.errors import GeneratorUnavailableError
 from app.generator.runner import check_available
+from app.utils.mfg_product_mapping import build_generation_spec
 
 # ワーカー用のイメージにだけ入っている依存
 _WORKER_ONLY = ("numpy", "scipy", "pypdf")
@@ -54,3 +56,13 @@ def test_missing_vectorcraft_is_reported_as_unavailable() -> None:
     """実行ファイルが無いのは入力の誤りではない（生成待ちへ戻して復旧を待つ）."""
     with pytest.raises(GeneratorUnavailableError):
         check_available(cli="/nonexistent/vectorcraft-cli", timeout_seconds=5)
+
+
+def test_generate_without_dependencies_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """依存が無いプロセス（API のイメージ）で呼ばれても、行は失敗ではなく生成待ちに戻る."""
+    # import すると ImportError になるようにする（読み込み済みの属性も外す）
+    monkeypatch.setitem(sys.modules, "app.generator.runner", None)
+    monkeypatch.delattr(generator, "runner", raising=False)
+    spec = build_generation_spec("sticker", "50x50mm", {"color", "cutline"})
+    with pytest.raises(GeneratorUnavailableError, match="dependencies are not installed"):
+        generator.generate(spec, {"color": b"", "cutline": b""}, "md-1")

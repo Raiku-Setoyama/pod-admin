@@ -291,8 +291,8 @@ def get_manufacturing_data_service(
 ) -> ManufacturingDataService:
     """Get manufacturing data service.
 
-    API のプロセスは生成しない（generate_file を渡さない）。再生成などは行を生成待ちへ
-    戻すだけで、実際の生成はワーカーが行う（REQ-0067）。
+    API のプロセスは生成しない（generate() を呼ばない）。再生成などは行を生成待ちへ戻すだけで、
+    実際の生成はワーカーが行う（REQ-0067）。生成の依存も API のイメージには入っていない。
     """
     return ManufacturingDataService(
         md_repo=md_repo,

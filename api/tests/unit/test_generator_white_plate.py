@@ -10,9 +10,10 @@ from PIL import Image
 from app.generator.errors import GenerationError
 from app.generator.white_plate import fill_white_plate
 
-# 600dpi（販売サイトの実データと同じ解像度）
+# 600dpi（販売サイトの実データと同じ解像度）。SIZE px の画像が ART_MM の絵柄になる
 PX_PER_MM = 1181 / 50
 SIZE = 400
+ART_MM = SIZE / PX_PER_MM
 
 
 def _png(alpha: npt.NDArray[np.uint8]) -> bytes:
@@ -46,7 +47,7 @@ def test_fills_a_hole_where_the_art_is_semi_transparent() -> None:
     white[hole] = 0
     color[hole] = 100  # 半透明でほぼ白の模様（白い羽など）
 
-    fix = fill_white_plate(_png(white), _png(color), PX_PER_MM)
+    fix = fill_white_plate(_png(white), _png(color), ART_MM)
 
     assert fix.holes_filled == 1
     assert (_alpha(fix.png)[hole] == 255).all()
@@ -59,7 +60,7 @@ def test_keeps_a_fully_transparent_hole() -> None:
     white[hole] = 0
     color[hole] = 0
 
-    fix = fill_white_plate(_png(white), _png(color), PX_PER_MM)
+    fix = fill_white_plate(_png(white), _png(color), ART_MM)
 
     assert fix.holes_filled == 0
     assert (_alpha(fix.png)[hole] == 0).all()
@@ -72,7 +73,7 @@ def test_fills_a_notch_caused_by_semi_transparent_art() -> None:
     white[notch] = 0
     color[notch & (color > 0)] = 100
 
-    fix = fill_white_plate(_png(white), _png(color), PX_PER_MM)
+    fix = fill_white_plate(_png(white), _png(color), ART_MM)
 
     assert fix.notches_filled == 1
     # 奥は埋まる。入口は外周の形に沿って少し空く（外周の内寄せを崩さない）
@@ -87,7 +88,7 @@ def test_keeps_a_notch_under_opaque_art() -> None:
     notch[185:215, 330:351] = True
     white[notch] = 0
 
-    fix = fill_white_plate(_png(white), _png(color), PX_PER_MM)
+    fix = fill_white_plate(_png(white), _png(color), ART_MM)
 
     assert fix.notches_filled == 0
     assert (_alpha(fix.png)[notch & _disk_mask(200, 200, 145)] == 0).all()
@@ -100,7 +101,7 @@ def test_removes_specks_that_the_inward_offset_would_crush() -> None:
     white[speck] = 255
     color[speck] = 255
 
-    fix = fill_white_plate(_png(white), _png(color), PX_PER_MM)
+    fix = fill_white_plate(_png(white), _png(color), ART_MM)
 
     assert fix.specks_removed == 1
     assert (_alpha(fix.png)[speck] == 0).all()
@@ -108,7 +109,7 @@ def test_removes_specks_that_the_inward_offset_would_crush() -> None:
 
 def test_outline_is_unchanged_without_holes_or_notches() -> None:
     white, color = _plate_and_art()
-    fix = fill_white_plate(_png(white), _png(color), PX_PER_MM)
+    fix = fill_white_plate(_png(white), _png(color), ART_MM)
     assert (fix.holes_filled, fix.notches_filled, fix.specks_removed) == (0, 0, 0)
     assert (_alpha(fix.png) == white).all()
 
@@ -121,7 +122,7 @@ def test_compares_against_a_color_layer_of_a_different_size() -> None:
     color[hole] = 100
     big_color = np.array(Image.fromarray(color).resize((SIZE * 2, SIZE * 2)))
 
-    fix = fill_white_plate(_png(white), _png(big_color), PX_PER_MM)
+    fix = fill_white_plate(_png(white), _png(big_color), ART_MM)
 
     assert fix.holes_filled == 1
 
@@ -129,4 +130,4 @@ def test_compares_against_a_color_layer_of_a_different_size() -> None:
 def test_unreadable_image_is_an_input_error() -> None:
     white, _ = _plate_and_art()
     with pytest.raises(GenerationError, match="color layer is not a readable image"):
-        fill_white_plate(_png(white), b"not a png", PX_PER_MM)
+        fill_white_plate(_png(white), b"not a png", ART_MM)

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import UploadFile
 
-from app.generator.result import GeneratedFile
+from app.generator import GeneratedFile
 from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
 from app.services.manufacturing_data_service import ManufacturingDataService
 from app.utils.exceptions import ConflictError, NotFoundError, ValidationError

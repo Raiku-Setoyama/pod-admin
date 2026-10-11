@@ -2,11 +2,13 @@
 
 生成は商品ごとに以下を要求する（illustrator-vm の `config/products.yaml` から引き継いだ規則）:
 
-- tshirt:           single / S,M,L,XL          / variant なし / PDF
-- tote_bag:         single / M                 / variant なし / PDF
-- acrylic_keychain: multi(color+cutline[+white]) / variant 必須(clear/color) / 50x50,70x70,100x100 / AI
-- acrylic_stand:    multi(color+cutline[+white]) / variant なし              / 50mm,70mm,100mm      / AI
-- sticker:          multi(color+cutline)         / variant 必須(clear)       / 50x50,70x70,100x100  / AI
+- tshirt:           design（無ければ color）1 枚  / variant なし              / S,M,L,XL
+- tote_bag:         design（無ければ color）1 枚  / variant なし              / M
+- acrylic_keychain: color+cutline[+white]         / variant 必須(clear/color) / 50x50,70x70,100x100
+- acrylic_stand:    color+cutline[+white]         / variant なし              / 50mm,70mm,100mm
+- sticker:          color+cutline                 / variant 必須(clear)       / 50x50,70x70,100x100
+
+出力の形式（PDF / .ai）とファイル名は生成側（app/generator/products.py）が決める。
 
 注: mug_cup は illustrator-vm では対応していたが、pod-admin の ProductType に未定義のため対象外。
 
@@ -30,10 +32,6 @@ LAYER_DESIGN = "design"
 # source_images で扱うレイヤー種別（受注スキーマ・製造データスキーマ共通の語彙）
 LayerType = Literal["color", "cutline", "white", "design"]
 
-# 入力モード
-INPUT_MODE_SINGLE = "single"
-INPUT_MODE_MULTI = "multi"
-
 
 class MfgMappingError(ValueError):
     """商品属性を生成のパラメータへ変換できない場合のエラー."""
@@ -46,13 +44,10 @@ class GenerationSpec:
     product_type: str
     size: str
     variant: str | None
-    input_mode: str
     # 送信必須のレイヤー種別
     required_layers: tuple[str, ...]
     # 提供されていれば送信する任意レイヤー種別
     optional_layers: tuple[str, ...] = field(default_factory=tuple)
-    # 生成物の拡張子
-    output_ext: str = ".ai"
 
     @property
     def usable_layers(self) -> tuple[str, ...]:
@@ -115,9 +110,7 @@ def build_generation_spec(
             product_type=product_type,
             size=_normalize_size(product_type, size),
             variant=None,
-            input_mode=INPUT_MODE_SINGLE,
             required_layers=required,
-            output_ext=".pdf",
         )
 
     if product_type == "acrylic_keychain":
@@ -127,10 +120,8 @@ def build_generation_spec(
             product_type=product_type,
             size=_normalize_size(product_type, size),
             variant=variant,
-            input_mode=INPUT_MODE_MULTI,
             required_layers=(LAYER_COLOR, LAYER_CUTLINE),
             optional_layers=(LAYER_WHITE,),
-            output_ext=".ai",
         )
 
     if product_type == "acrylic_stand":
@@ -139,10 +130,8 @@ def build_generation_spec(
             product_type=product_type,
             size=_normalize_size(product_type, size),
             variant=None,
-            input_mode=INPUT_MODE_MULTI,
             required_layers=(LAYER_COLOR, LAYER_CUTLINE),
             optional_layers=(LAYER_WHITE,),
-            output_ext=".ai",
         )
 
     if product_type == "sticker":
@@ -152,9 +141,7 @@ def build_generation_spec(
             product_type=product_type,
             size=_normalize_size(product_type, size),
             variant="clear",
-            input_mode=INPUT_MODE_MULTI,
             required_layers=(LAYER_COLOR, LAYER_CUTLINE),
-            output_ext=".ai",
         )
 
     raise MfgMappingError(f"Unsupported product_type '{product_type}' for manufacturing data")

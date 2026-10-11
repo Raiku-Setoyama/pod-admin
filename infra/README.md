@@ -691,8 +691,8 @@ API の `POST /api/v1/internal/monitoring-alerts` → SendGrid である。発�
   worker Job と migrate Job のぶんも足して数える。`terraform.tfvars` に計算を書いてある
 - **ワーカー Job のタイムアウトは直接指定しない。** `worker_max_runtime_seconds` から
   `main.tf` の `locals` が導出する。先に殺されると、生成中の行がリース期限まで宙吊りになる
-- `local.generation_worst_case_seconds` は `api/app/config.py` の
-  `Settings.generation_worst_case_seconds` の写しである。`GENERATOR_TIMEOUT_SECONDS` を変えたら両方直す
+- 生成 1 件の上限（`local.generation_timeout_seconds`）は Terraform が正本で、ワーカーに
+  `GENERATOR_TIMEOUT_SECONDS` として渡す。Job のタイムアウトも同じ値から導出する
 
 ## SendGrid の鍵を入れる
 

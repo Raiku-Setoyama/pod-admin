@@ -33,8 +33,10 @@ MM = 72 / 25.4
 JAPAN_COLOR_2001_COATED = "Japan Color 2001 Coated"
 K100 = {"c": 0, "m": 0, "y": 0, "k": 100}
 
-# アクリル系の新規文書の余白（illustrator-vm の margin_mm）
-MARGIN_MM = 3
+# アクリル系の新規文書の余白（illustrator-vm の margin_mm = 3）
+MARGIN_PT = 3 * MM
+# アクリル系のレイヤー（上から）
+ACRYLIC_LAYERS = ["CutLine", "ColorPrint", "White"]
 # 白版の内寄せ（illustrator-vm の path_offset_pt。≈ -0.1mm）
 WHITE_OFFSET_PT = -0.2835
 # 画像トレースの設定。illustrator-vm が Illustrator 2026 で実際に使っている値に合わせた
@@ -127,14 +129,18 @@ class Job:
         return layer_id
 
     # --- オブジェクト -----------------------------------------------------------
-    def place_image(self, path: Path, size_pt: float, center: tuple[float, float]) -> int:
-        """埋め込みで配置し、縦横 ``size_pt`` に変形して ``center`` に中心を合わせる."""
+    def _place(self, path: Path) -> tuple[int, float, float, float, float]:
+        """埋め込みで配置し、(ID, 幅, 高さ, 中心 x, 中心 y) を返す."""
         r = self.vc.cmd("file.place", path=str(path), link=False)
         img: int = r["ids"][0]
         xf = self.vc.node(img)["kind"]["xf"]
         w, h = r["width"], r["height"]
+        return img, w, h, xf[4] + w / 2, xf[5] + h / 2
+
+    def place_image(self, path: Path, size_pt: float, center: tuple[float, float]) -> int:
+        """埋め込みで配置し、縦横 ``size_pt`` に変形して ``center`` に中心を合わせる."""
+        img, w, h, icx, icy = self._place(path)
         sx, sy = size_pt / w, size_pt / h
-        icx, icy = xf[4] + w / 2, xf[5] + h / 2
         self.vc.cmd(
             "object.transform",
             ids=[img],
@@ -146,13 +152,9 @@ class Job:
         self, path: Path, box: tuple[float, float, float, float], margin: float
     ) -> None:
         """``box``（x, y, 幅, 高さ）に余白 ``margin`` で縦横比を保って収め、中央に置く."""
-        r = self.vc.cmd("file.place", path=str(path), link=False)
-        img = r["ids"][0]
-        xf = self.vc.node(img)["kind"]["xf"]
-        w, h = r["width"], r["height"]
+        img, w, h, icx, icy = self._place(path)
         x, y, bw, bh = box
         s = min((bw - 2 * margin) / w, (bh - 2 * margin) / h)
-        icx, icy = xf[4] + w / 2, xf[5] + h / 2
         cx, cy = x + bw / 2, y + bh / 2
         self.vc.cmd(
             "object.transform", ids=[img], matrix=[s, 0, 0, s, cx - s * icx, cy - s * icy]
@@ -324,8 +326,7 @@ def _white_plate(job: Job, image: Path, size_pt: float, center: tuple[float, flo
 
 
 def _new_acrylic_document(job: Job, size_pt: float, height_pt: float, color: Path) -> tuple[float, float]:
-    margin = MARGIN_MM * MM
-    job.new_cmyk(size_pt + 2 * margin, height_pt + 2 * margin)
+    job.new_cmyk(size_pt + 2 * MARGIN_PT, height_pt + 2 * MARGIN_PT)
     center = _canvas_center(job)
     job.rename_first_layer("ColorPrint")
     job.place_image(color, size_pt, center)
@@ -361,7 +362,6 @@ def _read_template(
 
 def acrylic_keychain(job: Job, images: AcrylicImages, mm: int, name: str) -> Path:
     size = mm * MM
-    margin = MARGIN_MM * MM
     circle = G.find_keyhole_pair(_read_template(job, keyhole_template(mm))[0])
     if circle is None:
         raise GenerationError(f"keyhole circles not found in the {mm}mm template")
@@ -385,22 +385,21 @@ def acrylic_keychain(job: Job, images: AcrylicImages, mm: int, name: str) -> Pat
 
     if images.white is not None:
         _white_plate(job, images.white, size, center)
-    job.order_layers(["CutLine", "ColorPrint", "White"])
-    job.vc.cmd("artboard.setProps", index=0, x=margin, y=margin, width=size, height=size)
+    job.order_layers(ACRYLIC_LAYERS)
+    job.vc.cmd("artboard.setProps", index=0, x=MARGIN_PT, y=MARGIN_PT, width=size, height=size)
 
     # タブ込みのカットラインがアートボードに収まるよう縮め、中央に置く（fit_content）
     ab = job.artboard()
     acx, acy = ab["x"] + ab["width"] / 2, -(ab["y"] + ab["height"] / 2)  # 上向き
-    layers = ["CutLine", "ColorPrint", "White"]
     b = job.layer_bounds_up("CutLine")
     avail = size - 2 * 0.5 * MM
     s = min(avail / (b[2] - b[0]), avail / (b[1] - b[3]))
     if s < 1.0:
-        job.move_all(layers, [s, 0, 0, s, acx * (1 - s), -acy * (1 - s)])
+        job.move_all(ACRYLIC_LAYERS, [s, 0, 0, s, acx * (1 - s), -acy * (1 - s)])
     b = job.layer_bounds_up("CutLine")
     dx, dy = acx - (b[0] + b[2]) / 2, acy - (b[1] + b[3]) / 2
     if abs(dx) > 0.01 or abs(dy) > 0.01:
-        job.move_all(layers, [1, 0, 0, 1, dx, -dy])
+        job.move_all(ACRYLIC_LAYERS, [1, 0, 0, 1, dx, -dy])
     return job.save_ai_cmyk(name)
 
 
@@ -409,7 +408,6 @@ def acrylic_keychain(job: Job, images: AcrylicImages, mm: int, name: str) -> Pat
 
 def sticker(job: Job, images: AcrylicImages, mm: int, name: str) -> Path:
     size = mm * MM
-    margin = MARGIN_MM * MM
     center = _new_acrylic_document(job, size, size, images.color)
     color_layer = job.layer("ColorPrint")
     assert color_layer is not None
@@ -422,8 +420,8 @@ def sticker(job: Job, images: AcrylicImages, mm: int, name: str) -> Path:
     # 白版は使わないが、レイヤー構成を他のアクリル系と揃える（空の White）
     job.set_current_layer(color_layer["id"])
     job.new_layer("White")
-    job.order_layers(["CutLine", "ColorPrint", "White"])
-    job.vc.cmd("artboard.setProps", index=0, x=margin, y=margin, width=size, height=size)
+    job.order_layers(ACRYLIC_LAYERS)
+    job.vc.cmd("artboard.setProps", index=0, x=MARGIN_PT, y=MARGIN_PT, width=size, height=size)
     return job.save_ai_cmyk(name)
 
 
@@ -464,11 +462,8 @@ def _extend_base_to_lowest_point(job: Job) -> None:
         return
     top_before = G.bounds([main])[1]
     left, top, right, bottom = rect
-    rect_sp = G.SubPath(
-        A=[(left, top), (right, top), (right, bottom), (left, bottom)],
-        LD=[(left, top), (right, top), (right, bottom), (left, bottom)],
-        RD=[(left, top), (right, top), (right, bottom), (left, bottom)],
-    )
+    corners = [(left, top), (right, top), (right, bottom), (left, bottom)]
+    rect_sp = G.SubPath(A=corners, LD=list(corners), RD=list(corners))
     rect_id = job.create_path(rect_sp)
     job.fill_only([rect_id])
     job.vc.cmd("select.set", ids=[main_id, rect_id])
@@ -483,7 +478,6 @@ def _extend_base_to_lowest_point(job: Job) -> None:
 
 def acrylic_stand(job: Job, images: AcrylicImages, mm: int, name: str) -> Path:
     size = mm * MM
-    margin = MARGIN_MM * MM
     tab, depth, tab_artboard_height = _load_tab(job, mm)
     top_gap = max(tab_artboard_height - size - depth, 0)
     artboard_height = size + depth + top_gap
@@ -499,9 +493,9 @@ def acrylic_stand(job: Job, images: AcrylicImages, mm: int, name: str) -> Path:
 
     if images.white is not None:
         _white_plate(job, images.white, size, center)
-    job.order_layers(["CutLine", "ColorPrint", "White"])
+    job.order_layers(ACRYLIC_LAYERS)
     job.vc.cmd(
-        "artboard.setProps", index=0, x=margin, y=margin, width=size, height=artboard_height
+        "artboard.setProps", index=0, x=MARGIN_PT, y=MARGIN_PT, width=size, height=artboard_height
     )
 
     # 背景の矩形などを消す: アンカー最多のパス以外で 20 点未満のパス
@@ -513,17 +507,16 @@ def acrylic_stand(job: Job, images: AcrylicImages, mm: int, name: str) -> Path:
     ab = job.artboard()
     ab_bottom = -(ab["y"] + ab["height"])  # 上向き
     acx, acy = ab["x"] + ab["width"] / 2, -(ab["y"] + ab["height"] / 2)
-    layers = ["CutLine", "ColorPrint", "White"]
     b = job.layer_bounds_up("CutLine")
     fm = 1 * MM
     s = min((size - 2 * fm) / (b[2] - b[0]), (size - fm) / (b[1] - b[3]))
     if s < 1.0:
-        job.move_all(layers, [s, 0, 0, s, acx * (1 - s), -acy * (1 - s)])
+        job.move_all(ACRYLIC_LAYERS, [s, 0, 0, s, acx * (1 - s), -acy * (1 - s)])
     b = job.layer_bounds_up("CutLine")
     dx = acx - (b[0] + b[2]) / 2
     dy = (ab_bottom + depth) - b[3]
     if abs(dx) > 0.01 or abs(dy) > 0.01:
-        job.move_all(layers, [1, 0, 0, 1, dx, -dy])
+        job.move_all(ACRYLIC_LAYERS, [1, 0, 0, 1, dx, -dy])
 
     main_id, main = max(job.paths("CutLine"), key=lambda p: len(p[1]))
     job.set_path(main_id, G.merge_pedestal_tab(main, tab))

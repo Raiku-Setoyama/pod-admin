@@ -14,7 +14,6 @@ import pytest
 
 from app import worker
 from app.config import settings
-from app.generator import runner
 from app.generator.errors import GeneratorUnavailableError
 from app.services.manufacturing_data_service import GenerationOutcome
 
@@ -244,7 +243,7 @@ class TestCheckGeneratorHealth:
     @pytest.mark.asyncio
     async def test_logs_ng_with_the_marker(self, caplog: pytest.LogCaptureFixture) -> None:
         down = MagicMock(side_effect=GeneratorUnavailableError("cannot start vectorcraft-cli"))
-        with patch.object(runner, "check_available", down):
+        with patch.object(worker, "check_available", down):
             ok = await worker.check_generator_health()
 
         assert ok is False
@@ -253,15 +252,11 @@ class TestCheckGeneratorHealth:
     @pytest.mark.asyncio
     async def test_logs_ok_with_the_marker(self, caplog: pytest.LogCaptureFixture) -> None:
         caplog.set_level("INFO")
-        with patch.object(runner, "check_available", MagicMock(return_value=None)) as check:
+        with patch.object(worker, "check_available", MagicMock(return_value=None)):
             ok = await worker.check_generator_health()
 
         assert ok is True
         assert "generator_health status=ok" in caplog.text
-        assert check.call_args.kwargs == {
-            "cli": settings.GENERATOR_VECTORCRAFT_CLI,
-            "timeout_seconds": settings.GENERATOR_TIMEOUT_SECONDS,
-        }
 
 
 class TestReportPending:

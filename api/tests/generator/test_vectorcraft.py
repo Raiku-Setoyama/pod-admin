@@ -22,10 +22,9 @@ from pypdf import PdfReader
 from pypdf.generic import DictionaryObject
 
 from app.config import settings
-from app.generator.errors import GenerationError
+from app.generator import GeneratedFile, GenerationError, check_available, generate
 from app.generator.pdf_finish import icc_description
-from app.generator.result import GeneratedFile
-from app.generator.runner import check_available, generate
+from app.utils.mfg_product_mapping import build_generation_spec
 
 CLI = shutil.which(settings.GENERATOR_VECTORCRAFT_CLI)
 pytestmark = pytest.mark.skipif(CLI is None, reason="VectorCraft CLI is not installed")
@@ -79,17 +78,10 @@ def _acrylic_inputs(*, base: str = "flat", keyhole: bool = False, white_hole: bo
     return {"color": _png(color), "cutline": _png(_layer(cutline)), "white": _png(white)}
 
 
-def _run(product_type: str, size: str, variant: str | None, images: dict[str, bytes]) -> GeneratedFile:
-    assert CLI is not None
-    return generate(
-        product_type=product_type,
-        size=size,
-        variant=variant,
-        images=images,
-        order_id="md-1",
-        cli=CLI,
-        timeout_seconds=settings.GENERATOR_TIMEOUT_SECONDS,
-    )
+def _run(product_type: str, size: str, images: dict[str, bytes]) -> GeneratedFile:
+    """ワーカーと同じ経路で生成する（pod-admin の商品属性 → 生成のパラメータ → 生成）."""
+    spec = build_generation_spec(product_type, size, images.keys())
+    return generate(spec, images, "md-1")
 
 
 # --- 旧形式 .ai（Illustrator 8 形式）の読み取り -----------------------------------
@@ -143,13 +135,12 @@ def _assert_acrylic_structure(ai: Ai8, *, stroke_pt: float, white: str) -> None:
 
 
 def test_check_available() -> None:
-    assert CLI is not None
-    check_available(cli=CLI, timeout_seconds=30)
+    check_available()
 
 
 @pytest.mark.parametrize(("size", "mm"), [("50x50", 50), ("70x70", 70), ("100x100", 100)])
 def test_acrylic_keychain(size: str, mm: int) -> None:
-    out = _run("acrylic_keychain", size, "color", _acrylic_inputs(base="round", keyhole=True))
+    out = _run("acrylic_keychain", f"{size}mm", _acrylic_inputs(base="round", keyhole=True))
 
     assert out.filename == f"md-1_AcrylicKeychain_color_{size}.ai"
     ai = _parse_ai8(out.content)
@@ -161,14 +152,15 @@ def test_acrylic_keychain(size: str, mm: int) -> None:
 def test_acrylic_keychain_without_white_plate() -> None:
     images = _acrylic_inputs(base="round", keyhole=True)
     del images["white"]
-    out = _run("acrylic_keychain", "50x50", "clear", images)
+    out = _run("acrylic_keychain", "50x50mm", images)
     assert out.filename == "md-1_AcrylicKeychain_clear_50x50.ai"
     _assert_acrylic_structure(_parse_ai8(out.content), stroke_pt=0.5, white="none")
 
 
 def test_white_plate_holes_under_semi_transparent_art_are_filled() -> None:
     """REQ-0067: 白版の、絵がある穴は埋まる（透明アクリルで透けない）."""
-    out = _run("acrylic_keychain", "50x50", "color", _acrylic_inputs(base="round", keyhole=True, white_hole=True))
+    images = _acrylic_inputs(base="round", keyhole=True, white_hole=True)
+    out = _run("acrylic_keychain", "50x50mm", images)
     assert _subpath_count(_parse_ai8(out.content).layers["White"]) == 1  # 穴の無い外形だけ
 
 
@@ -176,7 +168,7 @@ def test_white_plate_holes_under_semi_transparent_art_are_filled() -> None:
 @pytest.mark.parametrize("base", ["flat", "protruding"])
 def test_acrylic_stand_merges_the_tab(size: str, mm: int, base: str) -> None:
     """ADR-0038: 絵柄が土台より下に出ていても、土台を延ばしてタブを付ける."""
-    out = _run("acrylic_stand", size, None, _acrylic_inputs(base=base))
+    out = _run("acrylic_stand", f"{mm}x{mm}mm", _acrylic_inputs(base=base))
 
     assert out.filename == f"【md-1】アクリルフィギュアスタンド_{size}_本体.ai"
     ai = _parse_ai8(out.content)
@@ -189,14 +181,14 @@ def test_acrylic_stand_merges_the_tab(size: str, mm: int, base: str) -> None:
 def test_acrylic_stand_without_a_base_fails() -> None:
     """ADR-0038: 土台が見つからない入力は、タブの無いデータを作らずに失敗させる."""
     with pytest.raises(GenerationError, match="flat base edge not found"):
-        _run("acrylic_stand", "70mm", None, _acrylic_inputs(base="none"))
+        _run("acrylic_stand", "70x70mm", _acrylic_inputs(base="none"))
 
 
 @pytest.mark.parametrize("size", ["50x50", "70x70", "100x100"])
 def test_sticker(size: str) -> None:
     images = _acrylic_inputs(base="round")
     del images["white"]
-    out = _run("sticker", size, "clear", images)
+    out = _run("sticker", f"{size}mm", images)
     assert out.filename == f"md-1_Sticker_clear_{size}.ai"
     _assert_acrylic_structure(_parse_ai8(out.content), stroke_pt=1, white="empty")
 
@@ -211,7 +203,7 @@ def test_sticker(size: str) -> None:
 )
 def test_pdf_products(product_type: str, size: str, filename: str, page_mm: tuple[float, float]) -> None:
     design = _png(Image.new("RGBA", (PX, PX), (220, 60, 60, 255)))
-    out = _run(product_type, size, None, {"design": design})
+    out = _run(product_type, size, {"design": design})
 
     assert out.filename == filename
     reader = PdfReader(io.BytesIO(out.content))

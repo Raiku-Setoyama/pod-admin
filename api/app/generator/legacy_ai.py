@@ -188,8 +188,8 @@ class _Writer:
         data = pixels.tobytes().hex().upper()
         tx, ty = self._pt([xf[4], xf[5]])
         m = f"[ {_n(xf[0])} 0 0 {_n(xf[3])} {_n(tx)} {_n(ty)} ]"
-        lines = ["%" + data[i : i + 64] for i in range(0, len(data), 64)]
-        body = "XI\n" + "\n".join(lines) + "\n"
+        # 1 行 64 文字。巨大なので、行のリストや末尾の改行を落とすための写しを作らない
+        body = "XI\n%" + "\n%".join(data[i : i + 64] for i in range(0, len(data), 64))
         self._out += [
             "0 O",
             "0 g",
@@ -200,8 +200,8 @@ class _Writer:
             "() 1 XG",
             f"{m} {w} {h} 0 Xh",
             f"{m} 0 0 {w} {h} {w} {h} 8 4 0 0 0 0",
-            f"%%BeginData: {len(body.encode())}",
-            body.rstrip("\n"),
+            f"%%BeginData: {len(body) + 1}",  # 本文（ASCII）と、その後ろの改行 1 つのバイト数
+            body,
             "%%EndData",
             "XH",
             "%AI5_EndRaster",

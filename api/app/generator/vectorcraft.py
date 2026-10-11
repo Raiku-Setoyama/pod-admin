@@ -5,8 +5,8 @@
 結果をコマンドで書き戻す。illustrator-vm の ExtendScript が担っていた役割である。
 
 1 件の生成ごとに 1 プロセスを起動して使い捨てる。前の生成の文書や設定を持ち越さない。
-時間の上限はセッション全体にかける（コマンドごとではない）。1 件の生成にかかる最悪の時間を
-この値で押さえ、ワーカー Job のタイムアウトの導出に使う（``Settings.generation_worst_case_seconds``）。
+時間の上限はセッション全体にかける（コマンドごとではない）。1 件の生成にかかる時間をこの値で押さえ、
+Terraform がワーカー Job のタイムアウトを同じ値から導出する（``Settings.GENERATOR_TIMEOUT_SECONDS``）。
 """
 
 from __future__ import annotations
@@ -25,7 +25,18 @@ _PROTOCOL_VERSION = "2025-06-18"
 
 
 class VectorCraftError(GenerationError):
-    """VectorCraft がコマンドをエラーで返した、または応答しなかった."""
+    """VectorCraft がコマンドをエラーで返した、または時間内に終わらなかった（この入力では作れない）.
+
+    時間切れも入力のせいとみなす。生成待ちへ戻すと、同じ入力が上限の回数まで毎回時間を使い切り、
+    そのあいだ後ろの生成待ちが止まるためである。
+    """
+
+
+class VectorCraftCrashedError(GeneratorUnavailableError):
+    """VectorCraft が途中で落ちた・応答が壊れた（入力ではなく生成処理の不調）.
+
+    生成待ちへ戻して再試行する（``manufacturing_data_service._defer_or_fail``）。
+    """
 
 
 class VectorCraft:
@@ -62,7 +73,7 @@ class VectorCraft:
                     "clientInfo": {"name": "pod-admin-worker", "version": "1"},
                 },
             )
-        except VectorCraftError as exc:
+        except (VectorCraftError, VectorCraftCrashedError) as exc:
             self.close()
             raise GeneratorUnavailableError(f"{cli} did not start: {exc}") from exc
         self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
@@ -77,7 +88,7 @@ class VectorCraft:
             self._stdin.write(json.dumps(msg, ensure_ascii=False) + "\n")
             self._stdin.flush()
         except OSError as exc:
-            raise VectorCraftError(f"vectorcraft-cli is not accepting input: {exc}") from exc
+            raise VectorCraftCrashedError(f"vectorcraft-cli is not accepting input: {exc}") from exc
 
     def _rpc(self, method: str, params: dict[str, Any]) -> Any:
         self._id += 1
@@ -92,8 +103,11 @@ class VectorCraft:
                     f"generation did not finish within {self._timeout:.0f}s (at {method})"
                 ) from None
             if line is None:
-                raise VectorCraftError(f"vectorcraft-cli exited during {method}")
-            msg = json.loads(line)
+                raise VectorCraftCrashedError(f"vectorcraft-cli exited during {method}")
+            try:
+                msg = json.loads(line)
+            except ValueError as exc:
+                raise VectorCraftCrashedError(f"vectorcraft-cli wrote a broken reply: {exc}") from exc
             if msg.get("id") != rid:
                 continue  # 通知
             if "error" in msg:

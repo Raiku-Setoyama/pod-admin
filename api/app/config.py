@@ -76,8 +76,10 @@ class Settings(BaseSettings):
     # 製造データ生成（app/generator。ワーカーだけが使う。REQ-0067）
     # VectorCraft の実行ファイル。ワーカー用のイメージでは Dockerfile が場所を設定する。
     GENERATOR_VECTORCRAFT_CLI: str = "vectorcraft-cli"
-    # 1 件の生成にかけてよい時間の上限（秒）。通常は 1〜2 秒で終わる。
+    # 1 件の生成（VectorCraft のセッション全体）にかけてよい時間の上限（秒）。通常は 1〜2 秒で終わる。
     # 超えたら VectorCraft を止めて、その生成を失敗にする。
+    # 本番・ステージングでは Terraform（infra/modules/stack の local.generation_timeout_seconds）が
+    # ワーカーに渡し、同じ値から Job のタイムアウトを導出する。ここの既定値は手元で動かすとき用。
     GENERATOR_TIMEOUT_SECONDS: float = 120.0
 
     # 外部注文 v2 の元データ画像取得（SSRF/DoS 防御）
@@ -105,7 +107,8 @@ class Settings(BaseSettings):
     # 生成の所有権（リース）の期限。取り出した行を「処理中」と見なす秒数。
     # **1 件の生成にかかりうる最大時間より長くすること。** 短いと、生きているワーカーが
     # 処理中の行を別のワーカーが奪う（結果の上書きは防がれるが、生成は二重に走る）。
-    # 妥当性は generation_worst_case_seconds と照らして起動時に確認する。
+    # 妥当性は GENERATOR_TIMEOUT_SECONDS と照らして起動時に確認する。
+    # 既定の 40 分は VM の頃（1 件最大約 920 秒）の値のまま。今は生成が 1〜2 秒なので大きく余裕がある。
     # 長くするほど安全だが、ワーカーがクラッシュしてから拾い直されるまでの待ち時間も伸びる。
     WORKER_LEASE_SECONDS: float = 2400.0
     # 生成処理を起動できなかった生成を生成待ちへ戻す回数の上限。取り出しのたびに attempts が
@@ -116,21 +119,12 @@ class Settings(BaseSettings):
     # ワーカーが目印のログ（manufacturing_data_stalled）を出し、アラートが拾う。
     WORKER_STALL_ALERT_MINUTES: int = 60
 
-    @property
-    def generation_worst_case_seconds(self) -> float:
-        """1 件の生成にかかりうる最大秒数.
-
-        生成（VectorCraft のセッション全体）に上限をかけているので、その値がそのまま最悪値になる
-        （``app.generator.vectorcraft``）。
-        """
-        return self.GENERATOR_TIMEOUT_SECONDS
-
     def lease_margin_warning(self) -> str | None:
         """リース期限の余裕が足りなければ警告文を返す（足りていれば None）.
 
         設定同士の危険な組み合わせを、人間のレビュー任せにしない。
         """
-        worst_case = self.generation_worst_case_seconds
+        worst_case = self.GENERATOR_TIMEOUT_SECONDS
         if self.WORKER_LEASE_SECONDS >= worst_case * 2:
             return None
         return (
