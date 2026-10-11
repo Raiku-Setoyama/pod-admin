@@ -1,7 +1,7 @@
 """Unit tests for ManufacturingDataService and the manufacturing readiness gate."""
 
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch

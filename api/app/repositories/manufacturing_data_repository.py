@@ -188,6 +188,39 @@ class ManufacturingDataRepository:
         await self._db.refresh(mfg_data)
         return mfg_data
 
+    # **この 2 つは list() より前に置く。** クラス本体では def list より後ろの
+    # 注釈から `list` がこのメソッドを指してしまい、`list[...]` が型として壊れる。
+    async def count_by_status(self) -> dict[str, int]:
+        """ステータスごとの件数を返す.
+
+        一覧は絞り込んだ分しか返さないので、全体像はこちらで出す（管理画面の見出し）。
+        1 件も無いステータスはキーごと現れない。
+        """
+        result = await self._db.execute(
+            select(ManufacturingData.status, func.count(ManufacturingData.id)).group_by(
+                ManufacturingData.status
+            )
+        )
+        # .tuples() を挟むのは型のため。素の Row は tuple として注釈されておらず、
+        # dict() に渡すと mypy が通らない。
+        return dict(result.tuples().all())
+
+    async def find_failed(self, ids: list[str] | None = None) -> list[ManufacturingData]:
+        """failed の行を返す。``ids`` を渡すとそのうちの failed だけに絞る.
+
+        **絞り込みを呼び出し側に任せない。** failed 以外を混ぜた ids が来ても、
+        ここで落ちるので ready の行が巻き戻ることはない。
+        """
+        conditions = [ManufacturingData.status == MfgDataStatus.FAILED.value]
+        if ids is not None:
+            conditions.append(ManufacturingData.id.in_(ids))
+        result = await self._db.execute(
+            select(ManufacturingData)
+            .where(*conditions)
+            .order_by(ManufacturingData.created_at)
+        )
+        return list(result.scalars().all())
+
     async def list(
         self,
         page: int = 1,
@@ -220,35 +253,6 @@ class ManufacturingDataRepository:
         )
         result = await self._db.execute(query)
         return list(result.scalars().all()), total
-
-    async def count_by_status(self) -> dict[str, int]:
-        """ステータスごとの件数を返す.
-
-        一覧は絞り込んだ分しか返さないので、全体像はこちらで出す（管理画面の見出し）。
-        1 件も無いステータスはキーごと現れない。
-        """
-        result = await self._db.execute(
-            select(ManufacturingData.status, func.count(ManufacturingData.id)).group_by(
-                ManufacturingData.status
-            )
-        )
-        return {status: count for status, count in result.all()}
-
-    async def find_failed(self, ids: list[str] | None = None) -> list[ManufacturingData]:
-        """failed の行を返す。``ids`` を渡すとそのうちの failed だけに絞る.
-
-        **絞り込みを呼び出し側に任せない。** failed 以外を混ぜた ids が来ても、
-        ここで落ちるので ready の行が巻き戻ることはない。
-        """
-        conditions = [ManufacturingData.status == MfgDataStatus.FAILED.value]
-        if ids is not None:
-            conditions.append(ManufacturingData.id.in_(ids))
-        result = await self._db.execute(
-            select(ManufacturingData)
-            .where(*conditions)
-            .order_by(ManufacturingData.created_at)
-        )
-        return list(result.scalars().all())
 
 
 def _eq_or_null(column: Any, value: Any) -> Any:
