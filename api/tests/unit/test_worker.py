@@ -14,7 +14,8 @@ import pytest
 
 from app import worker
 from app.config import settings
-from app.services.illustrator_vm_client import IllustratorVmClient, VmHealth
+from app.generator import runner
+from app.generator.errors import GeneratorUnavailableError
 from app.services.manufacturing_data_service import GenerationOutcome
 
 
@@ -120,8 +121,8 @@ class TestProcessPending:
 
 
     @pytest.mark.asyncio
-    async def test_stops_when_the_vm_becomes_unreachable(self) -> None:
-        """生成待ちへ戻した（VM に届かなかった）ら、同じ起動では次の行へ進まない."""
+    async def test_stops_when_the_generator_becomes_unavailable(self) -> None:
+        """生成待ちへ戻した（生成処理を起動できなかった）ら、同じ起動では次の行へ進まない."""
         queue = _queue("md-1", "md-2", "md-3")
 
         with (
@@ -140,16 +141,16 @@ class TestProcessPending:
 class TestRunOnce:
     @pytest.fixture(autouse=True)
     def _no_side_effects(self) -> Iterator[None]:
-        """VM の死活確認と滞留の報告は、個別のテストが差し替えない限り何もしない."""
+        """生成処理の死活確認と滞留の報告は、個別のテストが差し替えない限り何もしない."""
         with (
-            patch.object(worker, "check_vm_health", AsyncMock(return_value=True)),
+            patch.object(worker, "check_generator_health", AsyncMock(return_value=True)),
             patch.object(worker, "report_pending", AsyncMock()),
         ):
             yield
 
     @pytest.mark.asyncio
     async def test_does_nothing_when_another_worker_holds_the_lock(self) -> None:
-        """2 本目は降りる。直列な VM を複数のワーカーで奪い合わないため."""
+        """2 本目は降りる。同じ待ち行列を複数のワーカーで奪い合わないため."""
         conn = _conn(acquired=False)
 
         with (
@@ -187,12 +188,12 @@ class TestRunOnce:
         assert calls == ["reclaim", "process"]
 
     @pytest.mark.asyncio
-    async def test_leaves_pending_rows_untouched_when_the_vm_is_unhealthy(self) -> None:
-        """VM が NG なら取り出さない。生成待ちは pending のまま復旧を待つ."""
+    async def test_leaves_pending_rows_untouched_when_the_generator_is_unhealthy(self) -> None:
+        """生成処理が NG なら取り出さない。生成待ちは pending のまま復旧を待つ."""
         conn = _conn(acquired=True)
 
         with (
-            patch.object(worker, "check_vm_health", AsyncMock(return_value=False)),
+            patch.object(worker, "check_generator_health", AsyncMock(return_value=False)),
             patch.object(worker, "get_engine", return_value=_engine(conn)),
             patch.object(
                 worker, "reclaim_expired_generation_leases", AsyncMock(return_value=0)
@@ -207,12 +208,12 @@ class TestRunOnce:
         report.assert_awaited_once()  # 滞留の報告は NG のときこそ要る
 
     @pytest.mark.asyncio
-    async def test_checks_the_vm_even_when_another_worker_holds_the_lock(self) -> None:
+    async def test_checks_the_generator_even_when_another_worker_holds_the_lock(self) -> None:
         """死活確認のログが途絶えたら「ワーカーが止まった」と判断するので、毎回出す."""
         conn = _conn(acquired=False)
 
         with (
-            patch.object(worker, "check_vm_health", AsyncMock(return_value=True)) as check,
+            patch.object(worker, "check_generator_health", AsyncMock(return_value=True)) as check,
             patch.object(worker, "get_engine", return_value=_engine(conn)),
         ):
             await worker.run_once()
@@ -239,34 +240,28 @@ class TestRunOnce:
         assert "pg_advisory_unlock" in statements[-1]
 
 
-class TestCheckVmHealth:
+class TestCheckGeneratorHealth:
     @pytest.mark.asyncio
     async def test_logs_ng_with_the_marker(self, caplog: pytest.LogCaptureFixture) -> None:
-        client = MagicMock()
-        client.health = AsyncMock(return_value=VmHealth(ok=False, detail="ConnectTimeout"))
-
-        with patch.object(IllustratorVmClient, "from_settings", return_value=client):
-            ok = await worker.check_vm_health()
+        down = MagicMock(side_effect=GeneratorUnavailableError("cannot start vectorcraft-cli"))
+        with patch.object(runner, "check_available", down):
+            ok = await worker.check_generator_health()
 
         assert ok is False
-        assert "illustrator_vm_health status=ng detail=ConnectTimeout" in caplog.text
+        assert "generator_health status=ng detail=cannot start vectorcraft-cli" in caplog.text
 
     @pytest.mark.asyncio
     async def test_logs_ok_with_the_marker(self, caplog: pytest.LogCaptureFixture) -> None:
         caplog.set_level("INFO")
-        client = MagicMock()
-        client.health = AsyncMock(return_value=VmHealth(ok=True, detail="healthy"))
-
-        with patch.object(IllustratorVmClient, "from_settings", return_value=client):
-            ok = await worker.check_vm_health()
+        with patch.object(runner, "check_available", MagicMock(return_value=None)) as check:
+            ok = await worker.check_generator_health()
 
         assert ok is True
-        assert "illustrator_vm_health status=ok" in caplog.text
-
-    @pytest.mark.asyncio
-    async def test_unconfigured_vm_is_not_a_failure(self) -> None:
-        with patch.object(IllustratorVmClient, "from_settings", return_value=None):
-            assert await worker.check_vm_health() is True
+        assert "generator_health status=ok" in caplog.text
+        assert check.call_args.kwargs == {
+            "cli": settings.GENERATOR_VECTORCRAFT_CLI,
+            "timeout_seconds": settings.GENERATOR_TIMEOUT_SECONDS,
+        }
 
 
 class TestReportPending:

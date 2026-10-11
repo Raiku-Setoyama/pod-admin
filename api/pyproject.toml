@@ -38,6 +38,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# 製造データ生成（app/generator）。**ワーカー用のイメージ（Dockerfile の worker ステージ）にだけ入れる。**
+# API のイメージには入れない（REQ-0067 / ADR-0039）。
+generator = [
+    "numpy>=2.1.0",
+    "scipy>=1.14.0",
+    "pillow>=11.0.0",
+    "pypdf>=6.16.2",
+]
 dev = [
     # Testing
     "pytest>=8.3.0",

@@ -2,7 +2,7 @@
 id: GLOSSARY
 title: 用語集
 status: draft
-updated: 2026-08-06
+updated: 2026-10-11
 ---
 
 <!-- 顧客の業務用語をここに集約します。コードの命名・ドキュメント・UI 文言で統一して使います。 -->
@@ -60,7 +60,8 @@ updated: 2026-08-06
 | サムネイル | thumbnail | 発注資料・確認用の縮小画像 | |
 | 元データ / 元画像 | `source_images` | 製造データ生成の入力 PNG レイヤー群（color/cutline/white/design） | |
 | バリアント | `variant` | 製造の版種別（clear / color）。元データのレイヤー構成から導出 | キャッシュキーの一部 |
-| illustrator-vm | IllustratorVmClient | 製造データを生成する外部の非同期ジョブ型 API | 成果物は約72時間で削除 |
+| 製造データ生成 | app.generator | 元データの画像から製造データ（.ai／.pdf）を作る処理。ワーカーの中で VectorCraft を使う | REQ-0067 / ADR-0039 |
+| illustrator-vm | — | 以前の製造データ生成 VM（Windows 上の Illustrator） | 切り戻し用に停止中。REQ-0068 で撤去 |
 | 発注ゲート | is_order_blocked | 製造データ未準備の明細を発注させない制約 | |
 
 ## 配送・請求・通知

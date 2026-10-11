@@ -5,26 +5,30 @@
 
 なぜサービスではなくジョブなのか（ADR-0026）:
     Cloud Run の**サービス**はリクエストを処理している間しか CPU が割り当てられないため、
-    30〜360 秒かかる生成をレスポンス送出後に走らせると完走しない。**ジョブ**は CPU が
-    常時割り当てられ、実行時間の上限も十分に長いので、この制約を受けない。
+    生成をレスポンス送出後に走らせると完走しない。**ジョブ**は CPU が常時割り当てられ、
+    実行時間の上限も十分に長いので、この制約を受けない。
+
+生成はこのプロセスの中で行う（REQ-0067 / ADR-0039）:
+    以前は illustrator-vm（Windows VM 上の Illustrator）に HTTP で頼んでいた。今は
+    ``app.generator`` が VectorCraft を子プロセスで起動して作る。生成の依存はワーカー用の
+    イメージにだけ入っており、``pod-admin-api`` とは別のサーバーで動く。
 
 多重起動:
     起動間隔より処理が長引けば実行は重なる。2 本目は Postgres のアドバイザリロックを
     取れずに即終了する。**これはスループットの都合であって、正しさの条件ではない。**
-    illustrator-vm が 1 件ずつの直列処理である以上、ワーカーを並列に走らせても速くならず、
-    VM のキュー上限（50 超で 503）を無駄に消費するだけだからである。
+    1 件 1〜2 秒で終わるので、5 分ごとの起動で十分に捌ける。
 
     **ロックを外しても壊れない。**同じ行を 2 度処理しないことは、キューからの取り出し
-    （``claim_next_generation`` の 1 文）とリースが保証している。VM が並列化されたら、
-    ロックを外すだけで並列ワーカーに移行できる。
+    （``claim_next_generation`` の 1 文）とリースが保証している。ロックを外すだけで
+    並列ワーカーに移行できる。
 
-VM の死活確認（2026-09-27〜10-02 の障害を受けて追加）:
-    起動のたびに、取り出しより先に illustrator-vm の /health を 1 回叩き、結果を
-    ``illustrator_vm_health status=ok|ng`` の形でログに残す。**生成待ちが無くても叩く。**
-    注文が来ないと VM に触れず、止まっていても誰も気づけなかったためである。
+生成処理の死活確認（2026-09-27〜10-02 の障害を受けて追加）:
+    起動のたびに、取り出しより先に VectorCraft を 1 回起動してコマンドが通るかを確かめ、結果を
+    ``generator_health status=ok|ng`` の形でログに残す。**生成待ちが無くても確かめる。**
+    注文が来ないと生成処理に触れず、壊れていても誰も気づけないためである。
     Cloud Logging のログベース指標とアラート（infra/modules/manufacturing-monitoring）がこの行を数える。
 
-    NG のときは取り出さない。生成待ちは pending のまま VM の復旧を待ち、次の起動で
+    NG のときは取り出さない。生成待ちは pending のまま復旧を待ち、次の起動で
     自動的に拾われる（取り出して失敗させると、人が 1 件ずつ再生成を押すまで止まる）。
 
 モデルの読み込み:
@@ -46,8 +50,8 @@ from sqlalchemy import text
 import app.models  # noqa: F401  # 全モデルをマッパー登録に載せる（docstring 参照）
 from app.config import settings
 from app.database import get_engine
+from app.generator.errors import GeneratorUnavailableError
 from app.logging_config import TEXT_FORMAT
-from app.services.illustrator_vm_client import IllustratorVmClient
 from app.services.manufacturing_data_service import (
     GenerationOutcome,
     claim_next_generation,
@@ -63,7 +67,7 @@ _ADVISORY_LOCK_KEY = 8_240_517_301
 
 # ログの目印。Cloud Logging のログベース指標（infra/modules/manufacturing-monitoring）が
 # この文字列で数えるので、**変えるときは指標のフィルタも同時に変える。**
-LOG_MARK_VM_HEALTH = "illustrator_vm_health"
+LOG_MARK_GENERATOR_HEALTH = "generator_health"
 LOG_MARK_STALLED = "manufacturing_data_stalled"
 
 
@@ -100,32 +104,32 @@ async def process_pending(*, max_runtime_seconds: float, max_items: int) -> int:
         md_id, lease_token = claimed
         outcome = await run_generation(md_id, lease_token)
         if outcome is GenerationOutcome.DEFERRED:
-            # 死活確認は通ったのに届かなかった。VM が不調になったので、残りは次回の
+            # 死活確認は通ったのに起動できなかった。不調になったので、残りは次回の
             # 起動に回す（次回はまず死活確認で止まる）。生成待ちへ戻しただけなので
             # 処理件数に数えない（数えると滞留の警告が出なくなる）。
-            logger.warning("illustrator-vm became unreachable; leaving the rest for the next run")
+            logger.warning("the generator became unavailable; leaving the rest for the next run")
             break
         processed += 1
 
     return processed
 
 
-async def check_vm_health() -> bool:
-    """illustrator-vm の死活を確かめ、結果を目印つきでログに残す.
+async def check_generator_health() -> bool:
+    """生成処理（VectorCraft）が動くかを確かめ、結果を目印つきでログに残す."""
+    try:
+        # ワーカー用のイメージにしか無い依存を読み込むので、ここで import する
+        from app.generator.runner import check_available
 
-    VM が設定されていない環境（ステージング等）では確認せず True を返す
-    （取り出した行は generate() が「未設定」で failed にする。従来どおり）。
-    """
-    client = IllustratorVmClient.from_settings(settings)
-    if client is None:
-        logger.info("%s status=disabled", LOG_MARK_VM_HEALTH)
-        return True
-    health = await client.health()
-    if health.ok:
-        logger.info("%s status=ok", LOG_MARK_VM_HEALTH)
-    else:
-        logger.warning("%s status=ng detail=%s", LOG_MARK_VM_HEALTH, health.detail)
-    return health.ok
+        await asyncio.to_thread(
+            check_available,
+            cli=settings.GENERATOR_VECTORCRAFT_CLI,
+            timeout_seconds=settings.GENERATOR_TIMEOUT_SECONDS,
+        )
+    except (GeneratorUnavailableError, ImportError) as exc:
+        logger.warning("%s status=ng detail=%s", LOG_MARK_GENERATOR_HEALTH, exc)
+        return False
+    logger.info("%s status=ok", LOG_MARK_GENERATOR_HEALTH)
+    return True
 
 
 async def report_pending(*, processed: int) -> None:
@@ -156,7 +160,7 @@ async def run_once() -> int:
     """
     # 取り出しの可否に関わらず毎回確かめる（ロックを取れずに降りる起動でも）。
     # ログが途絶えたこと自体を「ワーカーが動いていない」として検知するためである。
-    vm_healthy = await check_vm_health()
+    generator_healthy = await check_generator_health()
 
     engine = get_engine()
     async with engine.connect() as conn:
@@ -168,7 +172,7 @@ async def run_once() -> int:
             ).scalar()
         )
         if not acquired:
-            # 正しさのためではなく、直列な VM を複数のワーカーで奪い合わないための降り方。
+            # 正しさのためではなく、同じ待ち行列を複数のワーカーで奪い合わないための降り方。
             logger.info("another worker is running; exiting without doing anything")
             return 0
 
@@ -182,13 +186,13 @@ async def run_once() -> int:
             if reclaimed:
                 logger.info("reclaimed %d generation(s) with an expired lease", reclaimed)
             processed = 0
-            if vm_healthy:
+            if generator_healthy:
                 processed = await process_pending(
                     max_runtime_seconds=settings.WORKER_MAX_RUNTIME_SECONDS,
                     max_items=settings.WORKER_MAX_ITEMS,
                 )
             else:
-                logger.warning("illustrator-vm is unhealthy; leaving pending rows untouched")
+                logger.warning("the generator is unhealthy; leaving pending rows untouched")
             await report_pending(processed=processed)
             return processed
         finally:

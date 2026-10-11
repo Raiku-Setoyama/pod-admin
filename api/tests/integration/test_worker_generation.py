@@ -360,7 +360,7 @@ class TestLeaseFencing:
 
 
 class TestDeferredGeneration:
-    """VM に届かず生成待ちへ戻した行が、次の取り出しで自動的に拾い直されること."""
+    """生成処理を起動できず生成待ちへ戻した行が、次の取り出しで自動的に拾い直されること."""
 
     @pytest.mark.asyncio
     async def test_a_deferred_row_is_claimed_again_and_counts_attempts(
@@ -447,7 +447,7 @@ class TestWorkerRun:
 
     @pytest.mark.asyncio
     async def test_second_worker_exits_without_doing_anything(self) -> None:
-        """多重起動の抑止。正しさではなく、直列な VM を奪い合わないための降り方."""
+        """多重起動の抑止。正しさではなく、同じ待ち行列を奪い合わないための降り方."""
         entered = asyncio.Event()
         release = asyncio.Event()
         runs = 0
@@ -460,6 +460,8 @@ class TestWorkerRun:
             return 1
 
         with (
+            # 生成処理（VectorCraft）の死活確認はこのテストの関心ではない
+            patch.object(worker, "check_generator_health", AsyncMock(return_value=True)),
             patch.object(worker, "reclaim_expired_generation_leases", AsyncMock(return_value=0)),
             patch.object(worker, "process_pending", slow_process),
         ):

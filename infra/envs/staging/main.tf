@@ -42,9 +42,9 @@ module "stack" {
   db_pool_size      = 3
   db_max_overflow   = 2
 
-  # 製造データ生成は当面ステージングでは動かさない。
-  # 本番と同じ VM を共有すると本番のジョブ待ち行列に混ざるため（REQ-0055 で繋ぎ直す）。
+  # 製造データはワーカーの中で生成するので（REQ-0067）、ステージングでも動かす。
+  # 以前は VM を本番と共有できず止めていた。
   illustrator_vm_base_url = ""
   worker_schedule         = "*/5 * * * *"
-  worker_schedule_paused  = true
+  worker_schedule_paused  = false
 }

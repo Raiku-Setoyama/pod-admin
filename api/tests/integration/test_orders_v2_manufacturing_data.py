@@ -3,9 +3,8 @@
 外部注文 v2（POST /api/v2/orders）の受付・製造データ紐付け・キャッシュ再利用・発注ゲートを
 API -> Service -> Repository -> DB の一連の流れで検証する。
 
-illustrator-vm は未設定（テスト環境）のため、バックグラウンド生成は最終的に failed になる。
-本テストは「同期的に確定する状態（行の作成・紐付け・キャッシュキー・発注ゲート）」のみを検証し、
-非同期生成の最終状態には依存しない。
+生成はワーカーだけが行い、このテストでは動かさない。本テストは「同期的に確定する状態
+（行の作成・紐付け・キャッシュキー・発注ゲート）」のみを検証し、生成の最終状態には依存しない。
 """
 
 import json
@@ -198,8 +197,8 @@ class TestV2Intake:
         assert md is not None
         assert md[0] == "50x50mm"  # pod-admin サイズをそのまま保持
         # 受付は行を作るだけで、生成には入らない（生成はワーカーが拾う。ADR-0026）。
-        # レスポンスを返す前後に生成が走っていれば、外部VM未設定のこの環境では
-        # failed になっているはずなので、pending のままであることが証拠になる。
+        # API のプロセスが生成しようとすれば failed になる（生成の関数を持たない）ので、
+        # pending のままであることが証拠になる。
         assert md[3] == "pending"
         assert md[1] == "clear"  # white レイヤーなし → clear
         assert md[2] == "acrylic_keychain"
@@ -551,8 +550,8 @@ class TestRegenerateEndpoint:
         )
         assert ok.status_code == 200, ok.text
 
-        # 再作成で ready から巻き戻る（enqueue された背景生成は VM 未設定のため最終的に
-        # failed になりうる。ここで重要なのは ready でなくなり再生成が起動したこと）。
+        # 再作成で ready から巻き戻る（ここで重要なのは ready でなくなり、
+        # ワーカーが拾う生成待ちに戻ったこと）。
         md_status = (
             await db_session.execute(
                 text("SELECT status FROM manufacturing_data WHERE id = :id"), {"id": md_id}

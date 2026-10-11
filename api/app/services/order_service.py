@@ -71,7 +71,7 @@ from app.utils.exceptions import (
     ProductNotFoundError,
     ValidationError,
 )
-from app.utils.mfg_product_mapping import MfgMappingError, build_vm_mapping
+from app.utils.mfg_product_mapping import MfgMappingError, build_generation_spec
 from app.utils.zip_builder import ZipBuilder
 
 logger = logging.getLogger(__name__)
@@ -138,13 +138,13 @@ class OrderService:
     def _validate_v2_manufacturing_inputs(item_data: OrderItemCreateV2) -> None:
         """v2 明細が製造データを生成可能かを検証する（商品タイプ・サイズ・必須レイヤー）.
 
-        生成時と同じ build_vm_mapping を用いることで、intake の受理条件と生成の実行条件を
+        生成時と同じ build_generation_spec を用いることで、intake の受理条件と生成の実行条件を
         一致させる。マッピング不能（必須レイヤー欠落・未対応サイズ等）なら ValidationError で
         同期的に拒否し、生成不能な注文を受理して恒久的に発注保留する事態を防ぐ。
         """
         layer_types = {img.layer_type for img in item_data.source_images}
         try:
-            build_vm_mapping(item_data.product_type.value, item_data.size, layer_types)
+            build_generation_spec(item_data.product_type.value, item_data.size, layer_types)
         except MfgMappingError as exc:
             raise ValidationError(f"{exc} (uid: {item_data.uid})") from exc
 

@@ -2,9 +2,8 @@
 
 外部注文（v2）の製造データキャッシュ本体。
 
-illustrator-vm（Product Manufacturing API）で生成した製造データ（.ai/.pdf）を
-「受注元 × 商品コード × サイズ × バリアント」単位で一度だけ生成し、pod-admin 側に
-自前保存して再利用する。VM の生成結果は `(product_type, size, variant, 元画像)` の
+製造データ（.ai/.pdf）を「受注元 × 商品コード × サイズ × バリアント」単位で一度だけ
+生成し、保存して再利用する。生成結果は `(product_type, size, variant, 元画像)` の
 純関数であり order_id には依存しないため、この単位でのキャッシュ再利用は妥当。
 """
 
@@ -22,8 +21,8 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 class MfgDataStatus(str, Enum):
     """製造データの生成ステータス."""
 
-    PENDING = "pending"  # 生成待ち（行は作成済み、VM未起動）
-    GENERATING = "generating"  # 生成中（VMジョブ実行中）
+    PENDING = "pending"  # 生成待ち（行は作成済み、まだ生成していない）
+    GENERATING = "generating"  # 生成中（ワーカーが確保している）
     READY = "ready"  # 生成完了（file_path に保存済み）
     FAILED = "failed"  # 生成失敗（error_message 参照）
 
@@ -53,13 +52,13 @@ class ManufacturingData(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # rksyo の商品識別子（キャッシュキー）
     product_code: Mapped[str] = mapped_column(String(255), index=True)
 
-    # pod-admin / VM の商品タイプ
+    # pod-admin の商品タイプ
     product_type: Mapped[str] = mapped_column(String(50))
 
     # pod-admin サイズ（元の受注値をそのまま保持）
     size: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    # VM バリアント（keychain: clear/color、sticker: clear、その他: None）
+    # 生成のバリアント（keychain: clear/color、sticker: clear、その他: None）
     variant: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # 生成ステータス（MfgDataStatus の value を保存）
@@ -78,10 +77,11 @@ class ManufacturingData(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # 差し替えた管理ユーザー（ユーザー削除後も履歴が残るようメールを保持）
     source_images_replaced_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    # illustrator-vm のジョブID
+    # illustrator-vm のジョブID。REQ-0067 で生成をワーカー内に移してからは書かない
+    # （列の削除は VM の撤去と合わせて REQ-0068 で行う）
     vm_job_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    # VM status 由来の出力ファイル名
+    # 出力ファイル名（製造委託先に渡すときの名前）
     output_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # FileStorage 上の保存先
@@ -101,7 +101,7 @@ class ManufacturingData(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # ワーカーが何本走っているかに依存しないので、復旧処理は単独で正しく動く。
     #
     # 期限は 1 件の生成にかかりうる最大時間より十分に長くすること。短すぎると、生きている
-    # ワーカーが処理中の行を別のワーカーが奪い、VM ジョブが二重に投入される。
+    # ワーカーが処理中の行を別のワーカーが奪い、生成が二重に走る。
     lease_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
