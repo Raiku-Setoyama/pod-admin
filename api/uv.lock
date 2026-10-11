@@ -1248,7 +1248,7 @@ generator = [
 dev = [
     { name = "httpx" },
     { name = "mypy" },
-    { name = "pypdf" },
+    { name = "pod-admin-api", extra = ["generator"] },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -1300,7 +1300,7 @@ provides-extras = ["generator", "dev"]
 dev = [
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "mypy", specifier = ">=1.13.0" },
-    { name = "pypdf", specifier = ">=6.16.2" },
+    { name = "pod-admin-api", extras = ["generator"] },
     { name = "pytest", specifier = ">=8.3.0" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },

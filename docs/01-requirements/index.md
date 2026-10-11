@@ -75,7 +75,7 @@ Slack で流れた話も、合意した要件も、見送ったものも、す�
 | [REQ-0064](REQ-0064.md) | purchase-order | 製造データ生成の失敗を「VM に届かない」と「入力が悪い」で分け、前者は自動で再試行する | undecided | not-started | |
 | [REQ-0065](REQ-0065.md) | purchase-order | すべての発注画面に、製造中・納品済・キャンセル済を含む全明細を明細単位のステータスで表示する | must | done | |
 | [REQ-0066](REQ-0066.md) | purchase-order | 製造データ生成スクリプトの処理ログを Cloud Logging で見られるようにする | undecided | not-started | |
-| [REQ-0067](REQ-0067.md) | purchase-order | 製造データを Illustrator の VM ではなく、ワーカーの中で OSS（VectorCraft）を使って生成する | must | in-progress | |
+| [REQ-0067](REQ-0067.md) | purchase-order | 製造データを Illustrator の VM ではなく、ワーカーの中で OSS（VectorCraft）を使って生成する | must | done | |
 | [REQ-0068](REQ-0068.md) | purchase-order | 製造データ生成 VM（illustrator-vm）と、そのためのネットワーク・設定を撤去する | must | not-started | |
 
 ## priority — 採否・約束の度合い
