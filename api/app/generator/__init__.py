@@ -19,18 +19,26 @@ numpy / scipy / pypdf）はワーカー用のイメージにだけ入ってお�
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from app.config import settings
-from app.generator.errors import GenerationError, GeneratorUnavailableError
+from app.generator.errors import (
+    GenerationError,
+    GenerationTimeoutError,
+    GeneratorUnavailableError,
+)
 
 if TYPE_CHECKING:
     from app.utils.mfg_product_mapping import GenerationSpec
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "GeneratedFile",
     "GenerationError",
+    "GenerationTimeoutError",
     "GeneratorUnavailableError",
     "check_available",
     "generate",
@@ -54,32 +62,38 @@ def generate(spec: GenerationSpec, images: dict[str, bytes], order_id: str) -> G
         order_id: 出力ファイル名に入れる ID（製造データの ID）。
 
     Raises:
-        GenerationError: この入力からは作れない。
+        GenerationError: この入力からは作れない（やり直しても時間内に終わらなかったときを含む）。
         GeneratorUnavailableError: 生成処理を動かせない（依存が無い・VectorCraft が起動しない・落ちた）。
     """
     try:
         from app.generator import runner
     except ImportError as exc:
         raise GeneratorUnavailableError(f"generator dependencies are not installed: {exc}") from exc
+    # 時間切れは 1 回だけやり直す（VM の頃と同じ。REQ-0069）。1 件の上限は変えないので、
+    # 上限を半分ずつ 2 回に分ける。生成待ちへは戻さない（やり直しを待ち行列に任せると、
+    # 遅い入力 1 件のためにその起動の残りが止まる）
+    half = settings.GENERATOR_TIMEOUT_SECONDS / 2
+    try:
+        return runner.generate(
+            spec, images, order_id, cli=settings.GENERATOR_VECTORCRAFT_CLI, timeout_seconds=half
+        )
+    except GenerationTimeoutError as exc:
+        logger.warning("generation timed out; retrying once: %s", exc)
     return runner.generate(
-        spec,
-        images,
-        order_id,
-        cli=settings.GENERATOR_VECTORCRAFT_CLI,
-        timeout_seconds=settings.GENERATOR_TIMEOUT_SECONDS,
+        spec, images, order_id, cli=settings.GENERATOR_VECTORCRAFT_CLI, timeout_seconds=half
     )
 
 
 def check_available() -> None:
     """生成処理（VectorCraft）が動くかを確かめる（ワーカーの死活確認）.
 
+    VectorCraft のクライアントは標準ライブラリだけで書いてあるので、numpy などは読み込まない
+    （ワーカーは 5 分ごとの起動のたびに、取り出す行が無くても呼ぶ）。
+
     Raises:
         GeneratorUnavailableError: 動かない。
     """
-    try:
-        from app.generator import runner
-    except ImportError as exc:
-        raise GeneratorUnavailableError(f"generator dependencies are not installed: {exc}") from exc
-    runner.check_available(
-        cli=settings.GENERATOR_VECTORCRAFT_CLI, timeout_seconds=settings.GENERATOR_TIMEOUT_SECONDS
-    )
+    from app.generator.vectorcraft import check_available as check
+
+    check(cli=settings.GENERATOR_VECTORCRAFT_CLI, timeout_seconds=settings.GENERATOR_TIMEOUT_SECONDS)
+

@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 
 from app.generator import GeneratedFile, pipelines
-from app.generator.errors import GenerationError, GeneratorUnavailableError
+from app.generator.errors import GenerationError
 from app.generator.legacy_ai import to_illustrator8
 from app.generator.pdf_finish import finish_pdf
 from app.generator.products import ICC_SRGB, acrylic_mm, output_filename
@@ -78,15 +78,3 @@ def generate(
 
     raise GenerationError(f"unsupported product_type: {spec.product_type}")
 
-
-def check_available(*, cli: str, timeout_seconds: float) -> None:
-    """VectorCraft を起動してコマンドが通ることを確かめる（ワーカーの死活確認）.
-
-    起動しない・落ちたものは VectorCraft のクライアントが ``GeneratorUnavailableError`` にする。
-    ここでは、起動したがコマンドが通らない（エラー・時間切れ）ものも動かないとみなす。
-    """
-    try:
-        with VectorCraft(cli, timeout_seconds=timeout_seconds) as vc:
-            vc.cmd("edit.colorSettings")
-    except GenerationError as exc:
-        raise GeneratorUnavailableError(str(exc)) from exc

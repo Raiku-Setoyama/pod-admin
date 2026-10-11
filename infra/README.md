@@ -290,10 +290,23 @@ VM・ネットワーク・`ILLUSTRATOR_VM_BASE_URL`・ワーカーの VPC 接続
 ```bash
 # 1) VM を起動する（自動ログオンで約 8 分後に生成 API が上がる）
 gcloud compute instances start illustrator-vm --zone=asia-northeast1-a --project=tosyo-api-504104
-# 2) ワーカーのイメージを、REQ-0067 より前のコミットの API イメージへ戻す
+# 2) ワーカーのイメージを、REQ-0067 より前のコミットの API イメージへ戻す。
+#    Job のタイムアウトも VM の頃の値へ戻す（今の 780 秒では、VM の生成 1 件の最悪値 約 920 秒が収まらず、
+#    最後の 1 件の途中で Job ごと止められる）
 gcloud run jobs update pod-admin-worker --project tosyo-api-504104 --region asia-northeast1 \
+  --task-timeout=1521s \
   --image=asia-northeast1-docker.pkg.dev/tosyo-api-504104/pod-admin/api:c928903e4d002bb2141221df79c8cd04596496d3
 ```
+
+- **本番だけの手順である。** ステージングには VM が無い。旧イメージは VM の URL が空だと、取り出した行を
+  すべて `failed` にする（REQ-0067 より前は、URL が空なら Scheduler を止めて防いでいた）。
+  ステージングを戻すときは、Scheduler を止めてから戻す
+- 旧イメージは死活確認の目印を `illustrator_vm_health` で出すので、「製造データ生成ワーカーが動いていない」
+  （`generator_health` を数える）が 30 分後に鳴る。戻している間は鳴りっぱなしになるので、鳴ったら切り戻し中と読む
+- 戻したあとの `terraform apply` は、Job のタイムアウトを 780 秒へ戻してしまう。切り戻しを続けるなら
+  REQ-0067 の Terraform の変更を revert してから apply する
+- 戻し先のイメージは Artifact Registry の保存期限（直近 10 版を残し、それより古い 30 日超は消す）で、
+  2026-11-03 ごろから消えうる。それまでに REQ-0068 で VM を撤去するか、イメージにタグを付けて残す
 
 問題のあった製造データは、管理画面から再生成する。
 

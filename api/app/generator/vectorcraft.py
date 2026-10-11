@@ -19,16 +19,19 @@ import time
 from types import TracebackType
 from typing import IO, Any
 
-from app.generator.errors import GenerationError, GeneratorUnavailableError
+from app.generator.errors import (
+    GenerationError,
+    GenerationTimeoutError,
+    GeneratorUnavailableError,
+)
 
 _PROTOCOL_VERSION = "2025-06-18"
 
 
 class VectorCraftError(GenerationError):
-    """VectorCraft がコマンドをエラーで返した、または時間内に終わらなかった（この入力では作れない）.
+    """VectorCraft がコマンドをエラーで返した（この入力では作れない）.
 
-    時間切れも入力のせいとみなす。生成待ちへ戻すと、同じ入力が上限の回数まで毎回時間を使い切り、
-    そのあいだ後ろの生成待ちが止まるためである。
+    時間内に終わらなかったときは ``GenerationTimeoutError`` にする（入口の ``generate`` が 1 回だけやり直す）。
     """
 
 
@@ -53,6 +56,9 @@ class VectorCraft:
                 stderr=subprocess.DEVNULL,
                 text=True,
                 encoding="utf-8",
+                # 壊れたバイトで読み取りのスレッドが止まると、応答が来ないまま時間切れまで待つことになる。
+                # 置き換えて読めば、その行は壊れた応答として即座に扱える
+                errors="replace",
                 bufsize=1,
             )
         except OSError as exc:
@@ -64,6 +70,8 @@ class VectorCraft:
         self._lines: queue.Queue[str | None] = queue.Queue()
         threading.Thread(target=self._pump, args=(self._proc.stdout,), daemon=True).start()
         self._id = 0
+        # 起動の途中で失敗したら必ず閉じる。コンストラクタが例外で抜けると with の __exit__ は
+        # 呼ばれないので、ここで閉じないと子プロセスと読み取りのスレッドが残り続ける
         try:
             self._rpc(
                 "initialize",
@@ -73,10 +81,12 @@ class VectorCraft:
                     "clientInfo": {"name": "pod-admin-worker", "version": "1"},
                 },
             )
-        except (VectorCraftError, VectorCraftCrashedError) as exc:
+            self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        except BaseException as exc:
             self.close()
-            raise GeneratorUnavailableError(f"{cli} did not start: {exc}") from exc
-        self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+            if isinstance(exc, Exception):
+                raise GeneratorUnavailableError(f"{cli} did not start: {exc}") from exc
+            raise
 
     def _pump(self, stdout: IO[str]) -> None:
         for line in stdout:
@@ -99,7 +109,7 @@ class VectorCraft:
                 line = self._lines.get(timeout=max(self._deadline - time.monotonic(), 0))
             except queue.Empty:
                 self._proc.kill()
-                raise VectorCraftError(
+                raise GenerationTimeoutError(
                     f"generation did not finish within {self._timeout:.0f}s (at {method})"
                 ) from None
             if line is None:
@@ -108,17 +118,27 @@ class VectorCraft:
                 msg = json.loads(line)
             except ValueError as exc:
                 raise VectorCraftCrashedError(f"vectorcraft-cli wrote a broken reply: {exc}") from exc
+            if not isinstance(msg, dict):
+                raise VectorCraftCrashedError(f"vectorcraft-cli wrote a broken reply: {line[:200]}")
+            if "method" in msg:
+                continue  # VectorCraft からの通知・要求（応答ではない）
+            if msg.get("id") is None and "error" in msg:
+                # こちらの要求を読めなかった（id が付かない）。待っても応答は来ない
+                raise VectorCraftError(f"{method}: {msg['error']}")
             if msg.get("id") != rid:
-                continue  # 通知
+                continue
             if "error" in msg:
                 raise VectorCraftError(f"{method}: {msg['error']}")
+            if "result" not in msg:
+                raise VectorCraftCrashedError(f"vectorcraft-cli wrote a broken reply: {line[:200]}")
             return msg["result"]
 
     def tool(self, name: str, args: dict[str, Any]) -> Any:
         res = self._rpc("tools/call", {"name": name, "arguments": args})
-        text = "\n".join(
-            c.get("text", "") for c in res.get("content", []) if c.get("type") == "text"
-        )
+        content = res.get("content", []) if isinstance(res, dict) else None
+        if not isinstance(content, list) or not all(isinstance(c, dict) for c in content):
+            raise VectorCraftCrashedError(f"vectorcraft-cli wrote a broken reply to {name}: {res!r:.200}")
+        text = "\n".join(c.get("text", "") for c in content if c.get("type") == "text")
         if res.get("isError"):
             raise VectorCraftError(f"{name} {json.dumps(args, ensure_ascii=False)[:300]}: {text}")
         try:
@@ -144,6 +164,7 @@ class VectorCraft:
             self._proc.wait(timeout=10)
         except (OSError, subprocess.TimeoutExpired):
             self._proc.kill()
+            self._proc.wait()  # 刈り取らないとゾンビが残る
 
     def __enter__(self) -> VectorCraft:
         return self
@@ -155,3 +176,16 @@ class VectorCraft:
         tb: TracebackType | None,
     ) -> None:
         self.close()
+
+
+def check_available(*, cli: str, timeout_seconds: float) -> None:
+    """VectorCraft を起動してコマンドが通ることを確かめる（ワーカーの死活確認）.
+
+    起動しない・落ちたものは ``VectorCraft`` が ``GeneratorUnavailableError`` にする。
+    ここでは、起動したがコマンドが通らない（エラー・時間切れ）ものも動かないとみなす。
+    """
+    try:
+        with VectorCraft(cli, timeout_seconds=timeout_seconds) as vc:
+            vc.cmd("edit.colorSettings")
+    except GenerationError as exc:
+        raise GeneratorUnavailableError(str(exc)) from exc

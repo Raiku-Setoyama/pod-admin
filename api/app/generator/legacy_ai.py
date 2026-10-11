@@ -18,10 +18,12 @@ Illustrator 8 形式そのものの制約:
 
 from __future__ import annotations
 
+import binascii
 import io
 import json
 import math
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
@@ -45,8 +47,14 @@ def _n(v: float) -> str:
     return "0" if s in ("-0", "") else s
 
 
-def _ps_string(s: str) -> str:
-    return s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+def _ps_string(s: str) -> bytes:
+    """PostScript の文字列の中身。**Shift_JIS にしてからバイト単位で逃がす**.
+
+    文字のまま逃がしてから変換すると、2 バイト目が 0x5C（バックスラッシュ）の文字（ソ・表・能 など）が
+    閉じ括弧を逃がしてしまい、文字列が閉じなくなる。cp932 は Shift_JIS に ～ や ① などを足したもの
+    """
+    raw = s.encode("cp932", errors="replace")
+    return raw.replace(b"\\", b"\\\\").replace(b"(", b"\\(").replace(b")", b"\\)")
 
 
 def _odd_ceil(v: float) -> int:
@@ -78,8 +86,39 @@ def _cmyk_pixels(image: StreamObject) -> npt.NDArray[np.uint8]:
     if smask is not None:
         alpha_data = cast(StreamObject, smask.get_object()).get_data()
         alpha = np.frombuffer(alpha_data, dtype=np.uint8).reshape(height, width)
-        arr = (arr.astype(np.uint16) * alpha[..., None] // 255).astype(np.uint8)
+        # 大きな画像で一時配列を増やさないよう、16 ビットの配列 1 つの中で計算する
+        wide = arr.astype(np.uint16)
+        wide *= alpha[..., None]
+        wide //= 255
+        arr = wide.astype(np.uint8)
     return arr
+
+
+@dataclass(frozen=True)
+class _Raster:
+    """画像の本文（16 進）。巨大なので文字列にせず、書き出すときに直接バイト列へ書く."""
+
+    pixels: npt.NDArray[np.uint8]
+
+    # 1 行 64 文字（32 バイト）
+    _ROW = 32
+
+    def size(self) -> int:
+        """本文（``XI`` と各行）のバイト数."""
+        n = self.pixels.size
+        rows = -(-n // self._ROW)
+        return len(b"XI\n%") + 2 * n + len(b"\n%") * max(rows - 1, 0)
+
+    def write_to(self, buf: io.BytesIO) -> None:
+        data = memoryview(np.ascontiguousarray(self.pixels)).cast("B")
+        buf.write(b"XI\n%")
+        block = self._ROW * 2048  # 行の区切りを入れながら、64KB ずつ 16 進にする
+        for start in range(0, len(data), block):
+            if start:
+                buf.write(b"\n%")
+            hexed = binascii.hexlify(data[start : start + block]).upper()
+            step = self._ROW * 2
+            buf.write(b"\n%".join(hexed[i : i + step] for i in range(0, len(hexed), step)))
 
 
 class _Writer:
@@ -87,7 +126,7 @@ class _Writer:
         self._native = native
         self._images = iter(images)
         self._title = title
-        self._out: list[str] = []
+        self._out: list[str | bytes | _Raster] = []
 
     # VectorCraft は y 下向き。Illustrator 8 形式は y 上向き
     @staticmethod
@@ -185,11 +224,9 @@ class _Writer:
         w, h = kind["width"], kind["height"]
         if pixels.shape[:2] != (h, w):
             raise GenerationError("image size differs between the document and its PDF part")
-        data = pixels.tobytes().hex().upper()
         tx, ty = self._pt([xf[4], xf[5]])
         m = f"[ {_n(xf[0])} 0 0 {_n(xf[3])} {_n(tx)} {_n(ty)} ]"
-        # 1 行 64 文字。巨大なので、行のリストや末尾の改行を落とすための写しを作らない
-        body = "XI\n%" + "\n%".join(data[i : i + 64] for i in range(0, len(data), 64))
+        body = _Raster(pixels)
         self._out += [
             "0 O",
             "0 g",
@@ -200,7 +237,7 @@ class _Writer:
             "() 1 XG",
             f"{m} {w} {h} 0 Xh",
             f"{m} 0 0 {w} {h} {w} {h} 8 4 0 0 0 0",
-            f"%%BeginData: {len(body) + 1}",  # 本文（ASCII）と、その後ろの改行 1 つのバイト数
+            f"%%BeginData: {body.size() + 1}",  # 本文（ASCII）と、その後ろの改行 1 つのバイト数
             body,
             "%%EndData",
             "XH",
@@ -208,7 +245,7 @@ class _Writer:
             "F",
         ]
 
-    def write(self) -> str:
+    def write(self) -> bytes:
         doc = self._native["document"]
         ab = doc["artboards"][0]["rect"]
         left, right = ab["x0"], ab["x1"]
@@ -223,7 +260,7 @@ class _Writer:
             "%%Creator: Adobe Illustrator(R) 8.0",
             "%%AI8_CreatorVersion: 8.0",
             "%%For: (pod-admin) ()",
-            f"%%Title: ({_ps_string(self._title)})",
+            b"%%Title: (" + _ps_string(self._title) + b")",
             f"%%BoundingBox: {int(left)} {int(bottom)} {int(right) + 1} {int(top) + 1}",
             f"%%HiResBoundingBox: {_n(left)} {_n(bottom)} {_n(right)} {_n(top)}",
             "%%DocumentProcessColors: Cyan Magenta Yellow Black",
@@ -250,7 +287,7 @@ class _Writer:
             self._out += [
                 "%AI5_BeginLayer",
                 f"1 1 1 {printable} 0 0 1 {i} {r} {g} {b} 0 50 Lb",
-                f"({_ps_string(layer['name'])}) Ln",
+                b"(" + _ps_string(layer["name"]) + b") Ln",
                 "0 A",
             ]
             for child in layer["kind"]["children"]:
@@ -259,7 +296,18 @@ class _Writer:
         if next(self._images, None) is not None:
             raise GenerationError("the PDF part has images that are not in the document")
         self._out += ["%%PageTrailer", "gsave annotatepage grestore showpage", "%%Trailer", "%%EOF"]
-        return "\n".join(self._out) + "\n"
+        # 1 行ずつ書く。日本語は Shift_JIS（Illustrator 8 日本語版の書き方）。画像の本文は直接書き、
+        # 巨大な文字列の写し（16 進・大文字・連結・変換）を作らない
+        buf = io.BytesIO()
+        for line in self._out:
+            if isinstance(line, _Raster):
+                line.write_to(buf)
+            elif isinstance(line, bytes):
+                buf.write(line)
+            else:
+                buf.write(line.encode("shift_jis", errors="replace"))
+            buf.write(b"\n")
+        return buf.getvalue()
 
 
 def to_illustrator8(vectorcraft_ai: bytes, title: str) -> bytes:
@@ -271,6 +319,4 @@ def to_illustrator8(vectorcraft_ai: bytes, title: str) -> bytes:
     native = json.loads(attached[0])
     resources = cast(DictionaryObject, reader.pages[0]["/Resources"].get_object())
     images = [_cmyk_pixels(im) for im in _pdf_images(resources)]
-    text = _Writer(native, images, title).write()
-    # レイヤー名などの日本語は Shift_JIS（Illustrator 8 日本語版の書き方）
-    return text.encode("shift_jis", errors="replace")
+    return _Writer(native, images, title).write()

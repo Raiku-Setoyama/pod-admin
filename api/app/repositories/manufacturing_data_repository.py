@@ -43,10 +43,13 @@ class ManufacturingDataRepository:
         添えれば、リースが失効して別のワーカーに再確保された行を、古いワーカーが
         上書きしてしまうことを防げる（→ finish_generation）。
         """
+        # 試行回数の少ない順に取る（同じなら古い順）。やり直し中の行（生成待ちへ戻した・
+        # ワーカーごと落ちて取り戻した）が、最も古い生成待ちとして毎回先頭を塞がないようにする
+        # （REQ-0069）。1 つの入力のせいで、ほかの生成が上限の回数ぶん待たされない
         oldest_pending = (
             select(ManufacturingData.id)
             .where(ManufacturingData.status == MfgDataStatus.PENDING.value)
-            .order_by(ManufacturingData.created_at)
+            .order_by(ManufacturingData.attempts, ManufacturingData.created_at)
             .limit(1)
             .with_for_update(skip_locked=True)
             .scalar_subquery()
@@ -90,30 +93,49 @@ class ManufacturingDataRepository:
         )
         return result.scalars().first() is not None
 
-    async def reclaim_expired_leases(self) -> int:
-        """リースが切れた generating 行を pending へ戻し、戻した件数を返す.
+    async def reclaim_expired_leases(
+        self, *, max_attempts: int, exhausted_message: str
+    ) -> tuple[int, list[str]]:
+        """リースが切れた generating 行を戻し、``(pending へ戻した件数, failed にした id)`` を返す.
 
         **この判定は、ワーカーが何本走っているかに依存しない。**期限内のリースを持つ行は
         誰かが処理中なので触らない。リースを持たない generating は、リース導入前に確保された
         行（または確保直後に落ちた行）なので、期限切れとして扱う。
 
+        取り出した回数が ``max_attempts`` に達している行は、pending へ戻さずに failed にする
+        （REQ-0069）。期限切れで残っているのは、生成の途中でワーカーごと落ちた行である。
+        同じ入力なら同じように落ちるので、上限なく取り出し直さない。
+
         pending の行は対象にしない。戻す必要が無いうえ、同じ値で UPDATE すると
         バックログ全件の updated_at が動き、戻した件数も読めなくなる。
         """
-        result = await self._db.execute(
+        expired = and_(
+            ManufacturingData.status == MfgDataStatus.GENERATING.value,
+            or_(
+                ManufacturingData.lease_expires_at.is_(None),
+                ManufacturingData.lease_expires_at < func.now(),
+            ),
+        )
+        failed = await self._db.execute(
             update(ManufacturingData)
-            .where(
-                ManufacturingData.status == MfgDataStatus.GENERATING.value,
-                or_(
-                    ManufacturingData.lease_expires_at.is_(None),
-                    ManufacturingData.lease_expires_at < func.now(),
-                ),
+            .where(expired, ManufacturingData.attempts >= max_attempts)
+            .values(
+                status=MfgDataStatus.FAILED.value,
+                error_message=exhausted_message,
+                lease_expires_at=None,
             )
+            .returning(ManufacturingData.id)
+            .execution_options(synchronize_session=False)
+        )
+        failed_ids = list(failed.scalars().all())
+        reclaimed = await self._db.execute(
+            update(ManufacturingData)
+            .where(expired)
             .values(status=MfgDataStatus.PENDING.value, lease_expires_at=None)
             .returning(ManufacturingData.id)
             .execution_options(synchronize_session=False)
         )
-        return len(result.scalars().all())
+        return len(reclaimed.scalars().all()), failed_ids
 
     async def pending_summary(self) -> tuple[int, datetime | None]:
         """生成待ちの件数と、その中で最も長く動いていない行の ``updated_at`` を返す.

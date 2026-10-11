@@ -25,6 +25,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import worker
+from app.config import settings
 from app.models.manufacturing_data import MfgDataStatus
 from app.repositories.manufacturing_data_repository import ManufacturingDataRepository
 from app.services.manufacturing_data_service import (
@@ -40,11 +41,13 @@ async def _insert_row(
     *,
     seq: int = 0,
     lease_offset_seconds: int | None = None,
+    attempts: int = 0,
 ) -> str:
     """製造データ行を1件作る.
 
     created_at を1時間前に置くのは、同じ DB を共有する他のテストが残した行より必ず先に
-    並ばせるため（取り出しは古い順なので、取り出し順が決定的になる）。seq でその中の順序を決める。
+    並ばせるため（取り出しは試行回数の少ない順、同じなら古い順なので、取り出し順が決定的になる）。
+    seq でその中の順序を決める。
 
     ``lease_offset_seconds`` は現在時刻からの相対でリース期限を打つ。負なら期限切れ。
     """
@@ -61,11 +64,17 @@ async def _insert_row(
                 (id, product_code, product_type, status, attempts,
                  lease_expires_at, created_at, updated_at)
             VALUES
-                (:id, :code, 'sticker', :status, 0, {lease},
+                (:id, :code, 'sticker', :status, :attempts, {lease},
                  NOW() - INTERVAL '1 hour' + (:seq * INTERVAL '1 second'), NOW())
             """  # noqa: S608 - lease は上のリテラル 2 択のみ。外部入力は入らない
         ),
-        {"id": md_id, "code": f"WORKER-{md_id[:8]}", "status": status, "seq": seq},
+        {
+            "id": md_id,
+            "code": f"WORKER-{md_id[:8]}",
+            "status": status,
+            "seq": seq,
+            "attempts": attempts,
+        },
     )
     await session.commit()
     return md_id
@@ -247,6 +256,27 @@ class TestReclaimExpiredLeases:
             await _cleanup(db_session, [md_id])
 
     @pytest.mark.asyncio
+    async def test_fails_a_row_that_used_up_its_attempts(
+        self, db_session: AsyncSession
+    ) -> None:
+        """REQ-0069: 上限まで取り出して、毎回ワーカーごと落ちた行は、戻さずに failed にする."""
+        md_id = await _insert_row(
+            db_session,
+            MfgDataStatus.GENERATING.value,
+            lease_offset_seconds=-60,
+            attempts=settings.WORKER_MAX_GENERATION_ATTEMPTS,
+        )
+        try:
+            reclaimed = await reclaim_expired_generation_leases()
+
+            status, _, lease = await _row(db_session, md_id)
+            assert status == MfgDataStatus.FAILED.value
+            assert lease is None
+            assert reclaimed == 0  # 戻した件数には数えない
+        finally:
+            await _cleanup(db_session, [md_id])
+
+    @pytest.mark.asyncio
     async def test_reclaims_a_generating_row_without_a_lease(
         self, db_session: AsyncSession
     ) -> None:
@@ -361,6 +391,22 @@ class TestLeaseFencing:
 
 class TestDeferredGeneration:
     """生成処理を起動できず生成待ちへ戻した行が、次の取り出しで自動的に拾い直されること."""
+
+    @pytest.mark.asyncio
+    async def test_a_retrying_row_does_not_block_fresh_rows(
+        self, db_session: AsyncSession, quiet_queue: None
+    ) -> None:
+        """REQ-0069: やり直し中の行は、古くても新しい行の後ろに回る（先頭を塞がない）."""
+        retrying = await _insert_row(db_session, MfgDataStatus.PENDING.value, seq=0, attempts=2)
+        fresh = await _insert_row(db_session, MfgDataStatus.PENDING.value, seq=1)
+        try:
+            first = await claim_next_generation(1800)
+            second = await claim_next_generation(1800)
+
+            assert first is not None and second is not None
+            assert (first[0], second[0]) == (fresh, retrying)
+        finally:
+            await _cleanup(db_session, [retrying, fresh])
 
     @pytest.mark.asyncio
     async def test_a_deferred_row_is_claimed_again_and_counts_attempts(

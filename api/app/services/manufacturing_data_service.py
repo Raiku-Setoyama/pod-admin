@@ -409,7 +409,8 @@ class ManufacturingDataService:
             values = {
                 "status": MfgDataStatus.FAILED.value,
                 "error_message": (
-                    f"製造データの生成処理を {md.attempts} 回起動できませんでした: {detail}"
+                    f"製造データの生成処理を {md.attempts} 回試みましたが、"
+                    f"起動できないか途中で止まりました: {detail}"
                 )[:1000],
             }
         else:
@@ -419,7 +420,9 @@ class ManufacturingDataService:
             outcome = GenerationOutcome.DEFERRED
             values = {
                 "status": MfgDataStatus.PENDING.value,
-                "error_message": f"製造データの生成処理を起動できず再試行待ち: {detail}"[:1000],
+                "error_message": (
+                    f"製造データの生成処理を起動できない、または途中で止まったため再試行待ち: {detail}"
+                )[:1000],
             }
 
         applied = await self._finish(md, lease_token, **values)
@@ -814,11 +817,27 @@ async def reclaim_expired_generation_leases() -> int:
 
     **この関数は単独で正しい。**期限内のリースを持つ行は誰かが処理中なので触らない。
     したがって、いつ・誰が・何本同時に呼んでも安全である。
+
+    取り出した回数が上限（WORKER_MAX_GENERATION_ATTEMPTS）に達している行は、戻さずに failed にする
+    （REQ-0069。ManufacturingDataRepository.reclaim_expired_leases を参照）。
     """
+    max_attempts = settings.WORKER_MAX_GENERATION_ATTEMPTS
     session_maker = get_session_maker()
     async with session_maker() as session:
-        reclaimed = await ManufacturingDataRepository(session).reclaim_expired_leases()
+        reclaimed, failed_ids = await ManufacturingDataRepository(
+            session
+        ).reclaim_expired_leases(
+            max_attempts=max_attempts,
+            exhausted_message=(
+                f"製造データの生成を {max_attempts} 回試みましたが、完了しませんでした"
+                "（生成の途中で処理が止まった可能性があります。例: 元画像が大きすぎる）"
+            ),
+        )
         await session.commit()
+    for md_id in failed_ids:
+        logger.error(
+            "%s id=%s reason=interrupted attempts>=%d", LOG_MARK_FAILED, md_id, max_attempts
+        )
     return reclaimed
 
 
