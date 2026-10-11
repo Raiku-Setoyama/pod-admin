@@ -21,7 +21,8 @@ jobs:
           enable-cache: true
       - name: 依存インストール
         working-directory: api
-        run: uv sync --extra dev
+        # 製造データ生成（app/generator）の依存も入れて、型を検査する（REQ-0067）
+        run: uv sync --extra dev --extra generator
       - name: ruff
         working-directory: api
         run: uv run ruff check .

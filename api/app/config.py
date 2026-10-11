@@ -73,19 +73,14 @@ class Settings(BaseSettings):
     # 管理画面のベースURL（受注通知メールの注文詳細リンク用、未設定ならリンクを描画しない）
     ADMIN_BASE_URL: str = ""
 
-    # illustrator-vm（Product Manufacturing API）
-    # 未設定（空文字）の場合、製造データ生成クライアントは無効（None）となる。
-    ILLUSTRATOR_VM_BASE_URL: str = ""
-    # 認証ヘッダ（例: "Bearer xxx"）。VM は既定で認証なしのため通常は空でよい。
-    ILLUSTRATOR_VM_AUTH_HEADER: str = ""
-    # 1回の HTTP リクエストのタイムアウト秒（submit/status/download 個別）
-    ILLUSTRATOR_VM_REQUEST_TIMEOUT: float = 60.0
-    # ステータスポーリング間隔（秒）
-    ILLUSTRATOR_VM_POLL_INTERVAL: float = 5.0
-    # ジョブ完了待ちの最大秒数（VM は 1件最大約300秒）
-    ILLUSTRATOR_VM_MAX_POLL_SECONDS: float = 360.0
-    # 送信/取得の簡易リトライ回数（ネットワークエラー・503 時）
-    ILLUSTRATOR_VM_MAX_RETRIES: int = 3
+    # 製造データ生成（app/generator。ワーカーだけが使う。REQ-0067）
+    # VectorCraft の実行ファイル。ワーカー用のイメージでは Dockerfile が場所を設定する。
+    GENERATOR_VECTORCRAFT_CLI: str = "vectorcraft-cli"
+    # 1 件の生成（VectorCraft のセッション全体）にかけてよい時間の上限（秒）。通常は 1〜2 秒で終わる。
+    # 超えたら VectorCraft を止めて、その生成を失敗にする。
+    # 本番・ステージングでは Terraform（infra/modules/stack の local.generation_timeout_seconds）が
+    # ワーカーに渡し、同じ値から Job のタイムアウトを導出する。ここの既定値は手元で動かすとき用。
+    GENERATOR_TIMEOUT_SECONDS: float = 120.0
 
     # 外部注文 v2 の元データ画像取得（SSRF/DoS 防御）
     # 信頼して素通しするホスト名の許可リスト（例: ["assets.rksyo.com"]）。空なら
@@ -111,45 +106,31 @@ class Settings(BaseSettings):
     WORKER_MAX_ITEMS: int = 50
     # 生成の所有権（リース）の期限。取り出した行を「処理中」と見なす秒数。
     # **1 件の生成にかかりうる最大時間より長くすること。** 短いと、生きているワーカーが
-    # 処理中の行を別のワーカーが奪う（結果の上書きは防がれるが、VM ジョブは二重に走る）。
-    # 妥当性は generation_worst_case_seconds と照らして起動時に確認する。
-    # 既定の 40 分は、現在の ILLUSTRATOR_VM_* 設定での最悪値（約 920 秒）の 2.6 倍。
+    # 処理中の行を別のワーカーが奪う（結果の上書きは防がれるが、生成は二重に走る）。
+    # 妥当性は GENERATOR_TIMEOUT_SECONDS と照らして起動時に確認する。
+    # 既定の 40 分は VM の頃（1 件最大約 920 秒）の値のまま。今は生成が 1〜2 秒なので大きく余裕がある。
     # 長くするほど安全だが、ワーカーがクラッシュしてから拾い直されるまでの待ち時間も伸びる。
     WORKER_LEASE_SECONDS: float = 2400.0
-    # VM に届かなかった生成を生成待ちへ戻す回数の上限。取り出しのたびに attempts が
-    # 増え、この回数に達しても届かなければ failed にして人に渡す。
-    # ワーカーは VM の死活を確かめてから取り出すので、VM が止まっている間は消費されない。
+    # 生成処理を起動できなかった生成を生成待ちへ戻す回数の上限。取り出しのたびに attempts が
+    # 増え、この回数に達しても起動できなければ failed にして人に渡す。
+    # ワーカーは生成処理の死活を確かめてから取り出すので、動かない間は消費されない。
     WORKER_MAX_GENERATION_ATTEMPTS: int = 5
     # 生成待ちのまま放置されているとみなす分数。最も古い生成待ちがこれを超えたら
     # ワーカーが目印のログ（manufacturing_data_stalled）を出し、アラートが拾う。
     WORKER_STALL_ALERT_MINUTES: int = 60
-
-    @property
-    def generation_worst_case_seconds(self) -> float:
-        """1 件の生成にかかりうる最大秒数の見積もり.
-
-        illustrator-vm クライアントの実装から導く。完了待ちの打ち切り判定は
-        ``get_status()`` が**戻った後**に行われるため、待ち上限にリトライ 1 回分が
-        上乗せされる。投入と取得にも同じリトライが乗る。
-        """
-        # 1 回の HTTP 呼び出しの最悪値（リトライ回数 × タイムアウト ＋ 指数バックオフ）
-        backoff = float(sum(2**attempt for attempt in range(self.ILLUSTRATOR_VM_MAX_RETRIES)))
-        one_call = self.ILLUSTRATOR_VM_MAX_RETRIES * self.ILLUSTRATOR_VM_REQUEST_TIMEOUT + backoff
-        # 完了待ち（上限＋最後の status 呼び出し）＋ 投入 ＋ 取得
-        return float(self.ILLUSTRATOR_VM_MAX_POLL_SECONDS + one_call * 3)
 
     def lease_margin_warning(self) -> str | None:
         """リース期限の余裕が足りなければ警告文を返す（足りていれば None）.
 
         設定同士の危険な組み合わせを、人間のレビュー任せにしない。
         """
-        worst_case = self.generation_worst_case_seconds
+        worst_case = self.GENERATOR_TIMEOUT_SECONDS
         if self.WORKER_LEASE_SECONDS >= worst_case * 2:
             return None
         return (
             f"WORKER_LEASE_SECONDS={self.WORKER_LEASE_SECONDS:.0f}s は "
             f"1 件の生成の最悪値 {worst_case:.0f}s に対して余裕が 2 倍を切っています。"
-            " リースが処理中に切れると、同じ製造データに VM ジョブが二重に投入されます。"
+            " リースが処理中に切れると、同じ製造データの生成が二重に走ります。"
         )
 
 

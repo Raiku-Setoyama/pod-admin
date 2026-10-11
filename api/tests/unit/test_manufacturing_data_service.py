@@ -10,10 +10,10 @@ import httpx
 import pytest
 
 from app.config import settings
+from app.generator import GeneratedFile, GenerationError, GeneratorUnavailableError
 from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
 from app.models.order import OrderItem, OrderItemStatus
 from app.services import manufacturing_data_service as mds
-from app.services.illustrator_vm_client import IllustratorVmError, IllustratorVmUnavailableError
 from app.services.manufacturing_data_service import ManufacturingDataService
 from app.utils.exceptions import ConflictError, NotFoundError
 
@@ -92,7 +92,7 @@ class TestCacheResolution:
         svc = _service(md_repo, order_repo)
         to_generate = await svc.prepare_for_order("order-1")
 
-        # キャッシュ再利用 → VM生成は起動しない
+        # キャッシュ再利用 → 生成は起動しない
         assert to_generate == []
         assert item.manufacturing_data_id == "md-existing"
         # キャッシュが ready のため統合ステータスは発注済みへ昇格
@@ -215,19 +215,16 @@ class TestGenerateDriver:
         md.lease_expires_at = _LEASE
         return md
 
-    async def _generate_with_submit_error(
+    async def _generate_with_error(
         self, md: Any, exc: Exception, *, finish_ok: bool = True
     ) -> tuple[Any, Any]:
-        """VM への投入が exc で失敗する状況で generate を 1 回走らせ、(svc, 結果) を返す."""
+        """生成が exc で失敗する状況で generate を 1 回走らせ、(svc, 結果) を返す."""
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
         if not finish_ok:
             md_repo.finish_generation.return_value = False  # リースを失っている
 
-        vm_client = MagicMock()
-        vm_client.submit = AsyncMock(side_effect=exc)
-
-        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
+        svc = _service(md_repo, file_storage=MagicMock(), generate_file=MagicMock(side_effect=exc))
         svc._download_source_images = AsyncMock(return_value={"color": b"c", "cutline": b"k"})
         return svc, await svc.generate("md-1", _LEASE)
 
@@ -237,17 +234,12 @@ class TestGenerateDriver:
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
 
-        vm_client = MagicMock()
-        vm_client.submit = AsyncMock(return_value="job-9")
-        vm_client.wait_until_complete = AsyncMock(
-            return_value=SimpleNamespace(output_filename="sticker_out.ai")
-        )
-        vm_client.download = AsyncMock(return_value=b"AI-BYTES")
+        generate_file = MagicMock(return_value=GeneratedFile("sticker_out.ai", b"AI-BYTES"))
 
         file_storage = MagicMock()
         file_storage.save = AsyncMock(return_value="manufacturing_data/sticker_out.ai")
 
-        svc = _service(md_repo, file_storage=file_storage, vm_client=vm_client)
+        svc = _service(md_repo, file_storage=file_storage, generate_file=generate_file)
         svc._download_source_images = AsyncMock(
             return_value={"color": b"c", "cutline": b"k"}
         )
@@ -258,79 +250,66 @@ class TestGenerateDriver:
         assert md.output_filename == "sticker_out.ai"
         assert md.file_path == "manufacturing_data/sticker_out.ai"
         assert md.file_size == len(b"AI-BYTES")
-        assert md.vm_job_id == "job-9"
         assert md.lease_expires_at is None  # 処理が終わったので所有権を返す
-        # VM 必須の order_id に製造データ行の id を渡す（トレーサビリティ）
-        assert vm_client.submit.call_args.kwargs["order_id"] == md.id
+        # 生成のパラメータは正規化したもの。ファイル名に入る ID は製造データ行の id
+        spec, images, order_id = generate_file.call_args.args
+        assert (spec.product_type, spec.size, spec.variant) == ("sticker", "50x50", "clear")
+        assert images == {"color": b"c", "cutline": b"k"}
+        assert order_id == md.id
         # 生成完了を参照明細へ波及（発注準備中→発注済み）
         svc._order_repo.sync_item_status_for_manufacturing_data.assert_awaited_once_with(
             "md-1", ready=True
         )
 
     @pytest.mark.asyncio
-    async def test_vm_failure_marks_failed_with_message(self) -> None:
+    async def test_generation_error_marks_failed_with_message(self) -> None:
         md = self._claimed_md()
-        await self._generate_with_submit_error(md, IllustratorVmError("VM 503"))
+        await self._generate_with_error(md, GenerationError("tab could not be merged"))
 
         assert md.status == MfgDataStatus.FAILED.value
-        assert "VM 503" in md.error_message
+        assert "tab could not be merged" in md.error_message
         assert md.lease_expires_at is None  # 失敗でも所有権は返す
 
     @pytest.mark.asyncio
-    async def test_unreachable_vm_defers_to_pending_instead_of_failing(self) -> None:
-        """VM に届かないのは入力の誤りではない。failed にせず生成待ちへ戻す.
+    async def test_unavailable_generator_defers_to_pending_instead_of_failing(self) -> None:
+        """生成処理を起動できないのは入力の誤りではない。failed にせず生成待ちへ戻す.
 
-        2026-09-27〜10-02 の障害では failed に確定させたため、VM の復旧後も
+        2026-09-27〜10-02 の障害では failed に確定させたため、復旧後も
         人が 1 件ずつ再生成を押すまで発注が止まったままになった。
         """
         md = self._claimed_md()
-        md.vm_job_id = "stale-job"
-        svc, outcome = await self._generate_with_submit_error(
-            md, IllustratorVmUnavailableError("VM POST /api/process failed: ConnectTimeout")
+        svc, outcome = await self._generate_with_error(
+            md, GeneratorUnavailableError("cannot start vectorcraft-cli: No such file")
         )
 
         assert outcome is mds.GenerationOutcome.DEFERRED
         assert md.status == MfgDataStatus.PENDING.value
-        assert md.vm_job_id is None
-        assert "ConnectTimeout" in md.error_message
+        assert "No such file" in md.error_message
         assert md.lease_expires_at is None
         # 発注可否は変えない（生成待ちのまま）
         svc._order_repo.sync_item_status_for_manufacturing_data.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_unreachable_vm_fails_after_the_attempt_limit(self) -> None:
+    async def test_unavailable_generator_fails_after_the_attempt_limit(self) -> None:
         md = self._claimed_md()
         md.attempts = settings.WORKER_MAX_GENERATION_ATTEMPTS
-        _, outcome = await self._generate_with_submit_error(
-            md, IllustratorVmUnavailableError("down")
-        )
+        _, outcome = await self._generate_with_error(md, GeneratorUnavailableError("down"))
 
         assert outcome is mds.GenerationOutcome.FAILED
         assert md.status == MfgDataStatus.FAILED.value
-        assert "接続できませんでした" in md.error_message
+        assert "起動できませんでした" in md.error_message
 
     @pytest.mark.asyncio
     async def test_lost_lease_while_deferring_is_skipped(self) -> None:
         md = self._claimed_md()
-        _, outcome = await self._generate_with_submit_error(
-            md, IllustratorVmUnavailableError("down"), finish_ok=False
+        _, outcome = await self._generate_with_error(
+            md, GeneratorUnavailableError("down"), finish_ok=False
         )
 
         assert outcome is mds.GenerationOutcome.SKIPPED
         assert md.status == MfgDataStatus.GENERATING.value  # 他のワーカーの行を書き換えない
 
     @pytest.mark.asyncio
-    async def test_not_configured_vm_marks_failed(self) -> None:
-        md = self._claimed_md()
-        md_repo = AsyncMock()
-        md_repo.find_by_id.return_value = md
-
-        svc = _service(md_repo, file_storage=MagicMock(), vm_client=None)
-
-        await svc.generate("md-1", _LEASE)
-        assert md.status == MfgDataStatus.FAILED.value
-        assert "not configured" in md.error_message
-
     @pytest.mark.parametrize(
         "status",
         [
@@ -350,13 +329,12 @@ class TestGenerateDriver:
         md.status = status
         md_repo = AsyncMock()
         md_repo.find_by_id.return_value = md
-        vm_client = MagicMock()
-        vm_client.submit = AsyncMock()
+        generate_file = MagicMock()
 
-        svc = _service(md_repo, file_storage=MagicMock(), vm_client=vm_client)
+        svc = _service(md_repo, file_storage=MagicMock(), generate_file=generate_file)
         await svc.generate("md-1", _LEASE)
 
-        vm_client.submit.assert_not_called()
+        generate_file.assert_not_called()
         assert md.status == status  # 状態も変えない
 
     @pytest.mark.asyncio
@@ -437,7 +415,7 @@ class TestRetry:
         assert md.status == MfgDataStatus.PENDING.value
         assert md.error_message is None
         assert resp.status == MfgDataStatus.PENDING.value
-        # 人が再駆動したので、VM 不達の試行回数は数え直す
+        # 人が再駆動したので、生成処理を起動できなかった試行回数は数え直す
         assert md.attempts == 0
 
     @pytest.mark.asyncio
@@ -492,7 +470,7 @@ class TestRegenerate:
 
         assert md.status == MfgDataStatus.PENDING.value
         assert md.error_message is None
-        assert md.attempts == 0  # 作り直しなので VM 不達の試行回数も数え直す
+        assert md.attempts == 0  # 作り直しなので試行回数も数え直す
         # 降格は 1 回だけ（生成の起動もこの 1 回に対応する）
         order_repo.sync_item_status_for_manufacturing_data.assert_awaited_once_with(
             "md-1", ready=False

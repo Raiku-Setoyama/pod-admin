@@ -164,7 +164,7 @@ variable "worker_schedule_paused" {
 }
 
 variable "illustrator_vm_base_url" {
-  description = "製造データ生成 VM の URL。空なら生成機能を無効にする"
+  description = "製造データ生成 VM の URL。REQ-0067 以降は切り戻しのためだけに使う（REQ-0068 で消す）"
   type        = string
   default     = ""
 }
@@ -183,10 +183,8 @@ variable "worker_vpc_egress" {
   description = <<-DESC
     ワーカー Job を Direct VPC egress で参加させるネットワーク。null なら繋がない。
 
-    **繋ぐのはワーカーだけである。** illustrator-vm を呼ぶのは `generate()` だけで、
-    それを実行するのはワーカー Job だけである
-    （api の `regenerate` は行を pending に戻すだけで VM を呼ばない）。
-    **この非対称の正本はここである。**
+    REQ-0067 以降、ワーカーは VM を呼ばない。ワーカーのイメージを以前のものへ戻して
+    VM で生成し直す切り戻しのためだけに残している（REQ-0068 で消す）。
   DESC
   type = object({
     network    = string

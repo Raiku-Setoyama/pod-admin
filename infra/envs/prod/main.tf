@@ -74,27 +74,20 @@ module "stack" {
   # Cloud Run Job は起動のたびにイメージ取得・Python 起動・Cloud SQL 接続まで
   # 課金される。**「空なら即降りる」実装で浮くのは、そのあとの数秒だけ**であり、
   # 起動そのものの費用は減らない。1 分間隔にすると月 43,000 回起動して
-  # 月 ¥1,300〜2,100 上乗せになる。**買えるのは待ち時間 4 分の短縮だけ**で、
-  # 生成 1 件に 30〜360 秒かかる処理では釣り合わない。
+  # 月 ¥1,300〜2,100 上乗せになる。**買えるのは待ち時間 4 分の短縮だけ**で、釣り合わない。
   worker_schedule = "*/5 * * * *"
 
   # 有効。**止めるときも、コンソールではなくここを true にする**
   # （コンソールで止めても次の apply が黙って動かし直す）。
   #
-  # **止まる経路はもう 1 つある。** modules/stack の
-  # `paused = worker_schedule_paused || illustrator_vm_base_url == ""` なので、
-  # 下の URL を空にすると、この行が false のままでも Scheduler は止まる。
-  # **戻すのを忘れても何もエラーにならない。** 製造データが黙って作られなく
-  # なるだけである。REQ-0055 で URL を張り替えるときに踏みやすい。
   worker_schedule_paused = false
 
-  # **移送後の VM の内部 IP**（REQ-0055）。到達できるのは pod-admin-run
-  # サブネットからだけである。移送前は個人プロジェクトの外部 IP
-  # `http://34.84.121.166:8000` を指していた。
+  # 製造データ生成 VM の内部 IP（REQ-0055）。REQ-0067 で生成をワーカーの中へ移したので、
+  # 今のワーカーはこの値を読まない。ワーカーのイメージを以前のものへ戻して VM で生成し直す
+  # 切り戻しのためだけに、VM と一緒に残している（REQ-0068 で消す）。
   illustrator_vm_base_url = "http://${local.illustrator_vm_internal_ip}:8000"
 
-  # **ワーカーだけを VPC に入れる。** 理由は modules/stack/variables.tf が正本。
-  # egress は PRIVATE_RANGES_ONLY なので、SendGrid と Cloud SQL は公衆網のままである。
+  # 上と同じく切り戻しのためだけに残している。理由は modules/stack/variables.tf が正本。
   worker_vpc_egress = {
     network    = module.network.network_name
     subnetwork = module.network.run_subnet_id

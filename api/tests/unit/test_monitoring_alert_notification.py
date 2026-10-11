@@ -29,8 +29,8 @@ from app.services.monitoring_alert_notification import (
 
 _INCIDENT = MonitoringIncident(
     incident_id="i-1",
-    policy_name="製造データ生成 VM が応答しない",
-    condition_name="illustrator_vm_health が 15 分で 3 回 NG",
+    policy_name="製造データの生成処理が動かない",
+    condition_name="generator_health が 15 分で 3 回 NG",
     state="open",
     summary="NG が続いています",
     url="https://console.cloud.google.com/monitoring/alerting/incidents/i-1",
@@ -111,8 +111,8 @@ class TestWebhookEndpoint:
         "version": "1.2",
         "incident": {
             "incident_id": "i-1",
-            "policy_name": "製造データ生成 VM が応答しない",
-            "condition_name": "illustrator_vm_health が 15 分で 3 回 NG",
+            "policy_name": "製造データの生成処理が動かない",
+            "condition_name": "generator_health が 15 分で 3 回 NG",
             "state": "open",
             "summary": "NG",
             "url": "https://example.com",
@@ -157,7 +157,7 @@ class TestWebhookEndpoint:
 
         assert res.status_code == status
         incident = service.notify.await_args.args[0]
-        assert incident.policy_name == "製造データ生成 VM が応答しない"
+        assert incident.policy_name == "製造データの生成処理が動かない"
         assert incident.documentation.content == "手順"
 
     @pytest.mark.asyncio
