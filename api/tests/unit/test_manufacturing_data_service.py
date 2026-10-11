@@ -297,7 +297,7 @@ class TestGenerateDriver:
 
         assert outcome is mds.GenerationOutcome.FAILED
         assert md.status == MfgDataStatus.FAILED.value
-        assert "起動できませんでした" in md.error_message
+        assert "起動できないか途中で止まりました" in md.error_message
 
     @pytest.mark.asyncio
     async def test_lost_lease_while_deferring_is_skipped(self) -> None:
@@ -551,7 +551,7 @@ class TestRecovery:
         session_maker = MagicMock(return_value=session_cm)
 
         repo = AsyncMock()
-        repo.reclaim_expired_leases.return_value = 2
+        repo.reclaim_expired_leases.return_value = (2, [])
 
         with (
             patch.object(mds, "get_session_maker", return_value=session_maker),
@@ -562,6 +562,31 @@ class TestRecovery:
         # pending へ戻すだけ。再駆動は通常の取り出しが拾う。
         assert reclaimed == 2
         session.commit.assert_awaited()
+        assert (
+            repo.reclaim_expired_leases.call_args.kwargs["max_attempts"]
+            == settings.WORKER_MAX_GENERATION_ATTEMPTS
+        )
+
+    @pytest.mark.asyncio
+    async def test_rows_that_used_up_their_attempts_are_logged_as_failed(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """REQ-0069: 上限まで取り出して落ち続けた行は failed になり、失敗のアラートの目印が出る."""
+        session = AsyncMock()
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=session)
+        session_cm.__aexit__ = AsyncMock(return_value=False)
+        repo = AsyncMock()
+        repo.reclaim_expired_leases.return_value = (0, ["md-9"])
+
+        with (
+            patch.object(mds, "get_session_maker", return_value=MagicMock(return_value=session_cm)),
+            patch.object(mds, "ManufacturingDataRepository", return_value=repo),
+        ):
+            await mds.reclaim_expired_generation_leases()
+
+        assert f"{mds.LOG_MARK_FAILED} id=md-9 reason=interrupted" in caplog.text
+        assert "回試みましたが" in repo.reclaim_expired_leases.call_args.kwargs["exhausted_message"]
 
 
 class TestManufacturingReadinessGate:

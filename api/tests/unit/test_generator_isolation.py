@@ -12,7 +12,7 @@ import pytest
 
 from app import generator
 from app.generator.errors import GeneratorUnavailableError
-from app.generator.runner import check_available
+from app.generator.vectorcraft import check_available
 from app.utils.mfg_product_mapping import build_generation_spec
 
 # ワーカー用のイメージにだけ入っている依存
@@ -48,6 +48,25 @@ def test_entry_points_start_without_generator_dependencies(entry: str) -> None:
         capture_output=True,
         text=True,
         env=env,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_health_check_does_not_load_generator_dependencies() -> None:
+    """死活確認は起動のたびに走るので、重い依存を読み込まない（無くても NG を返せる）."""
+    env = {
+        **os.environ,
+        "DATABASE_URL": os.environ.get("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/db"),
+        "SECRET_KEY": os.environ.get("SECRET_KEY", "test"),
+        "GENERATOR_VECTORCRAFT_CLI": "/nonexistent/vectorcraft-cli",
+    }
+    code = (
+        "from app.generator import check_available\n"
+        "from app.generator.errors import GeneratorUnavailableError\n"
+        "try:\n    check_available()\nexcept GeneratorUnavailableError:\n    pass\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", _HIDE_WORKER_ONLY + code], capture_output=True, text=True, env=env
     )
     assert result.returncode == 0, result.stderr
 

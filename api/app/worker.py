@@ -50,7 +50,7 @@ from sqlalchemy import text
 import app.models  # noqa: F401  # 全モデルをマッパー登録に載せる（docstring 参照）
 from app.config import settings
 from app.database import get_engine
-from app.generator import GeneratorUnavailableError, check_available
+from app.generator import check_available
 from app.logging_config import TEXT_FORMAT
 from app.services.manufacturing_data_service import (
     GenerationOutcome,
@@ -118,7 +118,9 @@ async def check_generator_health() -> bool:
     """生成処理（VectorCraft）が動くかを確かめ、結果を目印つきでログに残す."""
     try:
         await asyncio.to_thread(check_available)
-    except GeneratorUnavailableError as exc:
+    except Exception as exc:  # noqa: BLE001 - 想定外の例外でも死活確認で起動を落とさない
+        # 想定外の例外（VectorCraft の応答が壊れている等）も「動かない」とみなす。
+        # 起動ごと落ちると、リースの回収と滞留の検知まで止まる
         logger.warning("%s status=ng detail=%s", LOG_MARK_GENERATOR_HEALTH, exc)
         return False
     logger.info("%s status=ok", LOG_MARK_GENERATOR_HEALTH)
@@ -153,6 +155,7 @@ async def run_once() -> int:
     """
     # 取り出しの可否に関わらず毎回確かめる（ロックを取れずに降りる起動でも）。
     # ログが途絶えたこと自体を「ワーカーが動いていない」として検知するためである。
+    started = time.monotonic()
     generator_healthy = await check_generator_health()
 
     engine = get_engine()
@@ -180,8 +183,11 @@ async def run_once() -> int:
                 logger.info("reclaimed %d generation(s) with an expired lease", reclaimed)
             processed = 0
             if generator_healthy:
+                # 死活確認とロック待ちにかかった時間も、起動の持ち時間から引く
+                # （Job のタイムアウトは「持ち時間 + 1 件の最悪値」から導出している）
                 processed = await process_pending(
-                    max_runtime_seconds=settings.WORKER_MAX_RUNTIME_SECONDS,
+                    max_runtime_seconds=settings.WORKER_MAX_RUNTIME_SECONDS
+                    - (time.monotonic() - started),
                     max_items=settings.WORKER_MAX_ITEMS,
                 )
             else:

@@ -445,7 +445,7 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              製造データ作成サーバーが応答しない・生成が失敗した・生成待ちが止まっているときに、指定したメールアドレスへ通知します。回復したときにも通知します。
+              製造データの生成処理が動かない・生成が失敗した・生成待ちが止まっているときに、指定したメールアドレスへ通知します。回復したときにも通知します。
             </p>
 
             <div className="flex items-center gap-3">
