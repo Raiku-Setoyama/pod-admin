@@ -21,13 +21,15 @@ import type { ManufacturingDataRow } from "@/types/api";
 /**
  * 「生成待ち」の内訳を出す。
  *
- * **pending は 2 つの意味を持つ。** 一度も試していない行と、VM に届かなくて
- * 待たされている行である。後者を「生成待ち」とだけ表示すると、VM が落ちていることが
- * 画面から読み取れない。区別は保存しておらず、再試行の予定時刻から導く。
+ * **pending は 2 つの意味を持つ。** 一度も試していない行と、一度試して戻された行
+ * （生成処理が起動できなかった・ワーカーごと落ちた）である。後者を「生成待ち」とだけ
+ * 表示すると、滞っていることが画面から読み取れない。区別は保存しておらず試行回数から導く。
+ *
+ * 取り出しは試行回数の少ない順なので（REQ-0069）、ここに出る行は後回しにされている。
  */
 function pendingDetail(row: ManufacturingDataRow): string | null {
-  if (row.status !== "pending" || !row.next_attempt_at) return null;
-  return `VM に届かず待機中（${row.attempts} 回目・${formatDateTime(row.next_attempt_at)} 以降に再試行）`;
+  if (row.status !== "pending" || row.attempts === 0) return null;
+  return `再試行待ち（${row.attempts} 回試行済み・順番は後回し）`;
 }
 
 interface ManufacturingDataListProps {

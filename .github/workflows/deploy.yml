@@ -83,6 +83,21 @@ jobs:
           cache-from: type=gha,scope=api
           cache-to: type=gha,scope=api,mode=max
 
+      # 製造データ生成ワーカーのイメージ。API のイメージ（production）に生成の依存
+      # （VectorCraft・numpy など）を足したもので、ワーカーだけが使う（REQ-0067 / ADR-0039）。
+      # production と同じ層を使い回すので、API のキャッシュも読む。
+      - name: ワーカーのイメージをビルドして push
+        uses: docker/build-push-action@v6
+        with:
+          context: api
+          target: worker
+          push: true
+          tags: ${{ env.IMAGE_BASE }}/worker:${{ env.TAG }}
+          cache-from: |
+            type=gha,scope=api
+            type=gha,scope=worker
+          cache-to: type=gha,scope=worker,mode=max
+
       - name: API の公開 URL を取得
         id: api_url
         run: |
@@ -118,10 +133,10 @@ jobs:
       - name: 管理画面を反映
         run: gcloud run deploy pod-admin-web --image="$IMAGE_BASE/web:$TAG"
 
-      # ワーカーは API と同じイメージで動く。ここを忘れると、
+      # ワーカーは API と同じコードの、生成の依存を足したイメージで動く。ここを忘れると、
       # **ワーカーだけが古いコードのまま動き続けて何も壊れない。**
       - name: ワーカーのイメージを揃える
-        run: gcloud run jobs update pod-admin-worker --image="$IMAGE_BASE/api:$TAG"
+        run: gcloud run jobs update pod-admin-worker --image="$IMAGE_BASE/worker:$TAG"
 
       - name: 疎通確認
         run: |

@@ -38,7 +38,7 @@ export function canRegenerateManufacturingData(
 }
 
 /**
- * 元画像を差し替えられるか。生成中（進行中の VM ジョブと競合する）以外は差し替え可能で、
+ * 元画像を差し替えられるか。生成中（進行中の生成と競合する）以外は差し替え可能で、
  * 生成待ち・生成失敗の行も是正できる（API 側のゲートと一致）。
  */
 export function canReplaceSourceImages(

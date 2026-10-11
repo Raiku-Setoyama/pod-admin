@@ -1,14 +1,16 @@
-"""pod-admin の商品属性を illustrator-vm（Product Manufacturing API）の属性へ変換する.
+"""pod-admin の商品属性を、製造データ生成（app/generator）のパラメータへ変換する.
 
-illustrator-vm は `config/products.yaml` を正として以下を要求する:
+生成は商品ごとに以下を要求する（illustrator-vm の `config/products.yaml` から引き継いだ規則）:
 
-- tshirt:           single / S,M,L,XL          / variant なし / PDF
-- tote_bag:         single / M                 / variant なし / PDF
-- acrylic_keychain: multi(color+cutline[+white]) / variant 必須(clear/color) / 50x50,70x70,100x100 / AI
-- acrylic_stand:    multi(color+cutline[+white]) / variant なし              / 50mm,70mm,100mm      / AI
-- sticker:          multi(color+cutline)         / variant 必須(clear)       / 50x50,70x70,100x100  / AI
+- tshirt:           design（無ければ color）1 枚  / variant なし              / S,M,L,XL
+- tote_bag:         design（無ければ color）1 枚  / variant なし              / M
+- acrylic_keychain: color+cutline[+white]         / variant 必須(clear/color) / 50x50,70x70,100x100
+- acrylic_stand:    color+cutline[+white]         / variant なし              / 50mm,70mm,100mm
+- sticker:          color+cutline                 / variant 必須(clear)       / 50x50,70x70,100x100
 
-注: mug_cup は VM 側では対応しているが pod-admin の ProductType に未定義のため本スコープ外。
+出力の形式（PDF / .ai）とファイル名は生成側（app/generator/products.py）が決める。
+
+注: mug_cup は illustrator-vm では対応していたが、pod-admin の ProductType に未定義のため対象外。
 
 バリアントは受注値ではなく「提供された元データのレイヤー構成」から決定的に導出する:
 - keychain: white レイヤーがあれば "color"（白版あり）、なければ "clear"
@@ -30,29 +32,22 @@ LAYER_DESIGN = "design"
 # source_images で扱うレイヤー種別（受注スキーマ・製造データスキーマ共通の語彙）
 LayerType = Literal["color", "cutline", "white", "design"]
 
-# 入力モード
-INPUT_MODE_SINGLE = "single"
-INPUT_MODE_MULTI = "multi"
-
 
 class MfgMappingError(ValueError):
-    """商品属性を VM 属性へ変換できない場合のエラー."""
+    """商品属性を生成のパラメータへ変換できない場合のエラー."""
 
 
 @dataclass(frozen=True)
-class VmMapping:
-    """illustrator-vm へ渡す製造データ生成パラメータ."""
+class GenerationSpec:
+    """製造データ生成のパラメータ."""
 
     product_type: str
     size: str
     variant: str | None
-    input_mode: str
     # 送信必須のレイヤー種別
     required_layers: tuple[str, ...]
     # 提供されていれば送信する任意レイヤー種別
     optional_layers: tuple[str, ...] = field(default_factory=tuple)
-    # 生成物の拡張子（保存/命名のフォールバック。実ファイル名は VM の output_filename を正とする）
-    output_ext: str = ".ai"
 
     @property
     def usable_layers(self) -> tuple[str, ...]:
@@ -60,7 +55,7 @@ class VmMapping:
         return self.required_layers + self.optional_layers
 
 
-# サイズ正規化テーブル（product_type -> {pod-admin size: VM size}）
+# サイズ正規化テーブル（product_type -> {pod-admin size: 生成のサイズ}）
 _SIZE_MAPS: dict[str, dict[str, str]] = {
     "acrylic_keychain": {"50x50mm": "50x50", "70x70mm": "70x70", "100x100mm": "100x100"},
     "sticker": {"50x50mm": "50x50", "70x70mm": "70x70", "100x100mm": "100x100"},
@@ -71,7 +66,7 @@ _SIZE_MAPS: dict[str, dict[str, str]] = {
 
 
 def _normalize_size(product_type: str, size: str | None) -> str:
-    """pod-admin のサイズを VM サイズへ正規化する."""
+    """pod-admin のサイズを生成のサイズへ正規化する."""
     if not size:
         raise MfgMappingError(f"size is required for product_type '{product_type}'")
     size_map = _SIZE_MAPS[product_type]
@@ -84,12 +79,12 @@ def _normalize_size(product_type: str, size: str | None) -> str:
     return normalized
 
 
-def build_vm_mapping(
+def build_generation_spec(
     product_type: str,
     size: str | None,
     provided_layers: Iterable[str],
-) -> VmMapping:
-    """pod-admin の商品属性から VM 生成パラメータを構築する.
+) -> GenerationSpec:
+    """pod-admin の商品属性から生成のパラメータを構築する.
 
     Args:
         product_type: pod-admin の商品タイプ（tshirt / acrylic_keychain 等）。
@@ -111,50 +106,42 @@ def build_vm_mapping(
             raise MfgMappingError(
                 f"product_type '{product_type}' requires a 'design' (or 'color') layer"
             )
-        return VmMapping(
+        return GenerationSpec(
             product_type=product_type,
             size=_normalize_size(product_type, size),
             variant=None,
-            input_mode=INPUT_MODE_SINGLE,
             required_layers=required,
-            output_ext=".pdf",
         )
 
     if product_type == "acrylic_keychain":
         _require_layers(product_type, layers, (LAYER_COLOR, LAYER_CUTLINE))
         variant = "color" if LAYER_WHITE in layers else "clear"
-        return VmMapping(
+        return GenerationSpec(
             product_type=product_type,
             size=_normalize_size(product_type, size),
             variant=variant,
-            input_mode=INPUT_MODE_MULTI,
             required_layers=(LAYER_COLOR, LAYER_CUTLINE),
             optional_layers=(LAYER_WHITE,),
-            output_ext=".ai",
         )
 
     if product_type == "acrylic_stand":
         _require_layers(product_type, layers, (LAYER_COLOR, LAYER_CUTLINE))
-        return VmMapping(
+        return GenerationSpec(
             product_type=product_type,
             size=_normalize_size(product_type, size),
             variant=None,
-            input_mode=INPUT_MODE_MULTI,
             required_layers=(LAYER_COLOR, LAYER_CUTLINE),
             optional_layers=(LAYER_WHITE,),
-            output_ext=".ai",
         )
 
     if product_type == "sticker":
         _require_layers(product_type, layers, (LAYER_COLOR, LAYER_CUTLINE))
         # sticker は variants(clear) が定義された商品 = variant 必須（省略不可）
-        return VmMapping(
+        return GenerationSpec(
             product_type=product_type,
             size=_normalize_size(product_type, size),
             variant="clear",
-            input_mode=INPUT_MODE_MULTI,
             required_layers=(LAYER_COLOR, LAYER_CUTLINE),
-            output_ext=".ai",
         )
 
     raise MfgMappingError(f"Unsupported product_type '{product_type}' for manufacturing data")

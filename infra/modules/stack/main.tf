@@ -21,10 +21,11 @@ locals {
     managed-by = "terraform"
   }
 
-  # 1 件の製造データ生成にかかりうる最大秒数。
-  # **正本は api/app/config.py の Settings.generation_worst_case_seconds** であり、
-  # ここはその値を写したもの。ILLUSTRATOR_VM_* の設定を変えたら両方を直す。
-  generation_worst_case_seconds = 921
+  # 1 件の製造データ生成（VectorCraft のセッション全体）の上限秒数。**正本はここである。**
+  # ワーカーに GENERATOR_TIMEOUT_SECONDS として渡し、同じ値から Job のタイムアウトを導出する。
+  generation_timeout_seconds = 120
+  # 1 件にかかりうる最大秒数。生成の上限に、元画像の取得（1 レイヤー最大 30 秒、並列）と保存の分を足す。
+  generation_worst_case_seconds = local.generation_timeout_seconds + 60
 
   # ワーカーは自分で降りる設計なので、Job のタイムアウトは
   # 「降りる判断をしてから、最後の 1 件を処理し終えるまで」を賄えばよい。
@@ -359,11 +360,11 @@ module "worker_job" {
   env_vars = merge(local.app_env_vars, {
     WORKER_MAX_RUNTIME_SECONDS = tostring(var.worker_max_runtime_seconds)
     WORKER_MAX_ITEMS           = tostring(var.worker_max_items)
+    GENERATOR_TIMEOUT_SECONDS  = tostring(local.generation_timeout_seconds)
 
-    # **ここにしか置かない。** api と migrate は VM を呼ばないので、渡すと
-    # アプリ側の「illustrator-vm is not configured」ガードを効かないほうへ倒す。
-    # 将来 api から同期生成を足した人が受け取るのは、その正しいエラーではなく、
-    # VPC の外から私設アドレスへ繋ごうとして 300 秒のタイムアウトを使い切る沈黙になる。
+    # 製造データは REQ-0067 からワーカーの中で生成する（ILLUSTRATOR_VM_BASE_URL は読まない）。
+    # この値は、ワーカーのイメージを REQ-0067 より前のものへ戻して VM で生成し直す
+    # 切り戻しのためだけに残している。VM と一緒に REQ-0068 で消す。
     ILLUSTRATOR_VM_BASE_URL = var.illustrator_vm_base_url
   })
   secret_env_vars    = local.app_secret_env_vars
@@ -371,7 +372,7 @@ module "worker_job" {
 
   invoker_members = [local.scheduler_member]
 
-  # **ワーカーだけが illustrator-vm を呼ぶ。** api / web / migrate は VPC に繋がない。
+  # 切り戻し（上の ILLUSTRATOR_VM_BASE_URL と同じ）のためだけに残している。REQ-0068 で消す。
   vpc_egress = var.worker_vpc_egress
 
   depends_on = [module.secrets]
@@ -405,11 +406,8 @@ module "worker_schedule" {
   service_account_email = module.service_accounts.emails["pod-admin-scheduler"]
   schedule              = var.worker_schedule
 
-  # **VM が未設定なら必ず止める。** 空の URL のまま動かすと、
-  # run_generation が IllustratorVmError を投げ、待ち行列の行が次々に
-  # failed へ落ちる（api/app/services/manufacturing_data_service.py）。
-  # 2 つの設定が並んでいるだけでは、片方だけ変えた事故を防げない。
-  paused = var.worker_schedule_paused || var.illustrator_vm_base_url == ""
+  # 生成はワーカーの中で行うので（REQ-0067）、VM の設定の有無では止めない。
+  paused = var.worker_schedule_paused
 
   depends_on = [module.worker_job]
 }

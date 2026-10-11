@@ -51,8 +51,6 @@ export interface ManufacturingDataRow extends MfgDataItemInfo {
   variant: string | null;
   vm_job_id: string | null;
   attempts: number;
-  // 再試行を始めてよい時刻。pending でこれが入っていれば「VM に届かず待機中」。
-  next_attempt_at: string | null;
   source_images_replaced_by: string | null;
   created_at: string;
   updated_at: string;

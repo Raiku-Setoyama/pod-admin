@@ -31,7 +31,6 @@ from app.services.dashboard_service import DashboardService
 from app.services.email_service import EmailService
 from app.services.external_order_notification import ExternalOrderNotificationService
 from app.services.external_service import ExternalService
-from app.services.illustrator_vm_client import IllustratorVmClient
 from app.services.invoice_service import InvoiceService
 from app.services.manufacturer_daily_digest import ManufacturerDailyDigestService
 from app.services.manufacturer_notification import ManufacturerNotificationService
@@ -284,25 +283,22 @@ def get_manufacturer_order_service(
     )
 
 
-def get_illustrator_vm_client() -> IllustratorVmClient | None:
-    """Get illustrator-vm client (None if ILLUSTRATOR_VM_BASE_URL not configured)."""
-    return IllustratorVmClient.from_settings(settings)
-
-
 def get_manufacturing_data_service(
     db: Annotated[AsyncSession, Depends(get_db_session)],
     md_repo: Annotated[ManufacturingDataRepository, Depends(get_manufacturing_data_repository)],
     order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
-    vm_client: Annotated[IllustratorVmClient | None, Depends(get_illustrator_vm_client)],
     file_storage: Annotated[FileStorage, Depends(get_file_storage)],
 ) -> ManufacturingDataService:
-    """Get manufacturing data service."""
+    """Get manufacturing data service.
+
+    API のプロセスは生成しない（generate() を呼ばない）。再生成などは行を生成待ちへ戻すだけで、
+    実際の生成はワーカーが行う（REQ-0067）。生成の依存も API のイメージには入っていない。
+    """
     return ManufacturingDataService(
         md_repo=md_repo,
         order_repo=order_repo,
         session=db,
         file_storage=file_storage,
-        vm_client=vm_client,
     )
 
 

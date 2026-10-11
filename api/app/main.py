@@ -28,21 +28,15 @@ from app.routers import (
 )
 from app.utils.exceptions import AppException
 
-# アプリの INFO ログを Cloud Logging に残す（設定しないと WARNING 以上しか出ない）
+# アプリの INFO ログを Cloud Logging に残す（設定しないと WARNING 以上しか出ない）。
+# **import の途中で出るログには間に合わない。** Python は上の import をすべて実行してから
+# ここに来るので、ルータ取り込み中のログは既定の構成で出る。起動時の 1 度きりであり、
+# リクエスト処理のログはここから先の話なので、import を挟んで呼ぶ形は取らない。
 configure_logging()
 
 # 中断された製造データ生成の復旧は、API の起動時ではなくワーカー（app/worker.py）が行う。
 # API は複数インスタンスが同時に起動しうるので、起動フックで復旧を走らせると、
 # 別インスタンスが生成中の行まで巻き戻してしまう。
-
-# **アプリを組み立てる前に、入口で 1 度だけ呼ぶ。**
-# これが無いと、アプリの logger.info は本番のどこにも出ない（logging_config 参照）。
-#
-# **import の途中で出るログには間に合わない。** Python は上の import をすべて
-# 実行してからこの行に来るので、ルータ取り込み中のログはまだ既定の構成で出る。
-# 起動時の 1 度きりであり、リクエスト処理と worker のログはここから先の話なので、
-# import を挟んで呼ぶ形（E402 の抑制が要る）は取らない。
-configure_logging()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

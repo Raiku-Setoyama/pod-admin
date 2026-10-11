@@ -49,7 +49,7 @@ async def retry_failed_manufacturing_data(
 ) -> ManufacturingDataRetryFailedResponse:
     """失敗した製造データ生成をまとめて待ち行列へ戻す.
 
-    VM が止まっていた間に溜まった失敗を、1 件ずつ叩かずに戻すための入口である。
+    生成が止まっていた間に溜まった失敗を、1 件ずつ叩かずに戻すための入口である。
     ``ids`` を省略すると failed の全件が対象になる。
 
     **固定パスなので `/{mfg_data_id}` より前に置く。** 後ろに置くと、この URL が

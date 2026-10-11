@@ -37,9 +37,6 @@ class ManufacturingDataResponse(BaseModel):
     file_size: int | None = None
     error_message: str | None = None
     attempts: int
-    # 再試行を始めてよい時刻。pending でこれが入っていれば「VM に届かず待機中」。
-    # **画面はこの 1 つで未着手と再試行待ちを描き分けられる。**
-    next_attempt_at: datetime | None = None
     # 元画像の差し替え履歴（未差し替えなら None）
     source_images_replaced_at: datetime | None = None
     source_images_replaced_by: str | None = None
@@ -89,7 +86,7 @@ class ManufacturingDataListResponse(BaseModel):
 class ManufacturingDataRetryFailedRequest(BaseModel):
     """失敗した製造データの一括リトライ要求."""
 
-    # 対象の ID。**省略すると failed の全件が対象になる**（VM 停止明けの一括復旧）。
+    # 対象の ID。**省略すると failed の全件が対象になる**（生成が止まっていた後の一括復旧）。
     ids: list[str] | None = None
 
 

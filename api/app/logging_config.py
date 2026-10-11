@@ -37,9 +37,9 @@ class CloudLoggingFormatter(logging.Formatter):
 
 # ルートに水準を与えると、これまで捨てられていた依存ライブラリの INFO が一斉に出る。
 #
-# **とくに httpx は 1 リクエスト 1 行である。** 製造データ 1 件の生成は VM の完了待ちを
-# 5 秒間隔で最大 360 秒ポーリングするので、それだけで 70 行を超える。読む人は居ないうえに、
-# Cloud Logging の取り込みは従量なので静かに費用になる。
+# **とくに httpx は 1 リクエスト 1 行である。** ワーカーは 1 件につき元画像のレイヤーを
+# それぞれ HTTP で取り、生成物を GCS に上げる（_download_source_images / FileStorage）。
+# 読む人は居ないうえに、Cloud Logging の取り込みは従量なので静かに費用になる。
 _NOISY = ("httpx", "httpcore", "urllib3", "google", "asyncio")
 
 

@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import UploadFile
 
+from app.generator import GeneratedFile
 from app.models.manufacturing_data import ManufacturingData, MfgDataStatus
 from app.services.manufacturing_data_service import ManufacturingDataService
 from app.utils.exceptions import ConflictError, NotFoundError, ValidationError
@@ -331,7 +332,7 @@ class TestGenerationUsesReplacedSource:
         assert images == {"cutline": b"CUTLINE"}
 
     @pytest.mark.asyncio
-    async def test_generate_sends_replaced_layer_to_vm(self) -> None:
+    async def test_generate_uses_the_replaced_layer(self) -> None:
         # generate はワーカーが確保した（generating の）行を受け取る
         md = _md(
             status=MfgDataStatus.GENERATING.value,
@@ -344,21 +345,14 @@ class TestGenerationUsesReplacedSource:
         storage.get = AsyncMock(side_effect=[b"COLOR", b"CUTLINE"])
         storage.save = AsyncMock(return_value="manufacturing_data/out.ai")
 
-        vm_client = MagicMock()
-        vm_client.submit = AsyncMock(return_value="job-1")
-        vm_client.wait_until_complete = AsyncMock(
-            return_value=SimpleNamespace(output_filename="out.ai")
-        )
-        vm_client.download = AsyncMock(return_value=b"AI-BYTES")
+        generate_file = MagicMock(return_value=GeneratedFile("out.ai", b"AI-BYTES"))
 
-        svc = _service(md, storage=storage, vm_client=vm_client)
+        svc = _service(md, storage=storage, generate_file=generate_file)
         await svc.generate("md-1", _LEASE)
 
         assert md.status == MfgDataStatus.READY.value
-        assert vm_client.submit.await_args.kwargs["images"] == {
-            "color": b"COLOR",
-            "cutline": b"CUTLINE",
-        }
+        _, images, _ = generate_file.call_args.args
+        assert images == {"color": b"COLOR", "cutline": b"CUTLINE"}
 
 
 class TestIntakeKeepsReplacedSource:
@@ -431,15 +425,10 @@ async def test_replace_then_generate_end_to_end_in_memory() -> None:
     storage.save = AsyncMock(side_effect=fake_save)
     storage.get = AsyncMock(side_effect=lambda path: saved.get(path))
 
-    vm_client = MagicMock()
-    vm_client.submit = AsyncMock(return_value="job-1")
-    vm_client.wait_until_complete = AsyncMock(
-        return_value=SimpleNamespace(output_filename="out.ai")
-    )
-    vm_client.download = AsyncMock(return_value=b"AI")
+    generate_file = MagicMock(return_value=GeneratedFile("out.ai", b"AI"))
 
     svc = _service(
-        md, storage=storage, vm_client=vm_client, allowed_source_hosts=frozenset({"x"})
+        md, storage=storage, generate_file=generate_file, allowed_source_hosts=frozenset({"x"})
     )
     svc._fetch_with_limit = AsyncMock(return_value=b"CUTLINE")
 
@@ -455,4 +444,4 @@ async def test_replace_then_generate_end_to_end_in_memory() -> None:
     await svc.generate("md-1", _LEASE)
 
     # save が返したキーで生成側が読み出せている（差し替え→生成の受け渡しが噛み合う）
-    assert vm_client.submit.await_args.kwargs["images"]["color"] == PNG
+    assert generate_file.call_args.args[1]["color"] == PNG

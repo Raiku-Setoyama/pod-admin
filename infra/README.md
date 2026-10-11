@@ -218,11 +218,13 @@ gcloud scheduler jobs pause pod-admin-worker --location asia-northeast1
 
 ### 製造データの生成が止まったとき
 
-**切り戻しは要らない。** 生成待ちの行は `pending` のまま残り、VM が戻れば
-ワーカーが自動で作り直す（到達不能は再試行され、上限に達した分だけが `failed` になる）。
+**切り戻しは要らない。** 生成待ちの行は `pending` のまま残り、ワーカーが次の起動で作り直す
+（生成処理を起動できなかった分は再試行され、上限に達した分だけが `failed` になる）。
+生成はワーカーの中で動く（REQ-0067）ので、止まる原因はワーカー側である。
 
 1. 管理画面の「製造データ」で、生成待ち・生成失敗の件数を見る
-2. VM を戻す（下記「外部 IP を持たない VM に入る」）
+2. アラート「製造データ生成ワーカーが動いていない」が出ていれば、Cloud Scheduler の
+   ジョブが止まっていないかを見る（保守で止めたまま戻し忘れていないか）
 3. `failed` に落ちた行を「失敗した全件を戻す」でまとめて生成待ちへ戻す
 
 ## データの移送（カットオーバー）
@@ -318,56 +320,80 @@ gcloud storage rsync -r /tmp/stage gs://tosyo-pod-admin-prod  # ローカル →
 
 ## 製造データ生成を手動で動かす
 
-**本番とステージングで前提が違う。**
+製造データはワーカー（Cloud Run Job `pod-admin-worker`）の中で、VectorCraft を使って生成する
+（REQ-0067 / ADR-0039）。**本番もステージングも、Cloud Scheduler が 5 分ごとに起動している。**
+受注を入れれば放っておいても作られる。
 
-| | Cloud Scheduler | 受注を入れると |
-|---|---|---|
-| 本番 | **5 分間隔で動いている**（カットオーバーで有効化した） | **放っておけば作られる** |
-| ステージング | **止めてある** | 作られない。手で起動する |
-
-**本番で手で起動するのは、5 分を待たずに今すぐ流したいときだけである。**
-定期実行と重なった場合、後から入ったほうは advisory lock を取れずに
-`processed=0` で降りる（`api/app/worker.py`）。**壊れているのではない。**
-
-**ステージングから生成は動かせない**（REQ-0055 の移送後）。移送先の VM は
-`tosyo-api-stg` から見て別プロジェクトの VPC の中にあり、外部 IP も、ピアリングも、
-共有 VPC も無い。**URL を上書きしても到達しない。**
-恒久的に繋ぐかどうかは未判断である（ADR-0034）。
+手で起動するのは、5 分を待たずに今すぐ流したいときだけである。定期実行と重なった場合、
+後から入ったほうは advisory lock を取れずに `processed=0` で降りる（`api/app/worker.py`）。
+**壊れているのではない。**
 
 ```bash
-# 本番（**上書きは要らない**）
+# 本番
 gcloud run jobs execute pod-admin-worker \
   --project tosyo-api-504104 --region asia-northeast1 --wait
+# ステージング
+gcloud run jobs execute pod-admin-worker \
+  --project tosyo-api-stg --region asia-northeast1 --wait
 ```
 
 起動すると、その環境の `pending` を古い順に処理して終了する（`WORKER_MAX_ITEMS` 件まで）。
 **自分が入れた受注の分だけとは限らない。** 溜まっている行がまとめて処理される。
+1 件 1〜2 秒で終わる。
 
-### なぜ環境で違うのか
+ワーカーのイメージは API とは別（`api/Dockerfile` の `worker` ステージ）で、
+生成の依存（VectorCraft・numpy など）はこちらにだけ入っている。**API のサーバーでは生成しない。**
 
-| | `ILLUSTRATOR_VM_BASE_URL` | 上書き |
-|---|---|---|
-| 本番 | Terraform で設定済み | **要らない** |
-| ステージング | **空**（REQ-0053 の決定） | **要る** |
+## 製造データ生成を VM からワーカーへ切り替える（REQ-0067）
 
-ステージングを VM に繋ぎっぱなしにしないのは、illustrator-vm が 1 件ずつの直列処理で、
-**繋いだまま Scheduler が回ると本番の生成を 5 分ごとに待たせる**ためである
-（本番の Scheduler は現に 5 分間隔で動いている）。
-`--update-env-vars` は **その 1 回の実行にだけ**効き、Job の定義には残らない（ADR-0034）。
+**順序に意味がある。** どの段階でも、生成待ちは失われない（`pending` のまま次の起動で拾われる）。
 
-**上書きを忘れると、生成は静かに `failed` に落ちる**（`illustrator-vm is not configured`）。
-`manufacturing_data.error_message` に理由が残るので、そこを見る。
+1. **ステージング**: PR のマージでステージングへ自動デプロイされる（ワーカーのイメージも入る）。
+   続けてステージングで `terraform apply` する（Scheduler が動き出す）。
+   v2 受注を入れて、生成が `ready` になることを確かめる（「製造データ生成の疎通確認」と同じ手順）
+2. **本番のデプロイ**: `deploy-prod.yml` を手動で実行する。**この時点で本番の生成がワーカーの中へ切り替わる**
+   （VM は呼ばれなくなる）
+3. **本番の `terraform apply`**: 監視の目印が `generator_health` に変わる。2 と 3 の間は、
+   古い目印（`illustrator_vm_health`）のログが出ないので「ワーカーが動いていない」が鳴りうる。
+   **2 の直後に 3 を行う**
 
-恒久的に繋ぐかどうかは、illustrator-vm を会社組織へ移送したあとに判断する（REQ-0055）。
+   **`apply` は 2 回に分ける。** 新しい指標・アラート・Job を `-target` で先に当て、10 分おいて残り
+   （古い指標の削除）を当てる。1 回で当てると次のどちらかで止まる（ログ指標を差し替えるときは毎回起きる）
+   - 古いログ指標の削除が、それを参照するアラートの書き換えより先に走る（`still used in an alerting policy`）
+   - 作ったばかりのログ指標は最大 10 分使えない（`Cannot find metric(s)`）
+4. 本番で 1 件生成されたことを確かめたら、**VM を停止する（削除しない）**
 
-### 叩く前に見るもの
+   ```bash
+   gcloud compute instances stop illustrator-vm --zone=asia-northeast1-a --project=tosyo-api-504104
+   ```
 
-VM は外部 IP を持たないので、IAP トンネル越しに見る（下記「外部 IP を持たない VM に入る」）。
+### 切り戻す
+
+VM・ネットワーク・`ILLUSTRATOR_VM_BASE_URL`・ワーカーの VPC 接続は、切り戻しのために残してある
+（撤去は REQ-0068）。新しい生成で製造できないデータが出たときは:
 
 ```bash
-# illustrator-vm は 1 件ずつ。空でないなら、その分だけ本番の生成を待たせる
-curl -sS --fail localhost:18000/health
+# 1) VM を起動する（自動ログオンで約 8 分後に生成 API が上がる）
+gcloud compute instances start illustrator-vm --zone=asia-northeast1-a --project=tosyo-api-504104
+# 2) ワーカーのイメージを、REQ-0067 より前のコミットの API イメージへ戻す。
+#    Job のタイムアウトも VM の頃の値へ戻す（今の 780 秒では、VM の生成 1 件の最悪値 約 920 秒が収まらず、
+#    最後の 1 件の途中で Job ごと止められる）
+gcloud run jobs update pod-admin-worker --project tosyo-api-504104 --region asia-northeast1 \
+  --task-timeout=1521s \
+  --image=asia-northeast1-docker.pkg.dev/tosyo-api-504104/pod-admin/api:c928903e4d002bb2141221df79c8cd04596496d3
 ```
+
+- **本番だけの手順である。** ステージングには VM が無い。旧イメージは VM の URL が空だと、取り出した行を
+  すべて `failed` にする（REQ-0067 より前は、URL が空なら Scheduler を止めて防いでいた）。
+  ステージングを戻すときは、Scheduler を止めてから戻す
+- 旧イメージは死活確認の目印を `illustrator_vm_health` で出すので、「製造データ生成ワーカーが動いていない」
+  （`generator_health` を数える）が 30 分後に鳴る。戻している間は鳴りっぱなしになるので、鳴ったら切り戻し中と読む
+- 戻したあとの `terraform apply` は、Job のタイムアウトを 780 秒へ戻してしまう。切り戻しを続けるなら
+  REQ-0067 の Terraform の変更を revert してから apply する
+- 戻し先のイメージは Artifact Registry の保存期限（直近 10 版を残し、それより古い 30 日超は消す）で、
+  2026-11-03 ごろから消えうる。それまでに REQ-0068 で VM を撤去するか、イメージにタグを付けて残す
+
+問題のあった製造データは、管理画面から再生成する。
 
 ## 製造データ生成の疎通確認（REQ-0061）
 
@@ -438,6 +464,9 @@ gcloud storage rm gs://<環境のバケット>/<prefix>/manufacturing_data/<生�
 ```
 
 ## 製造データ生成 VM のネットワーク（REQ-0055）
+
+**REQ-0067 で生成をワーカーの中へ移したので、ここから「外部 IP を持たない VM に入る」までは、
+切り戻しのために VM を残している間だけの手順である**（撤去は REQ-0068）。
 
 `modules/network/` が custom mode の VPC・サブネット 2 つ・ファイアウォール 2 本を作る。
 **本番だけが呼ぶ**（ADR-0036）。ステージングは `illustrator_vm_base_url = ""` で
@@ -518,6 +547,8 @@ gcloud scheduler jobs resume pod-admin-worker --location=asia-northeast1 --proje
 **OS ポリシーの上限**に注意する。スクリプト・ファイルの中身は 1 つ 1024 文字まで、
 1 つのポリシーのリソースは 10 個まで。生成スクリプトはこれに合わせて分割する。
 更新分が大きいと（テンプレートの .ai を差し替えた等）分割の数が増える。
+分割の番号は桁をそろえてある（理由はツールの docstring）。ツールを直したら
+`python3 infra/scripts/test_illustrator_vm_update_policy.py` で確かめる（品質ゲートでも走る）。
 
 以下は RDP で入って手で更新する場合の手順である。
 
@@ -707,19 +738,13 @@ RDP せずに生成 API が 1 分ほどで `healthy` になった（REQ-0055）�
 ## 製造データ生成が止まったとき
 
 **2026-09-27 に VM 上の生成 API が止まり、10-02 まで 5 日間誰も気づかなかった。**
-OS は動いたままで、生成 API のプロセス一式だけが外から強制終了されていた
-（誰が終了させたかは記録が無く特定できていない）。そのうえ次の 3 つが重なった。
-
-- 生成 API を起動し直すのは Windows のログオン時だけで、ほかに起動し直す経路が無かった
-- ワーカーは注文が来たときしか VM に触れず、失敗は行に書かれるだけだった
-- 移送で外部 IP 前提の監視が外れ、人に届く経路が 1 つも無かった
-
-対策は 3 層に分かれている。**どれか 1 つが効かなくても、次の層が拾う。**
+ワーカーは注文が来たときしか生成に触れず、失敗は行に書かれるだけで、人に届く経路が 1 つも無かった。
+生成をワーカーの中へ移した後（REQ-0067）も、生成処理（VectorCraft）が壊れれば同じことが起きうるので、
+同じ形で守っている。**どれか 1 つが効かなくても、次の層が拾う。**
 
 | 層 | 何をするか | どこにあるか |
 |---|---|---|
-| VM の中で戻す | 監視タスク `IllustratorAPIWatchdog`（SYSTEM・2 分ごと）が `127.0.0.1:8000/health` を見て、3 回続けて NG なら生成 API のタスクを起動し直す | `illustrator-vm` の `scripts/setup_windows/` |
-| 止まっても失わない | ワーカーは毎回 `/health` を確かめ、NG なら取り出さない。届かなかった生成は `pending` へ戻して自動で再試行し、5 回届かなければ `failed` | `api/app/worker.py` |
+| 止まっても失わない | ワーカーは毎回 VectorCraft を起動してみて、NG なら取り出さない。生成処理を起動できなかった生成は `pending` へ戻して自動で再試行し、5 回起動できなければ `failed` | `api/app/worker.py` |
 | 人に知らせる | 下の 4 つのアラートを、**管理画面で設定した宛先**へメールで送る | `modules/manufacturing-monitoring` と `api/app/routers/internal.py` |
 
 **宛先は管理画面「設定 → 製造データ生成のアラート」で変える**（apply は要らない）。
@@ -733,30 +758,24 @@ API の `POST /api/v1/internal/monitoring-alerts` → SendGrid である。発�
 
 | アラート | 鳴る条件 | 目印 |
 |---|---|---|
-| 製造データ生成 VM が応答しない | 15 分で 3 回 NG | `illustrator_vm_health status=ng` |
-| 製造データ生成ワーカーが動いていない | 死活確認のログが 30 分出ていない | `illustrator_vm_health status=` |
+| 製造データの生成処理が動かない | 15 分で 3 回 NG | `generator_health status=ng` |
+| 製造データ生成ワーカーが動いていない | 死活確認のログが 30 分出ていない | `generator_health status=` |
 | 製造データの生成が失敗した | `failed` に確定した | `manufacturing_data_failed` |
 | 製造データが生成待ちのまま止まっている | 最も古い生成待ちが 60 分動いていない（その起動で 1 件も処理していないとき） | `manufacturing_data_stalled` |
 
 ### 鳴ったら
 
-1. **生成 API の生死を確かめる。** 上の「外部 IP を持たない VM に入る」のトンネルで
-   `curl -sS localhost:18000/health`
-2. 応答しなければ、**VM の監視タスクが数分で起動し直す。** 10 分待っても戻らなければ
-   VM を再起動する（自動ログオンで約 8 分後に生成 API が上がる。2026-10-02 に実測）
+1. **ワーカーのログを見る。** `generator_health status=ng detail=...` に、VectorCraft が起動しない理由が出る
+2. 直前のデプロイで壊れたなら、**ワーカーのイメージを 1 つ前のコミットへ戻す**
 
    ```bash
-   gcloud compute instances reset illustrator-vm --zone=asia-northeast1-a --project=tosyo-api-504104
+   gcloud run jobs update pod-admin-worker --project tosyo-api-504104 --region asia-northeast1 \
+     --image=asia-northeast1-docker.pkg.dev/tosyo-api-504104/pod-admin/worker:<前の SHA>
    ```
 
-   リセットの前に、原因調査用にディスクのスナップショットを取っておくとよい
-   （`gcloud compute disks snapshot illustrator-vm --zone=asia-northeast1-a ...`）
-3. **VM に届かなかった生成は放っておいてよい。** VM が戻れば次のワーカーが拾う。
+3. **生成処理を起動できなかった生成は放っておいてよい。** 直れば次のワーカーが拾う。
    管理画面で「要対応」になったものだけ、エラー内容を見て再生成する
-4. 止まった原因は Cloud Logging で追える。Windows のイベントログ
-   （`logName:"windows_event_log"`）と、Ops Agent が送る `server.log`
-   （`illustrator-vm` の `setup_ops_agent_logging.ps1` を入れた後）、
-   プロセスごとのメモリ（`agent.googleapis.com/processes/rss_usage`）でいつ消えたかが分かる
+   （入力の誤り。例: アクリルスタンドの土台が見つからない → ADR-0038）
 
 ## Terraform が管理しないもの
 
@@ -775,8 +794,8 @@ API の `POST /api/v1/internal/monitoring-alerts` → SendGrid である。発�
   worker Job と migrate Job のぶんも足して数える。`terraform.tfvars` に計算を書いてある
 - **ワーカー Job のタイムアウトは直接指定しない。** `worker_max_runtime_seconds` から
   `main.tf` の `locals` が導出する。先に殺されると、生成中の行がリース期限まで宙吊りになる
-- `local.generation_worst_case_seconds` は `api/app/config.py` の
-  `Settings.generation_worst_case_seconds` の写しである。`ILLUSTRATOR_VM_*` を変えたら両方直す
+- 生成 1 件の上限（`local.generation_timeout_seconds`）は Terraform が正本で、ワーカーに
+  `GENERATOR_TIMEOUT_SECONDS` として渡す。Job のタイムアウトも同じ値から導出する
 
 ## SendGrid の鍵を入れる
 

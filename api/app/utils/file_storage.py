@@ -19,8 +19,6 @@ import mimetypes
 import os
 import posixpath
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import datetime
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Protocol, cast
@@ -28,8 +26,6 @@ from uuid import uuid4
 
 import aiofiles
 import aiofiles.os
-
-from app.utils.exceptions import TransientDependencyError
 
 if TYPE_CHECKING:
     from app.config import Settings
@@ -159,27 +155,6 @@ class LocalFileStorage(FileStorage):
         return await aiofiles.os.path.exists(full_path)
 
 
-@contextmanager
-def _transient_gcs_errors(what: str) -> Iterator[None]:
-    """GCS の一時的な不調を ``TransientDependencyError`` へ翻訳する.
-
-    ``NotFound`` のような恒久的な失敗は素通しする（再試行しても変わらないため）。
-    """
-    # import をここに置くのは、このモジュールが google-cloud-storage 未導入の
-    # 環境（CI・オフライン）でも読み込めるようにするためである（他の箇所と同じ方針）。
-    from google.api_core.exceptions import RetryError, ServerError, TooManyRequests
-
-    try:
-        yield
-    # ServerError/TooManyRequests は「GCS が応答したうえでの 5xx・429」である。
-    # **応答すら返らない場合はこの型にならない。** クライアントが使う requests は
-    # 接続不能・読み取りタイムアウトを RequestException（= OSError の子）として投げ、
-    # api_core はリトライを打ち切ったときに RetryError を投げる。どちらも翻訳しないと、
-    # **6 分かけて生成した製造データが「入力が悪い」として恒久的な失敗に落ちる。**
-    except (ServerError, TooManyRequests, RetryError, OSError) as exc:
-        raise TransientDependencyError(f"GCS is unavailable ({what}): {exc}") from exc
-
-
 class GCSFileStorage(FileStorage):
     """Google Cloud Storage storage implementation.
 
@@ -208,13 +183,7 @@ class GCSFileStorage(FileStorage):
         return bucket.blob(self._blob_name(path))
 
     async def save(self, file: UploadFile, prefix: str = "") -> str:
-        """Save a file and return the backend-independent relative path.
-
-        GCS 側の一時的な不調（5xx・レート制限）は ``TransientDependencyError`` に
-        翻訳して投げる。**翻訳しないと、6 分かけて生成した製造データが
-        「入力が悪い」として恒久的な失敗に落ち、生成物ごと捨てられる。**
-        どの例外が一時的かを知っているのはこの境界だけなので、ここで翻訳する。
-        """
+        """Save a file and return the backend-independent relative path."""
         filename = generate_stored_filename(file.filename)
         # 相対キーは POSIX 区切りで統一（GCS キーは常に "/" 区切り）。
         relative_path = posixpath.join(prefix, filename)
@@ -226,8 +195,7 @@ class GCSFileStorage(FileStorage):
                 content, content_type=content_type
             )
 
-        with _transient_gcs_errors(f"upload {relative_path}"):
-            await asyncio.to_thread(_upload)
+        await asyncio.to_thread(_upload)
         return relative_path
 
     async def delete(self, path: str) -> bool:
@@ -244,12 +212,7 @@ class GCSFileStorage(FileStorage):
         return await asyncio.to_thread(_delete)
 
     async def get(self, path: str) -> bytes | None:
-        """Get file content. Returns None if not found.
-
-        **「無い」と「今は読めない」を混同しない。** 前者は None、後者は
-        ``TransientDependencyError`` である（後者を None にすると、
-        差し替え済みの元画像が消えたものとして扱われる）。
-        """
+        """Get file content. Returns None if not found."""
         from google.api_core.exceptions import NotFound
 
         def _download() -> bytes | None:
@@ -259,8 +222,7 @@ class GCSFileStorage(FileStorage):
                 return None
             return data
 
-        with _transient_gcs_errors(f"download {path}"):
-            return await asyncio.to_thread(_download)
+        return await asyncio.to_thread(_download)
 
     async def exists(self, path: str) -> bool:
         """Check if a file exists."""

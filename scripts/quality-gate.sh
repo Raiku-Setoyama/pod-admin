@@ -29,6 +29,8 @@ PROJECT_CHECKS=(
   "bash -c 'cd web && npm run lint'"
   "bash -c 'cd web && npx tsc --noEmit'"
   "bash scripts/terraform-check.sh"
+  # VM 更新ツール（OS ポリシー生成）の回帰テスト。git と PyYAML だけで数秒で終わる
+  "python3 infra/scripts/test_illustrator_vm_update_policy.py"
   # テストは DB・インフラの準備が要るため対象外（REQ-0041 のスコープ外）。
   # "bash -c 'cd api && uv run pytest -q'"
   # "bash -c 'cd web && npm run test:run'"

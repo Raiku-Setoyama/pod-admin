@@ -78,8 +78,8 @@ class TestConfigureLogging:
 class TestNoisyDependencies:
     """**ルートに水準を与えた副作用で、依存ライブラリの INFO が一斉に出る。**
 
-    httpx は 1 リクエスト 1 行で、製造データ 1 件の生成が VM の完了待ちだけで 70 行を
-    超える（5 秒間隔・最大 360 秒）。読む人は居ないうえに取り込みは従量である。
+    httpx は 1 リクエスト 1 行で、ワーカーは 1 件につき元画像のレイヤーをそれぞれ
+    HTTP で取り、生成物を GCS に上げる。読む人は居ないうえに取り込みは従量である。
     """
 
     def test_httpx_info_is_silenced(self, monkeypatch: pytest.MonkeyPatch) -> None:

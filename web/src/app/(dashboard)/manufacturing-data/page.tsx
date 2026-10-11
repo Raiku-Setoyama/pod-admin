@@ -46,7 +46,7 @@ export default function ManufacturingDataPage() {
   /**
    * 失敗した行を生成待ちへ戻す。選択が無ければ failed の全件が対象になる。
    *
-   * VM が止まっていた間に溜まった失敗を 1 件ずつ叩かずに戻すための操作である。
+   * 生成が止まっていた間に溜まった失敗を 1 件ずつ叩かずに戻すための操作である。
    */
   const retryFailed = async (ids: string[] | null) => {
     setIsRetrying(true);
@@ -72,7 +72,7 @@ export default function ManufacturingDataPage() {
   return (
     <PageContainer
       title="製造データ"
-      description="外部 VM での製造データ生成の状態を確認し、失敗した生成を戻します"
+      description="製造データ生成の状態を確認し、失敗した生成を戻します"
       actions={
         <Button variant="outline" onClick={() => mutate()} disabled={isLoading}>
           <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
