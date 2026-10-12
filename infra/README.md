@@ -266,7 +266,19 @@ VM を作ったイメージは、撤去のときに消した。
 Illustrator での生成へ戻す必要が出たら、REQ-0068 と REQ-0067 の PR を revert して apply し
 （ネットワーク・VM・ワーカーの VPC 接続・Job のタイムアウト・監視が戻る）、VM のディスクは
 このスナップショットから作る（`source_image` の代わりに `source_snapshot`）。
-**戻す見込みが無くなったら消す**（保管料がかかる。見直しの時期は REQ-0068）。
+VM 用サービスアカウントの権限 2 件が、削除済みのアカウントを指したままプロジェクトの IAM ポリシーに残っている
+（外すにはオーナー権限が要る。何もできないので害は無い）。オーナーが次で消す。
+
+```bash
+for role in roles/logging.logWriter roles/monitoring.metricWriter; do
+  gcloud projects remove-iam-policy-binding tosyo-api-504104 --role="$role" \
+    --member="deleted:serviceAccount:illustrator-vm@tosyo-api-504104.iam.gserviceaccount.com?uid=<UID>"
+done
+```
+
+`<UID>` は `gcloud projects get-iam-policy tosyo-api-504104 | grep illustrator-vm` で出る値。
+
+**スナップショットは、戻す見込みが無くなったら消す**（保管料がかかる。見直しの時期は REQ-0068）。
 
 ```bash
 gcloud compute snapshots delete illustrator-vm-final-20261012 --project=tosyo-api-504104
