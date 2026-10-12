@@ -5,9 +5,12 @@ name: メーカー日次発注通知トリガー
 # ここでは高頻度で叩くだけでよい（多重発火でも二重送信しない設計）。
 #
 # 必要な設定（リポジトリの Settings → Secrets and variables → Actions）:
-#   - Variables: API_BASE_URL  例) https://<your-app>.railway.app
+#   - Variables: API_BASE_URL  本番 API の URL（`terraform output -raw api_url`）
 #   - Secrets:   INTERNAL_API_SECRET  （API の環境変数 INTERNAL_API_SECRET と同じ値）
 
+# **既知の弱点。** GitHub Actions の定期実行は、リポジトリが 60 日間更新されないと
+# 自動的に無効化される。開発が止まったあとに、この通知だけが静かに止まりうる。
+# Cloud Scheduler（`infra/modules/scheduler/`）へ移すのが本筋である。
 on:
   schedule:
     # 15 分ごと（UTC 実行だが送信可否は API 側が JST で判定するため問題なし）

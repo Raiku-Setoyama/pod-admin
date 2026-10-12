@@ -7,7 +7,11 @@ from collections.abc import Iterator
 
 import pytest
 
-from app.logging_config import CloudLoggingFormatter, configure_logging
+from app.logging_config import (
+    CloudLoggingFormatter,
+    configure_logging,
+    quiet_noisy_dependencies,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -69,3 +73,26 @@ class TestConfigureLogging:
         logging.getLogger("app.services.monitoring_alert_notification").info("sent")
 
         assert json.loads(capsys.readouterr().out.strip())["message"] == "sent"
+
+
+class TestNoisyDependencies:
+    """**ルートに水準を与えた副作用で、依存ライブラリの INFO が一斉に出る。**
+
+    httpx は 1 リクエスト 1 行で、ワーカーは 1 件につき元画像のレイヤーをそれぞれ
+    HTTP で取り、生成物を GCS に上げる。読む人は居ないうえに取り込みは従量である。
+    """
+
+    def test_httpx_info_is_silenced(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("K_SERVICE", raising=False)
+        configure_logging()
+
+        assert logging.getLogger("httpx").getEffectiveLevel() == logging.WARNING
+        # 自分たちのログは落とさない
+        assert logging.getLogger("app.worker").getEffectiveLevel() == logging.INFO
+
+    def test_callable_without_configure_logging(self) -> None:
+        """ワーカーは basicConfig を使い configure_logging を通らないので、単体で呼べること."""
+        logging.getLogger("httpx").setLevel(logging.INFO)
+        quiet_noisy_dependencies()
+
+        assert logging.getLogger("httpx").getEffectiveLevel() == logging.WARNING

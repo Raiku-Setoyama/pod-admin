@@ -28,7 +28,10 @@ from app.routers import (
 )
 from app.utils.exceptions import AppException
 
-# アプリの INFO ログを Cloud Logging に残す（設定しないと WARNING 以上しか出ない）
+# アプリの INFO ログを Cloud Logging に残す（設定しないと WARNING 以上しか出ない）。
+# **import の途中で出るログには間に合わない。** Python は上の import をすべて実行してから
+# ここに来るので、ルータ取り込み中のログは既定の構成で出る。起動時の 1 度きりであり、
+# リクエスト処理のログはここから先の話なので、import を挟んで呼ぶ形は取らない。
 configure_logging()
 
 # 中断された製造データ生成の復旧は、API の起動時ではなくワーカー（app/worker.py）が行う。

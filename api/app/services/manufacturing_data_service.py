@@ -568,6 +568,28 @@ class ManufacturingDataService:
         await self._commit()
         return ManufacturingDataResponse.model_validate(md)
 
+    async def retry_failed(self, ids: list[str] | None = None) -> int:
+        """failed の行をまとめて生成待ちへ戻し、戻した件数を返す.
+
+        生成が止まっていた間に溜まった失敗を、1 件ずつ画面から叩かずに戻すための入口である。
+        ``ids`` を省略すると failed の全件が対象になる。
+
+        **対象を failed に限る理由は retry（1 件ずつ）と同じ。** 1 行が複数の注文に
+        共有されるため、ready/generating/pending を巻き戻すと他の注文の
+        is_manufacturing_ready まで劣化する。絞り込みはリポジトリ側で行う。
+
+        件数は多くても運用者が押したぶんなので、1 件ずつ ``_reset_to_pending`` を通す。
+        **戻す値の定義を 2 つに増やさない**ためで、速さより一致を採っている。
+        """
+        rows = await self._md_repo.find_failed(ids)
+        if not rows:
+            return 0
+        for md in rows:
+            _reset_to_pending(md)
+            await self._md_repo.update(md)
+        await self._commit()
+        return len(rows)
+
     async def regenerate(self, md_id: str) -> ManufacturingDataResponse:
         """製造データを手動で再作成（同じ元データで再生成）する（管理者操作）.
 
@@ -768,6 +790,7 @@ class ManufacturingDataService:
             total=total,
             page=page,
             limit=limit,
+            status_counts=await self._md_repo.count_by_status(),
         )
 
 

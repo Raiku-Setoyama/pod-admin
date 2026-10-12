@@ -45,4 +45,8 @@ module "stack" {
   # 製造データはワーカーの中で生成するので（REQ-0067）、ステージングでも動かす。
   worker_schedule        = "*/5 * * * *"
   worker_schedule_paused = false
+
+  # **ステージングでは鳴らさない。** 使い捨て環境の失敗で本番の通知が埋まると、
+  # 本物のアラートを読み飛ばすようになる。
+  monitoring_enabled = false
 }
