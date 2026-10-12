@@ -10,8 +10,7 @@ POD Admin の GCP リソースをコードで管理する。設計の詳細は
 infra/
 ├── modules/
 │   ├── stack/     アプリ 1 環境ぶんの構成（下記）
-│   ├── network/   製造データ生成 VM を置く閉じた VPC（下記）
-│   ├── illustrator-vm/  製造データ生成 VM そのもの（本番だけ）
+│   ├── manufacturing-monitoring/  製造データ生成の監視とアラート（本番だけ）
 │   └── その他/     汎用の GCP ラッパー（cloud-run-service, cloud-sql, ...）
 ├── envs/
 │   ├── staging/   ステージング（tosyo-api-stg）
@@ -24,12 +23,8 @@ infra/
 「api と worker と migrate が同じイメージで動く」「`CORS_ORIGINS` は JSON で渡す」
 といった知識はすべて `stack` に集める。
 
-**例外は `modules/network/` と `modules/illustrator-vm/` の 2 つである。**
-環境の一部ではあるがアプリの構成ではない（プロジェクト単位の土台である）ものは、
-`envs/<env>/` から直接呼んでよい。判断と、なぜ `stack` のトグルにしなかったかは **ADR-0036**。
-
-**この 2 つは 1 つに統合する**（ADR-0037・REQ-0055 の PR 3）。
-`illustrator-vm` の必須入力は両方とも `network` から来るので、実際には 1 つの単位である。
+**例外は `modules/manufacturing-monitoring/` である。** 本番だけが必要とする構成は、
+`envs/prod/` から直接呼んでよい。判断と、なぜ `stack` のトグルにしなかったかは **ADR-0036**。
 
 **`envs/<env>/` は値だけを持つ**（上の例外を除く）。そのため
 `diff infra/envs/staging/main.tf infra/envs/prod/main.tf` が、そのまま
@@ -259,56 +254,24 @@ gcloud run jobs execute pod-admin-worker \
 ワーカーのイメージは API とは別（`api/Dockerfile` の `worker` ステージ）で、
 生成の依存（VectorCraft・numpy など）はこちらにだけ入っている。**API のサーバーでは生成しない。**
 
-## 製造データ生成を VM からワーカーへ切り替える（REQ-0067）
+## 製造データ生成 VM の撤去（REQ-0067・REQ-0068）
 
-**順序に意味がある。** どの段階でも、生成待ちは失われない（`pending` のまま次の起動で拾われる）。
+製造データは、以前は Windows VM 上の Adobe Illustrator（illustrator-vm）が作っていた。
+2026-10-11 に生成をワーカーの中へ切り替え（REQ-0067）、2026-10-12 に VM とそのためのネットワークを
+撤去した（REQ-0068。撤去したものの一覧もそちら）。
 
-1. **ステージング**: PR のマージでステージングへ自動デプロイされる（ワーカーのイメージも入る）。
-   続けてステージングで `terraform apply` する（Scheduler が動き出す）。
-   v2 受注を入れて、生成が `ready` になることを確かめる（「製造データ生成の疎通確認」と同じ手順）
-2. **本番のデプロイ**: `deploy-prod.yml` を手動で実行する。**この時点で本番の生成がワーカーの中へ切り替わる**
-   （VM は呼ばれなくなる）
-3. **本番の `terraform apply`**: 監視の目印が `generator_health` に変わる。2 と 3 の間は、
-   古い目印（`illustrator_vm_health`）のログが出ないので「ワーカーが動いていない」が鳴りうる。
-   **2 の直後に 3 を行う**
-
-   **`apply` は 2 回に分ける。** 新しい指標・アラート・Job を `-target` で先に当て、10 分おいて残り
-   （古い指標の削除）を当てる。1 回で当てると次のどちらかで止まる（ログ指標を差し替えるときは毎回起きる）
-   - 古いログ指標の削除が、それを参照するアラートの書き換えより先に走る（`still used in an alerting policy`）
-   - 作ったばかりのログ指標は最大 10 分使えない（`Cannot find metric(s)`）
-4. 本番で 1 件生成されたことを確かめたら、**VM を停止する（削除しない）**
-
-   ```bash
-   gcloud compute instances stop illustrator-vm --zone=asia-northeast1-a --project=tosyo-api-504104
-   ```
-
-### 切り戻す
-
-VM・ネットワーク・`ILLUSTRATOR_VM_BASE_URL`・ワーカーの VPC 接続は、切り戻しのために残してある
-（撤去は REQ-0068）。新しい生成で製造できないデータが出たときは:
+**撤去直前のブートディスクを、スナップショット `illustrator-vm-final-20261012` に残してある**
+（Windows・Illustrator・Adobe のサインイン・自動ログオンの設定を含む）。ほかに古いスナップショット
+`illustrator-vm-preupdate-20260907` と、VM を作ったイメージ `illustrator-vm-20260902` もある。
+Illustrator での生成へ戻す必要が出たら、REQ-0068 と REQ-0067 の PR を revert して apply し
+（ネットワーク・VM・ワーカーの VPC 接続・Job のタイムアウト・監視が戻る）、VM のディスクは
+このスナップショットから作る（`source_image` の代わりに `source_snapshot`）。
+**戻す見込みが無くなったら消す**（保管料がかかる。見直しの時期は REQ-0068）。
 
 ```bash
-# 1) VM を起動する（自動ログオンで約 8 分後に生成 API が上がる）
-gcloud compute instances start illustrator-vm --zone=asia-northeast1-a --project=tosyo-api-504104
-# 2) ワーカーのイメージを、REQ-0067 より前のコミットの API イメージへ戻す。
-#    Job のタイムアウトも VM の頃の値へ戻す（今の 780 秒では、VM の生成 1 件の最悪値 約 920 秒が収まらず、
-#    最後の 1 件の途中で Job ごと止められる）
-gcloud run jobs update pod-admin-worker --project tosyo-api-504104 --region asia-northeast1 \
-  --task-timeout=1521s \
-  --image=asia-northeast1-docker.pkg.dev/tosyo-api-504104/pod-admin/api:c928903e4d002bb2141221df79c8cd04596496d3
+gcloud compute snapshots delete illustrator-vm-final-20261012 illustrator-vm-preupdate-20260907 --project=tosyo-api-504104
+gcloud compute images delete illustrator-vm-20260902 --project=tosyo-api-504104
 ```
-
-- **本番だけの手順である。** ステージングには VM が無い。旧イメージは VM の URL が空だと、取り出した行を
-  すべて `failed` にする（REQ-0067 より前は、URL が空なら Scheduler を止めて防いでいた）。
-  ステージングを戻すときは、Scheduler を止めてから戻す
-- 旧イメージは死活確認の目印を `illustrator_vm_health` で出すので、「製造データ生成ワーカーが動いていない」
-  （`generator_health` を数える）が 30 分後に鳴る。戻している間は鳴りっぱなしになるので、鳴ったら切り戻し中と読む
-- 戻したあとの `terraform apply` は、Job のタイムアウトを 780 秒へ戻してしまう。切り戻しを続けるなら
-  REQ-0067 の Terraform の変更を revert してから apply する
-- 戻し先のイメージは Artifact Registry の保存期限（直近 10 版を残し、それより古い 30 日超は消す）で、
-  2026-11-03 ごろから消えうる。それまでに REQ-0068 で VM を撤去するか、イメージにタグを付けて残す
-
-問題のあった製造データは、管理画面から再生成する。
 
 ## 製造データ生成の疎通確認（REQ-0061）
 
@@ -328,8 +291,6 @@ macOS には psql が無いので `postgres:17-alpine` を使う）。接続先�
 psql -Atc "SELECT status, count(*) FROM manufacturing_data
            WHERE status IN ('pending','generating') GROUP BY status"
 ```
-
-VM の混み具合は「製造データ生成を手動で動かす」節の「叩く前に見るもの」で確かめる。
 
 ### 手順
 
@@ -378,213 +339,7 @@ psql -c "DELETE FROM users WHERE email='req0061-smoke@example.com'"
 gcloud storage rm gs://<環境のバケット>/<prefix>/manufacturing_data/<生成物>
 ```
 
-## 製造データ生成 VM のネットワーク（REQ-0055）
-
-**REQ-0067 で生成をワーカーの中へ移したので、ここから「外部 IP を持たない VM に入る」までは、
-切り戻しのために VM を残している間だけの手順である**（撤去は REQ-0068）。
-
-`modules/network/` が custom mode の VPC・サブネット 2 つ・ファイアウォール 2 本を作る。
-**本番だけが呼ぶ**（ADR-0036）。ステージングは `illustrator_vm_base_url = ""` で
-生成機能ごと止めているので、繋ぐ先が無い。
-
-| もの | 何のためか |
-|---|---|
-| VPC（custom mode） | auto mode は全リージョンにサブネットを作り、`default-allow-ssh` / `default-allow-rdp` を 0.0.0.0/0 で持ってくる |
-| サブネット（VM） | 外部 IP を持たない VM を置く |
-| サブネット（Cloud Run） | Direct VPC egress。**インスタンスごとに 1 アドレス使い、デプロイ中は新旧のリビジョンが同時に持つ** |
-| FW: run → illustrator | 生成 API を呼ぶ唯一の経路 |
-| FW: IAP → illustrator | 運用の入口（RDP と、VM 単体の疎通確認） |
-
-**名前と CIDR の正本は `modules/network/main.tf` の `locals` である。** ここには写さない。
-
-**Cloud NAT が VM のサブネットだけを NAT する。** 外部 IP を持たない VM の下り
-（Adobe のライセンス確認・Windows Update・Ops Agent）に要る。
-**NAT ゲートウェイは VM が 1 台も無くても課金される**ので、VM と同じ PR で作った。
-
-VM 本体は `modules/illustrator-vm/` にある。**stop/start で運用し、delete/recreate しない** —
-理由はそのファイルの冒頭にある。`deletion_protection = true` とイメージの
-`ignore_changes` がそれを守っている。
-
-**どうしても作り直すときは、`deletion_protection` を false にする apply を先に通す。**
-`-replace` は削除保護に阻まれる。**その前に、いま動いているディスクの
-イメージかスナップショットを取る**（Adobe の認証はそこにしかない。REQ-0062）。
-
-**VPC に入っているのはワーカー Job だけで、`ILLUSTRATOR_VM_BASE_URL` もワーカーにしか渡さない。**
-理由の正本は `modules/stack/variables.tf` の `worker_vpc_egress` の説明。
-`egress` は `PRIVATE_RANGES_ONLY` なので、SendGrid と Cloud SQL は公衆網のままである。
-
-**タグを付け忘れた VM には、どちらの規則も効かない。** 到達できないだけなので壊れ方は静かである。
-VM を作るときは `modules/network` の `illustrator_target_tag` 出力から渡し、**値を直書きしない。**
-
-### VM の中のアプリを更新する
-
-**Windows 側の手順の正本は `illustrator-vm/scripts/setup_windows/README.md`
-「コード更新時の再起動手順」である。ここには写さない。**
-ここに書くのは **pod-admin 側で先にやること**と、**移送で変わった入口**だけである。
-
-#### RDP を使わずに更新する（VM Manager）
-
-**通常はこちらを使う。** パスワードも RDP も要らない（2026-10-02 に本番で実施）。
-VM Manager（OS Config）の OS ポリシーで更新分の git bundle を VM へ届け、VM の上で
-fast-forward してから `illustrator-vm` の `scripts/setup_windows/deploy_update.ps1` を動かす。
-`git pull` を使わないのは、VM の GitHub の資格情報が対話なしでは使えないためである。
-仕組みの詳細は `infra/scripts/illustrator-vm-update-policy.py` の docstring。
-
-```bash
-P=tosyo-api-504104
-# 1) VM の今の HEAD を調べる（直近の更新の記録。RDP での更新でも残る。無ければ RDP で git rev-parse HEAD）
-gcloud logging read 'logName:"windows_event_log" AND jsonPayload.SourceName="IllustratorDeploy" AND jsonPayload.EventID=2000' \
-  --project=$P --limit=1 --format='value(jsonPayload.Message)'   # "更新を開始する（HEAD <commit>）"
-# 2) OS ポリシーを作る（illustrator-vm の clone は git fetch しておく）。作成・削除のコマンドが表示される
-python3 infra/scripts/illustrator-vm-update-policy.py --repo ../illustrator-vm --base <1 の commit> --out /tmp/policy.yaml
-# 3) 生成を止めてから、表示された create を実行する
-#    （deploy_update.ps1 自身も生成中のジョブが終わるのを待つが、新しい投入を止めておく）
-gcloud scheduler jobs pause pod-admin-worker --location=asia-northeast1 --project=$P
-```
-
-エージェントは 10 分ほどでポリシーを拾う。Cloud Logging で進み具合を見る。
-
-```bash
-gcloud logging read 'logName:"windows_event_log" AND (jsonPayload.SourceName="PodAdminDeploy" OR jsonPayload.SourceName="IllustratorDeploy")' \
-  --project=$P --freshness=30m --format='value(timestamp,jsonPayload.EventID,jsonPayload.Message)'
-# 2000 開始（HEAD は更新後）→ 2001 各段階 → 2010 完了。失敗は 902（fetch）/ 903（merge）/ 2011
-```
-
-**終わったら必ず片付ける。** OS ポリシーは残すと定期的に再評価される。
-
-```bash
-# 2) で表示された delete を実行してから、一時ファイルと一時タスクを消す
-python3 infra/scripts/illustrator-vm-update-policy.py --cleanup --out /tmp/cleanup.yaml
-#   表示された create を実行 → 10 分ほどで消える（OSConfigAgent のログで COMPLIANT）→ 表示された delete を実行
-gcloud scheduler jobs resume pod-admin-worker --location=asia-northeast1 --project=$P
-```
-
-**OS ポリシーの上限**に注意する。スクリプト・ファイルの中身は 1 つ 1024 文字まで、
-1 つのポリシーのリソースは 10 個まで。生成スクリプトはこれに合わせて分割する。
-更新分が大きいと（テンプレートの .ai を差し替えた等）分割の数が増える。
-分割の番号は桁をそろえてある（理由はツールの docstring）。ツールを直したら
-`python3 infra/scripts/test_illustrator_vm_update_policy.py` で確かめる（品質ゲートでも走る）。
-
-以下は RDP で入って手で更新する場合の手順である。
-
-#### なぜワーカーを止めるのか
-
-**止めなくても行は失敗しなくなった**（2026-10 の障害対応）。ワーカーは取り出しの前に
-VM の `/health` を確かめ、NG なら取り出さない。取り出した後で VM に届かなくなっても、
-行は `failed` ではなく `pending` へ戻り、VM の復旧後に自動で拾い直される
-（`api/app/services/manufacturing_data_service.py` の `_defer_or_fail`）。
-
-それでも止めるのは、**更新の途中の VM に生成を投げないため**である。`git pull` の直後や
-Illustrator の再起動中に投げたジョブは、成否が読めない。
-
-**止めたら 30 分以内に戻す。** 戻し忘れはアラート「製造データ生成ワーカーが動いていない」
-（`modules/manufacturing-monitoring`）が拾う。
-
-#### 窓に入る前（本番は動いたまま）
-
-**止めなくてよいことは、止める前に済ませる。**
-
-```bash
-# トンネルは 2 本とも先に開ける（PID を控えて、あとで確実に閉じる）
-gcloud compute start-iap-tunnel illustrator-vm 3389 \
-  --local-host-port=localhost:13389 --zone=asia-northeast1-a --project=tosyo-api-504104 &
-RDP_TUNNEL=$!
-gcloud compute start-iap-tunnel illustrator-vm 8000 \
-  --local-host-port=localhost:18000 --zone=asia-northeast1-a --project=tosyo-api-504104 &
-API_TUNNEL=$!
-```
-
-**接続できないときは、まず VM ではなくトンネルを疑う。** IAP のトンネルは
-ラップトップのスリープで落ちる。手順の詳細は下記「外部 IP を持たない VM に入る」。
-
-RDP で入り、**作業ツリーが汚れていないことと、いまの版**を控えておく。
-**戻り先を知らないまま更新しない。**
-
-```powershell
-cd C:\illustrator-vm
-git status          # 誰かが VM 上で直接直していないか
-git rev-parse HEAD  # 戻り先。控える
-```
-
-#### 窓（ここから生成が待つ）
-
-**`terraform apply` を並行して走らせないこと。** 下の `pause` は Terraform の管理下にある値
-（`modules/scheduler` の `paused`）に対する差分であり、**誰かが `envs/prod` で apply すると
-黙って ENABLED に戻る。** 移送のときは、それを利用して最後に戻した。
-
-```bash
-gcloud scheduler jobs pause pod-admin-worker \
-  --location=asia-northeast1 --project=tosyo-api-504104
-```
-
-**止めただけでは、走っているワーカーは止まらない。** 起動済みの実行は最大 600 秒
-処理を続けるので、**空になるまで待つ。**
-
-```bash
-gcloud run jobs executions list --job=pod-admin-worker \
-  --region=asia-northeast1 --project=tosyo-api-504104 \
-  --filter="status.completionTime=null" --format="value(name)"
-# 何も出なくなるまで待つ
-```
-
-そのうえで **VM 側の待ち行列が空になったこと**を確かめる。VM は 1 件ずつの直列処理なので、
-`pending_count` が 0 でないかぎり、まだ処理し切っていない。
-
-```bash
-curl -sS --fail localhost:18000/health   # queue.pending_count と active_jobs が 0
-```
-
-ここで **`illustrator-vm` リポジトリの手順**（`git pull` → `Stop-ScheduledTask` →
-python 停止 → `Start-ScheduledTask`）を実行する。**pull に `install_service.ps1` や
-`setup_*.ps1` 自体の変更が含まれていたら、タスクの再起動だけでは足りない**
-（向こうの README を参照）。
-
-#### 窓を出る
-
-**起動しただけでは、Illustrator が描けるかは分からない。** `/health` を見て、
-実際に 1 件生成を通す。**`/` の `version` は当てにならない**（文字列が直書きされており、
-`git pull` では動かない）。
-
-```bash
-curl -sS --fail localhost:18000/health   # config_loaded と worker_running が true
-```
-
-生成の確認は、**トンネル越しに VM へ直接ジョブを投げるのが速い**（pod-admin の DB にも
-GCS にも触れない）。REQ-0055 の段階 3 で使った方法である。
-pod-admin を通した端から端までの確認をしたいときは「製造データ生成の疎通確認」の節。
-
-```bash
-gcloud scheduler jobs resume pod-admin-worker \
-  --location=asia-northeast1 --project=tosyo-api-504104
-gcloud scheduler jobs describe pod-admin-worker \
-  --location=asia-northeast1 --project=tosyo-api-504104 --format="value(state)"  # ENABLED
-kill $RDP_TUNNEL $API_TUNNEL
-```
-
-**窓の間に落ちた行がないかを数える。** VM に届かなかった行は自動で再試行されるので、
-ここに出るのは入力の誤りなど、再試行しても直らないものだけである。
-
-```sql
-SELECT id, product_code, error_message FROM manufacturing_data
-WHERE status = 'failed' AND updated_at > '<窓に入った時刻>';
-```
-
-#### 移送で落ちた運用ポリシー
-
-**イメージはディスクを運ぶが、VM に付いたリソースポリシーは運ばない。**
-旧 VM（`lively-transit-334610`）に付いていたもののうち、**移送先には 1 つも無い。**
-
-| 旧 VM に付いていたもの | 実測（2026-09-07） | 扱い |
-|---|---|---|
-| `illustrator-vm-daily-snapshot` | 日次・14 日保持・03:00 JST。**旧ディスクに付いていた** | REQ-0062 |
-| Uptime Check `illustrator-api-health` ＋ 自動再起動 | 外部 IP 前提。**そのままは移せない** | 別の形で置き換えた（下記「製造データ生成が止まったとき」）。外からの自動リセットは無い |
-| `illustrator-vm-nightly-restart` | 毎晩 03:50→03:55 の stop/start | **戻さない**（`illustrator-vm` の Issue #5） |
-
-スナップショットは REQ-0062 が追う。
-**この表は「何が旧環境にあったか」の記録であり、現状の宣言ではない。**
-いま何があるかは `terraform plan` と `gcloud compute resource-policies list` が正本である。
-
-### `default` VPC は消す
+## `default` VPC は消す
 
 **`compute.googleapis.com` を有効にすると、GCP が `default` VPC を勝手に作る。**
 全リージョンにサブネットが生え、次の規則が最初から付いてくる。
@@ -594,7 +349,6 @@ default-allow-rdp   INGRESS  0.0.0.0/0  （適用先の指定なし）  tcp:3389
 default-allow-ssh   INGRESS  0.0.0.0/0  （適用先の指定なし）  tcp:22
 ```
 
-**REQ-0055 が個人プロジェクトで消そうとしているものと同じ形である。**
 本番では 2026-09-02 に削除した（当時 VM は 1 台も無く、空だった）。
 
 ```bash
@@ -606,49 +360,6 @@ gcloud compute networks delete default --project=tosyo-api-504104 --quiet
 
 **Terraform では表せない。** 自動生成されたものを「無い状態」に保つ記述が書けないので、
 `terraform plan` は消し忘れを検出しない。**compute API を有効にした環境では、毎回これを確認する。**
-
-### 外部 IP を持たない VM に入る
-
-外部 IP が無いので RDP も直接は繋がらない。IAP TCP forwarding でトンネルを掘る。
-`roles/iap.tunnelResourceAccessor`（または Owner）が要る。
-
-```bash
-# 生成 API の生死を確かめる（Cloud Run を経由しないので、VM 単体を検証できる）
-gcloud compute start-iap-tunnel illustrator-vm 8000 \
-  --local-host-port=localhost:18000 --zone=asia-northeast1-a --project=tosyo-api-504104 &
-curl -sS --fail localhost:18000/health
-
-# RDP
-gcloud compute start-iap-tunnel illustrator-vm 3389 \
-  --local-host-port=localhost:13389 --zone=asia-northeast1-a --project=tosyo-api-504104
-# 別途 Microsoft Remote Desktop で localhost:13389 へ接続する
-```
-
-**繋がらないとき、まず疑うのはトンネルであって VM ではない。**
-IAP のトンネルはラップトップのスリープで落ちる。
-`&` で背景に置いたものは、用が済んだら `kill` する（残ると次回 `address already in use` になる）。
-
-#### `reset-windows-password` を安易に叩かない
-
-**これは自動ログオンを壊す。** `setup_autologon.ps1` は自動ログオン用のパスワードを
-**レジストリに平文で持っている**ので、GCP 側でリセットすると
-**アカウント側だけが変わってレジストリが古いまま**になり、**次の再起動でログオンに失敗する。**
-
-サーバーは AtLogOn のタスクでしか起動しないため、**誰かが RDP でログインするまで
-上がってこない。** `illustrator-vm` の Issue #5 に、夜間再起動と組み合わさって
-9 時間 23 分のダウンになった実測がある。
-
-**しかも悪循環になる** — 入るためにリセットする → それで自動ログオンがまた失効する。
-
-やむを得ずリセットしたら、**同じ RDP セッションのうちに再設定する。**
-
-```powershell
-cd C:\illustrator-vm\scripts\setup_windows
-.\setup_autologon.ps1
-```
-
-移送先の VM で自動ログオンは**働いている**。イメージから起こした直後、人が一度も
-RDP せずに生成 API が 1 分ほどで `healthy` になった（REQ-0055）。**この状態を壊さないこと。**
 
 ## 製造データ生成が止まったとき
 
@@ -701,7 +412,9 @@ API の `POST /api/v1/internal/monitoring-alerts` → SendGrid である。発�
 | `terraform apply` そのもの | 作業者の手元 | CI に state と機密の読み取り権限を渡さないため（ADR-0031） |
 | `sendgrid-api-key` の中身 | 人間（`gcloud secrets versions add`） | 値をリポジトリにも state にも置かない |
 | 予算アラート | プロジェクト所有者 | 請求先アカウントの権限が要る |
-| `default` VPC の削除 | 人間（プロジェクトごとに一度きり） | **compute API を有効にした瞬間に GCP が自動生成する。** Terraform の管理外なので、作られたことに気づいて消すしかない（下記） |
+| `default` VPC の削除 | 人間（プロジェクトごとに一度きり） | **compute API を有効にした瞬間に GCP が自動生成する。** Terraform の管理外なので、作られたことに気づいて消すしかない（上記） |
+| VM のスナップショットとイメージ | 人間 | 撤去した VM の切り戻し用（上記「製造データ生成 VM の撤去」） |
+| `iap` / `osconfig` の API | （有効のまま） | VM のために有効にしたもの。撤去で Terraform の管理から外れたが、無効にはしていない（`disable_on_destroy = false`）。有効でも費用はかからない |
 
 ## 設定の依存関係で気をつけること
 
@@ -711,6 +424,10 @@ API の `POST /api/v1/internal/monitoring-alerts` → SendGrid である。発�
   `main.tf` の `locals` が導出する。先に殺されると、生成中の行がリース期限まで宙吊りになる
 - 生成 1 件の上限（`local.generation_timeout_seconds`）は Terraform が正本で、ワーカーに
   `GENERATOR_TIMEOUT_SECONDS` として渡す。Job のタイムアウトも同じ値から導出する
+- **ログ指標を差し替える `apply` は 2 回に分ける**（2026-10-11 に本番で 1 回では通らなかった）。
+  新しい指標とアラートを `-target` で先に当て、10 分おいて残り（古い指標の削除）を当てる。1 回で当てると、
+  古い指標の削除がそれを参照するアラートの書き換えより先に走るか（`still used in an alerting policy`）、
+  作ったばかりの指標がまだ使えない（`Cannot find metric(s)`）
 
 ## SendGrid の鍵を入れる
 

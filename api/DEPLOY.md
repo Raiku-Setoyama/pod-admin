@@ -79,7 +79,7 @@ Railway のローカルディスクは**再デプロイ/再起動で消える**�
 
 ### 1. GCS バケット作成
 
-- リージョン: `asia-northeast1`（illustrator-vm と同一）
+- リージョン: `asia-northeast1`
 - アクセス制御: Uniform bucket-level access
 - 公開設定: 非公開（Public access prevention: on）
 

@@ -77,8 +77,8 @@ class ManufacturingData(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # 差し替えた管理ユーザー（ユーザー削除後も履歴が残るようメールを保持）
     source_images_replaced_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    # illustrator-vm のジョブID。REQ-0067 で生成をワーカー内に移してからは書かない
-    # （列の削除は VM の撤去と合わせて REQ-0068 で行う）
+    # 以前の製造データ生成 VM（illustrator-vm）のジョブID。REQ-0067 からは書かない。
+    # 過去の行の記録として残している（列の削除はマイグレーションを伴うので、REQ-0068 のスコープ外）
     vm_job_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # 出力ファイル名（製造委託先に渡すときの名前）
