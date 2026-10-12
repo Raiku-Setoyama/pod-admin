@@ -261,16 +261,15 @@ gcloud run jobs execute pod-admin-worker \
 撤去した（REQ-0068。撤去したものの一覧もそちら）。
 
 **撤去直前のブートディスクを、スナップショット `illustrator-vm-final-20261012` に残してある**
-（Windows・Illustrator・Adobe のサインイン・自動ログオンの設定を含む）。ほかに古いスナップショット
-`illustrator-vm-preupdate-20260907` と、VM を作ったイメージ `illustrator-vm-20260902` もある。
+（Windows・Illustrator・Adobe のサインイン・自動ログオンの設定を含む）。それより古いスナップショットと
+VM を作ったイメージは、撤去のときに消した。
 Illustrator での生成へ戻す必要が出たら、REQ-0068 と REQ-0067 の PR を revert して apply し
 （ネットワーク・VM・ワーカーの VPC 接続・Job のタイムアウト・監視が戻る）、VM のディスクは
 このスナップショットから作る（`source_image` の代わりに `source_snapshot`）。
 **戻す見込みが無くなったら消す**（保管料がかかる。見直しの時期は REQ-0068）。
 
 ```bash
-gcloud compute snapshots delete illustrator-vm-final-20261012 illustrator-vm-preupdate-20260907 --project=tosyo-api-504104
-gcloud compute images delete illustrator-vm-20260902 --project=tosyo-api-504104
+gcloud compute snapshots delete illustrator-vm-final-20261012 --project=tosyo-api-504104
 ```
 
 ## 製造データ生成の疎通確認（REQ-0061）
@@ -413,7 +412,7 @@ API の `POST /api/v1/internal/monitoring-alerts` → SendGrid である。発�
 | `sendgrid-api-key` の中身 | 人間（`gcloud secrets versions add`） | 値をリポジトリにも state にも置かない |
 | 予算アラート | プロジェクト所有者 | 請求先アカウントの権限が要る |
 | `default` VPC の削除 | 人間（プロジェクトごとに一度きり） | **compute API を有効にした瞬間に GCP が自動生成する。** Terraform の管理外なので、作られたことに気づいて消すしかない（上記） |
-| VM のスナップショットとイメージ | 人間 | 撤去した VM の切り戻し用（上記「製造データ生成 VM の撤去」） |
+| VM のスナップショット | 人間 | 撤去した VM の切り戻し用（上記「製造データ生成 VM の撤去」） |
 | `iap` / `osconfig` の API | （有効のまま） | VM のために有効にしたもの。撤去で Terraform の管理から外れたが、無効にはしていない（`disable_on_destroy = false`）。有効でも費用はかからない |
 
 ## 設定の依存関係で気をつけること
