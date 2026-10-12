@@ -361,19 +361,11 @@ module "worker_job" {
     WORKER_MAX_RUNTIME_SECONDS = tostring(var.worker_max_runtime_seconds)
     WORKER_MAX_ITEMS           = tostring(var.worker_max_items)
     GENERATOR_TIMEOUT_SECONDS  = tostring(local.generation_timeout_seconds)
-
-    # 製造データは REQ-0067 からワーカーの中で生成する（ILLUSTRATOR_VM_BASE_URL は読まない）。
-    # この値は、ワーカーのイメージを REQ-0067 より前のものへ戻して VM で生成し直す
-    # 切り戻しのためだけに残している。VM と一緒に REQ-0068 で消す。
-    ILLUSTRATOR_VM_BASE_URL = var.illustrator_vm_base_url
   })
   secret_env_vars    = local.app_secret_env_vars
   cloudsql_instances = [module.cloud_sql.connection_name]
 
   invoker_members = [local.scheduler_member]
-
-  # 切り戻し（上の ILLUSTRATOR_VM_BASE_URL と同じ）のためだけに残している。REQ-0068 で消す。
-  vpc_egress = var.worker_vpc_egress
 
   depends_on = [module.secrets]
 }
@@ -406,7 +398,6 @@ module "worker_schedule" {
   service_account_email = module.service_accounts.emails["pod-admin-scheduler"]
   schedule              = var.worker_schedule
 
-  # 生成はワーカーの中で行うので（REQ-0067）、VM の設定の有無では止めない。
   paused = var.worker_schedule_paused
 
   depends_on = [module.worker_job]

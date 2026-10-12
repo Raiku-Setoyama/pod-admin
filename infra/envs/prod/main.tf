@@ -1,22 +1,13 @@
 # 本番（tosyo-api-504104）。
 # **値だけを持つ。** 構成の本体は modules/stack にある。
 #
-# アプリの設定値（SendGrid の差出人・連絡先・VM の URL）は
+# アプリの設定値（SendGrid の差出人・連絡先）は
 # **移行元の Railway から写したものである。** カットオーバーで挙動を変えないため、
 # 移行の時点では値を変えない。
 
 locals {
   project_id = "tosyo-api-504104"
   region     = "asia-northeast1"
-
-  # 製造データ生成 VM の内部 IP。**ここが唯一の出所である。**
-  # 下の module "illustrator_vm" が予約し、module "stack" が宛先として読む。
-  # 2 か所に書くと、片方だけ変えても apply は成功し、Cloud Run が
-  # 誰も応答しない番地を指したまま生成が静かに止まる。
-  #
-  # **module の出力を経由しない。** そうすると stack 全体が VM の作成待ちに
-  # 直列化する。local なら plan の時点で確定するので、依存の辺が増えない。
-  illustrator_vm_internal_ip = "10.20.0.10"
 
   # 運用の連絡先。アプリの連絡先（contact_email）と、製造データ生成のアラートの予備の宛先を兼ねる。
   # 片方だけ変えると、もう片方が古い宛先に届き続けて誰も気づかない。
@@ -82,17 +73,6 @@ module "stack" {
   #
   worker_schedule_paused = false
 
-  # 製造データ生成 VM の内部 IP（REQ-0055）。REQ-0067 で生成をワーカーの中へ移したので、
-  # 今のワーカーはこの値を読まない。ワーカーのイメージを以前のものへ戻して VM で生成し直す
-  # 切り戻しのためだけに、VM と一緒に残している（REQ-0068 で消す）。
-  illustrator_vm_base_url = "http://${local.illustrator_vm_internal_ip}:8000"
-
-  # 上と同じく切り戻しのためだけに残している。理由は modules/stack/variables.tf が正本。
-  worker_vpc_egress = {
-    network    = module.network.network_name
-    subnetwork = module.network.run_subnet_id
-  }
-
   sendgrid_from_email = "noreply@rksyo.com"
   contact_email       = local.ops_email
 
@@ -103,53 +83,10 @@ module "stack" {
   alert_emails = [local.ops_email]
 }
 
-# 製造データ生成 VM を迎えるためのネットワーク（REQ-0055 の 1 本目）。
-#
-# **この時点では誰も使っていない。** VM はまだ個人プロジェクト
-# （lively-transit-334610）で動いており、Cloud Run も上の
-# `illustrator_vm_base_url` が指す外部 IP を見ている。
-#
-# 追加しかしないので**切り戻す対象が無い。** REQ-0054 の PR 1 で
-# 本番を空のまま先に作ったのと同じ理由で、当日その場で組み立てる作業を減らす。
-#
-# **envs が持つのは値だけ、という原則の唯一の例外である。**
-# stack の中に入れてトグルで切り替えない理由は ADR-0036。
-module "network" {
-  source = "../../modules/network"
-
-  project_id = local.project_id
-  region     = local.region
-}
-
-# 製造データ生成 VM（REQ-0055 の 2 本目）。
-#
-# **この時点では Cloud Run はまだ旧 VM を見ている。** 上の
-# `illustrator_vm_base_url` を張り替えるのは、この VM で生成が通ることを
-# 確かめたあとである。**旧 VM が本番を捌いたまま検証できる**（ADR-0035 と同じ形）。
-module "illustrator_vm" {
-  source = "../../modules/illustrator-vm"
-
-  project_id = local.project_id
-  region     = local.region
-  env        = "prod"
-
-  subnetwork_id = module.network.illustrator_subnet_id
-
-  # **文字列を直書きしない。** 規則の側とずれても apply は通ってしまい、
-  # 「到達できない」という静かな形でしか表に出ない。
-  network_tag = module.network.illustrator_target_tag
-
-  internal_ip = local.illustrator_vm_internal_ip
-
-  # 移送元（lively-transit-334610 の illustrator-vm-preview）の**停止したディスク**から
-  # 作り、このプロジェクトへコピーしたもの。停止して作ったので、
-  # Illustrator のインストールと Adobe のサインイン状態が途中で写っていない。
-  source_image = "projects/${local.project_id}/global/images/illustrator-vm-20260902"
-}
-
 # 製造データ生成の監視とアラート（2026-09-27〜10-02 の障害を受けて追加）。
 # VM の生成 API が止まったまま 5 日間誰も気づかなかった。**人に届く経路を作る。**
-# 本番だけが呼ぶ理由は module "network" と同じ（ADR-0036）。
+# 本番だけが必要とする構成なので、stack のトグルではなく、ここから直接呼ぶ（ADR-0036）。
+# **envs が持つのは値だけ、という原則の唯一の例外である。**
 module "manufacturing_monitoring" {
   source = "../../modules/manufacturing-monitoring"
 

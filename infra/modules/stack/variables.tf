@@ -182,12 +182,6 @@ variable "monitoring_enabled" {
   default     = true
 }
 
-variable "illustrator_vm_base_url" {
-  description = "製造データ生成 VM の URL。REQ-0067 以降は切り戻しのためだけに使う（REQ-0068 で消す）"
-  type        = string
-  default     = ""
-}
-
 variable "sendgrid_from_email" {
   type    = string
   default = ""
@@ -196,18 +190,4 @@ variable "sendgrid_from_email" {
 variable "contact_email" {
   type    = string
   default = ""
-}
-
-variable "worker_vpc_egress" {
-  description = <<-DESC
-    ワーカー Job を Direct VPC egress で参加させるネットワーク。null なら繋がない。
-
-    REQ-0067 以降、ワーカーは VM を呼ばない。ワーカーのイメージを以前のものへ戻して
-    VM で生成し直す切り戻しのためだけに残している（REQ-0068 で消す）。
-  DESC
-  type = object({
-    network    = string
-    subnetwork = string
-  })
-  default = null
 }

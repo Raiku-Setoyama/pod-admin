@@ -43,10 +43,8 @@ module "stack" {
   db_max_overflow   = 2
 
   # 製造データはワーカーの中で生成するので（REQ-0067）、ステージングでも動かす。
-  # 以前は VM を本番と共有できず止めていた。
-  illustrator_vm_base_url = ""
-  worker_schedule         = "*/5 * * * *"
-  worker_schedule_paused  = false
+  worker_schedule        = "*/5 * * * *"
+  worker_schedule_paused = false
 
   # **ステージングでは鳴らさない。** 使い捨て環境の失敗で本番の通知が埋まると、
   # 本物のアラートを読み飛ばすようになる。

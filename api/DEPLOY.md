@@ -12,7 +12,6 @@
 | **壊れたときに戻すしかた** | `infra/README.md`「切り戻す」 |
 | インフラの変更 | `infra/README.md`「初回の手順」 |
 | 製造データ生成を手で動かす | `infra/README.md`「製造データ生成を手動で動かす」 |
-| VM に入る | `infra/README.md`「外部 IP を持たない VM に入る」 |
 
 ## 要点だけ
 
