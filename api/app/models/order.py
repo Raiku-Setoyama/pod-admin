@@ -86,6 +86,7 @@ class TshirtPosition(str, Enum):
     """Tシャツプリント位置."""
 
     FRONT = "正面"
+    LEFT_CHEST = "左胸"  # ワンポイント（REQ-0070）。生成では variant "left_chest" に載せる
 
 
 # アクリルキーホルダー属性

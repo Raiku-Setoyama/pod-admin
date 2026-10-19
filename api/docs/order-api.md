@@ -162,7 +162,7 @@ POST /api/v1/orders
 | price | integer | ○ | 単価（税込） | 0以上 |
 | quantity | integer | ○ | 数量 | 1以上（デフォルト: 1） |
 | size | string | 条件付 | サイズ | 最大50文字。全商品タイプで必須。有効値は商品タイプ別（下記参照） |
-| position | string | 条件付 | 印刷位置 | 最大50文字。Tシャツ・トートバッグで必須（有効値: 正面） |
+| position | string | 条件付 | 印刷位置 | 最大50文字。Tシャツ・トートバッグで必須（有効値: Tシャツは `正面` / `左胸`、トートバッグは `正面`） |
 | color | string | 条件付 | カラー | 最大50文字。Tシャツ・ステッカー・トートバッグで必須。有効値は商品タイプ別（下記参照） |
 | design_image_url | string | - | デザイン画像URL | 最大2048文字 |
 | thumbnail_image_url | string | - | サムネイル画像URL | 最大2048文字 |
@@ -182,7 +182,7 @@ POST /api/v1/orders
 - **Tシャツ** (`product_type: tshirt`)
   - `size`: `S`, `M`, `L`, `XL`
   - `color`: `白`
-  - `position`: `正面`
+  - `position`: `正面`, `左胸`（左胸はワンポイント。製造データは右上 100×100mm の枠に生成される）
 
 - **アクリルキーホルダー** (`product_type: acrylic_keychain`)
   - `size`: `50x50mm`, `70x70mm`, `100x100mm`

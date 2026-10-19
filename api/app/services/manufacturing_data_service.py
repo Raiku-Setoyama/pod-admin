@@ -43,7 +43,12 @@ from app.schemas.manufacturing_data import (
 )
 from app.utils.exceptions import ConflictError, NotFoundError, ValidationError
 from app.utils.file_storage import FileStorage, build_file_storage
-from app.utils.mfg_product_mapping import GenerationSpec, MfgMappingError, build_generation_spec
+from app.utils.mfg_product_mapping import (
+    GenerationSpec,
+    MfgMappingError,
+    build_generation_spec,
+    position_from_variant,
+)
 from app.utils.url_guard import validate_source_url
 
 logger = logging.getLogger(__name__)
@@ -215,7 +220,10 @@ class ManufacturingDataService:
         assert item.source_images is not None
         layer_types = {img["layer_type"] for img in item.source_images}
         try:
-            mapping = build_generation_spec(item.product_type, item.size, layer_types)
+            # 印刷位置（T シャツの「左胸」）は variant に載せる（REQ-0070）
+            mapping = build_generation_spec(
+                item.product_type, item.size, layer_types, position=item.position
+            )
         except MfgMappingError as exc:
             # マッピング不能 → failed 行を作成（発注ゲートで保留、管理者が気づける）
             md, _ = await self._insert_row(
@@ -336,7 +344,13 @@ class ManufacturingDataService:
                 raise GenerationError("source_images is empty")
 
             layer_types = {img["layer_type"] for img in md.source_images}
-            spec = build_generation_spec(md.product_type, md.size, layer_types)
+            # 行は position を持たないので、保存した variant から戻す（REQ-0070）
+            spec = build_generation_spec(
+                md.product_type,
+                md.size,
+                layer_types,
+                position=position_from_variant(md.product_type, md.variant),
+            )
 
             images = await self._download_source_images(
                 md.source_images, set(spec.usable_layers)
