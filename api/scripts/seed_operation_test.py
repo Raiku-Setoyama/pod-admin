@@ -272,11 +272,12 @@ async def seed_products(
     sample1_id = manufacturers["サンプルメーカー1"].id
 
     products_data: list[dict[str, Any]] = [
-        # シードット - Tシャツ (4サイズ)
-        {"product_type": ProductType.TSHIRT.value, "size": "S", "position": "正面", "color": "白", "manufacturer_id": seedot_id, "cost": 870, "lead_time_days": 10},
-        {"product_type": ProductType.TSHIRT.value, "size": "M", "position": "正面", "color": "白", "manufacturer_id": seedot_id, "cost": 870, "lead_time_days": 10},
-        {"product_type": ProductType.TSHIRT.value, "size": "L", "position": "正面", "color": "白", "manufacturer_id": seedot_id, "cost": 870, "lead_time_days": 10},
-        {"product_type": ProductType.TSHIRT.value, "size": "XL", "position": "正面", "color": "白", "manufacturer_id": seedot_id, "cost": 870, "lead_time_days": 10},
+        # シードット - Tシャツ (正面 / 左胸ワンポイント × 4サイズ。REQ-0070)
+        *[
+            {"product_type": ProductType.TSHIRT.value, "size": size, "position": position, "color": "白", "manufacturer_id": seedot_id, "cost": 870, "lead_time_days": 10}
+            for position in ("正面", "左胸")
+            for size in ("S", "M", "L", "XL")
+        ],
         # シードット - アクリルキーホルダー (3サイズ)
         {"product_type": ProductType.ACRYLIC_KEYCHAIN.value, "size": "50x50mm", "position": None, "color": "アクリル", "manufacturer_id": seedot_id, "cost": 285, "lead_time_days": 10},
         {"product_type": ProductType.ACRYLIC_KEYCHAIN.value, "size": "70x70mm", "position": None, "color": "アクリル", "manufacturer_id": seedot_id, "cost": 350, "lead_time_days": 10},

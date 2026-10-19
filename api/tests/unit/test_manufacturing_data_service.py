@@ -20,10 +20,11 @@ from app.utils.exceptions import ConflictError, NotFoundError
 
 def _v2_item(
     *,
-    product_code: str="RKSYO-1",
-    product_type: str="acrylic_keychain",
-    size: str="50x50mm",
-    layers: Any=("color", "cutline"),
+    product_code: str = "RKSYO-1",
+    product_type: str = "acrylic_keychain",
+    size: str = "50x50mm",
+    layers: Any = ("color", "cutline"),
+    position: str | None = None,
 ) -> Any:
     """v2 明細（product_code + source_images あり）の簡易モック."""
     return SimpleNamespace(
@@ -31,13 +32,14 @@ def _v2_item(
         product_code=product_code,
         product_type=product_type,
         size=size,
+        position=position,
         source_images=[{"layer_type": ly, "url": f"https://x/{ly}.png"} for ly in layers],
         manufacturing_data_id=None,
         manufacturing_data=None,
     )
 
 
-def _service(md_repo: Any, order_repo: Any=None, **kwargs: Any) -> Any:
+def _service(md_repo: Any, order_repo: Any = None, **kwargs: Any) -> Any:
     return ManufacturingDataService(
         md_repo=md_repo,
         order_repo=order_repo or AsyncMock(),
@@ -160,9 +162,7 @@ class TestCacheResolution:
         from sqlalchemy.exc import IntegrityError
 
         item = _v2_item()
-        existing = ManufacturingData(
-            product_code="RKSYO-1", product_type="acrylic_keychain"
-        )
+        existing = ManufacturingData(product_code="RKSYO-1", product_type="acrylic_keychain")
         existing.id = "md-existing"
         existing.status = MfgDataStatus.PENDING.value
 
@@ -179,13 +179,9 @@ class TestCacheResolution:
         session = MagicMock()
         session.begin_nested = MagicMock(return_value=_Nested())
         session.add = MagicMock()
-        session.flush = AsyncMock(
-            side_effect=IntegrityError("stmt", {}, Exception("dup key"))
-        )
+        session.flush = AsyncMock(side_effect=IntegrityError("stmt", {}, Exception("dup key")))
 
-        svc = ManufacturingDataService(
-            md_repo=md_repo, order_repo=AsyncMock(), session=session
-        )
+        svc = ManufacturingDataService(md_repo=md_repo, order_repo=AsyncMock(), session=session)
         md, created = await svc._insert_row(
             "src-1",
             item,
@@ -195,6 +191,67 @@ class TestCacheResolution:
         )
         assert md is existing
         assert created is False
+
+
+class TestTshirtPosition:
+    """REQ-0070: 印刷位置は variant に載せて照会・保存・再生成する."""
+
+    @staticmethod
+    def _tshirt_service(position: str) -> tuple[Any, Any]:
+        item = _v2_item(product_type="tshirt", size="L", layers=("design",), position=position)
+        order = SimpleNamespace(order_source_id="src-1", items=[item])
+        order_repo = AsyncMock()
+        order_repo.find_by_id.return_value = order
+        md_repo = AsyncMock()
+        md_repo.find_by_cache_key.return_value = None
+        md_repo.create.side_effect = lambda m: _assign_id(m, "md-new")
+        return _service(md_repo, order_repo), md_repo
+
+    @pytest.mark.asyncio
+    async def test_left_chest_is_keyed_and_stored_as_variant(self) -> None:
+        svc, md_repo = self._tshirt_service("左胸")
+        assert await svc.prepare_for_order("order-1") == ["md-new"]
+        assert md_repo.find_by_cache_key.call_args.args == ("src-1", "RKSYO-1", "L", "left_chest")
+        assert md_repo.create.call_args.args[0].variant == "left_chest"
+
+    @pytest.mark.asyncio
+    async def test_front_keeps_variant_null(self) -> None:
+        svc, md_repo = self._tshirt_service("正面")
+        await svc.prepare_for_order("order-1")
+        assert md_repo.find_by_cache_key.call_args.args == ("src-1", "RKSYO-1", "L", None)
+        assert md_repo.create.call_args.args[0].variant is None
+
+    @pytest.mark.asyncio
+    async def test_unknown_position_becomes_failed_row(self) -> None:
+        svc, md_repo = self._tshirt_service("背面")
+        assert await svc.prepare_for_order("order-1") == []
+        created = md_repo.create.call_args.args[0]
+        assert created.status == MfgDataStatus.FAILED.value
+        assert "背面" in created.error_message
+
+    @pytest.mark.asyncio
+    async def test_regeneration_from_row_uses_stored_variant(self) -> None:
+        md = ManufacturingData(
+            product_code="RKSYO-1", product_type="tshirt", size="L", variant="left_chest"
+        )
+        md.id = "md-1"
+        md.status = MfgDataStatus.GENERATING.value
+        md.source_images = [{"layer_type": "design", "url": "https://x/design.png"}]
+        md.attempts = 1
+        md.lease_expires_at = _LEASE
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        generate_file = MagicMock(return_value=GeneratedFile("t.pdf", b"PDF"))
+        file_storage = MagicMock()
+        file_storage.save = AsyncMock(return_value="manufacturing_data/t.pdf")
+        svc = _service(md_repo, file_storage=file_storage, generate_file=generate_file)
+        svc._download_source_images = AsyncMock(return_value={"design": b"d"})
+
+        await svc.generate("md-1", _LEASE)
+
+        spec = generate_file.call_args.args[0]
+        assert (spec.product_type, spec.size, spec.variant) == ("tshirt", "L", "left_chest")
+        assert md.status == MfgDataStatus.READY.value
 
 
 # 取り出しが返すリースの代役（generate はこの値を書き戻しの条件に使うだけ）
@@ -240,9 +297,7 @@ class TestGenerateDriver:
         file_storage.save = AsyncMock(return_value="manufacturing_data/sticker_out.ai")
 
         svc = _service(md_repo, file_storage=file_storage, generate_file=generate_file)
-        svc._download_source_images = AsyncMock(
-            return_value={"color": b"c", "cutline": b"k"}
-        )
+        svc._download_source_images = AsyncMock(return_value={"color": b"c", "cutline": b"k"})
 
         await svc.generate("md-1", _LEASE)
 
@@ -385,9 +440,7 @@ class TestGenerateDriver:
         # host "x" は許可リストで素通し（このテストの主眼はレイヤー欠落の耐性）。
         svc = _service(AsyncMock(), allowed_source_hosts=frozenset({"x"}))
         with patch("app.services.manufacturing_data_service.httpx.AsyncClient", _FakeClient):
-            images = await svc._download_source_images(
-                source_images, {"color", "cutline", "white"}
-            )
+            images = await svc._download_source_images(source_images, {"color", "cutline", "white"})
 
         assert set(images.keys()) == {"color", "cutline"}
 
@@ -443,7 +496,7 @@ class TestRetry:
 class TestRegenerate:
     """製造データ GUI 再作成（regenerate）の前提条件・波及のテスト."""
 
-    def _md(self, status: Any=MfgDataStatus.READY.value) -> Any:
+    def _md(self, status: Any = MfgDataStatus.READY.value) -> Any:
         from datetime import UTC, datetime
 
         md = ManufacturingData(product_code="p", product_type="sticker")

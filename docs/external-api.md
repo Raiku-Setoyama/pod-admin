@@ -64,8 +64,8 @@ GET /external/product-options/{product_type}
     { "key": "black", "label": "ブラック" }
   ],
   "positions": [
-    { "key": "front", "label": "前面" },
-    { "key": "back", "label": "背面" }
+    { "key": "正面", "label": "正面" },
+    { "key": "左胸", "label": "左胸" }
   ]
 }
 ```

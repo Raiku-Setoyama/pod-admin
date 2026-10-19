@@ -78,6 +78,7 @@ Slack で流れた話も、合意した要件も、見送ったものも、す�
 | [REQ-0067](REQ-0067.md) | purchase-order | 製造データを Illustrator の VM ではなく、ワーカーの中で OSS（VectorCraft）を使って生成する | must | done | |
 | [REQ-0068](REQ-0068.md) | purchase-order | 製造データ生成 VM（illustrator-vm）と、そのためのネットワーク・設定を撤去する | must | done | |
 | [REQ-0069](REQ-0069.md) | purchase-order | ワーカーの中の生成が落ちても取り出しを繰り返さず、時間切れは 1 回だけやり直す | must | done | |
+| [REQ-0070](REQ-0070.md) | purchase-order | Tシャツの印刷位置に「左胸」を追加し、製造データを右上 100×100mm のワンポイント枠に生成する | must | done | |
 
 ## priority — 採否・約束の度合い
 

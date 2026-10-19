@@ -14,12 +14,13 @@ import re
 import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import cast
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from PIL import Image, ImageDraw
-from pypdf import PdfReader
-from pypdf.generic import DictionaryObject
+from pypdf import PageObject, PdfReader
+from pypdf.generic import ArrayObject, ContentStream, DictionaryObject
 
 from app.config import settings
 from app.generator import GeneratedFile, GenerationError, check_available, generate
@@ -78,9 +79,11 @@ def _acrylic_inputs(*, base: str = "flat", keyhole: bool = False, white_hole: bo
     return {"color": _png(color), "cutline": _png(_layer(cutline)), "white": _png(white)}
 
 
-def _run(product_type: str, size: str, images: dict[str, bytes]) -> GeneratedFile:
+def _run(
+    product_type: str, size: str, images: dict[str, bytes], position: str | None = None
+) -> GeneratedFile:
     """ワーカーと同じ経路で生成する（pod-admin の商品属性 → 生成のパラメータ → 生成）."""
-    spec = build_generation_spec(product_type, size, images.keys())
+    spec = build_generation_spec(product_type, size, images.keys(), position=position)
     return generate(spec, images, "md-1")
 
 
@@ -212,6 +215,102 @@ def test_pdf_products(product_type: str, size: str, filename: str, page_mm: tupl
     assert b"-32000" not in out.content  # VectorCraft の目印は取り除いてある
     # 製造委託先の指摘（2026-10-09）: プロファイル名は「sRGB IEC61966-2.1」
     assert _icc_descriptions(reader) == {"sRGB IEC61966-2.1"}
+
+
+Matrix = tuple[float, float, float, float, float, float]
+FIXTURES = Path(__file__).parent / "fixtures"
+# 製造委託先が Illustrator で作ったワンポイント版のサンプル（L）。位置合わせの基準
+LEFT_CHEST_SAMPLE = FIXTURES / "tshirt_left_chest_sample_L.pdf"
+
+
+def _mul(a: Matrix, b: Matrix) -> Matrix:
+    """a のあとに b を掛ける（PDF の cm と同じ向き）."""
+    return (
+        a[0] * b[0] + a[1] * b[2],
+        a[0] * b[1] + a[1] * b[3],
+        a[2] * b[0] + a[3] * b[2],
+        a[2] * b[1] + a[3] * b[3],
+        a[4] * b[0] + a[5] * b[2] + b[4],
+        a[4] * b[1] + a[5] * b[3] + b[5],
+    )
+
+
+def _image_boxes(
+    stream: Any, resources: DictionaryObject, ctm: Matrix, out: list[tuple[float, float, float, float]]
+) -> None:
+    """コンテンツストリームを辿り、描かれた画像の (x, y, 幅, 高さ) をページ座標で集める."""
+    stack: list[Matrix] = []
+    m = ctm
+    for operands, op in ContentStream(stream, None).operations:
+        if op == b"q":
+            stack.append(m)
+        elif op == b"Q":
+            m = stack.pop()
+        elif op == b"cm":
+            m = _mul(cast(Matrix, tuple(float(v) for v in operands)), m)
+        elif op == b"Do":
+            xobjects = cast(DictionaryObject, resources["/XObject"].get_object())
+            xo = cast(DictionaryObject, xobjects[operands[0]].get_object())
+            if xo.get("/Subtype") == "/Image":
+                # 画像は単位正方形に描かれる
+                pts = [(m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]) for x in (0, 1) for y in (0, 1)]
+                xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+                out.append((min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)))
+            elif xo.get("/Subtype") == "/Form":
+                inner = m
+                if "/Matrix" in xo:
+                    inner = _mul(cast(Matrix, tuple(float(v) for v in cast(ArrayObject, xo["/Matrix"]))), m)
+                res = cast(DictionaryObject, xo.get("/Resources", resources).get_object())
+                _image_boxes(xo, res, inner, out)
+
+
+def _placed_image(page: PageObject) -> tuple[float, float, float, float]:
+    """ページに置かれた唯一の画像の (x, y, 幅, 高さ)。PDF 座標（左下原点・y 上向き）."""
+    boxes: list[tuple[float, float, float, float]] = []
+    _image_boxes(page.get_contents(), cast(DictionaryObject, page["/Resources"].get_object()), (1, 0, 0, 1, 0, 0), boxes)
+    assert len(boxes) == 1, boxes
+    return boxes[0]
+
+
+def _center(box: tuple[float, float, float, float]) -> tuple[float, float]:
+    x, y, w, h = box
+    return (x + w / 2, y + h / 2)
+
+
+def test_tshirt_left_chest_fits_the_top_right_100mm_square() -> None:
+    """REQ-0070: 左胸はアートボード右上に接する 100×100mm の枠に、1mm の余白で中央に置く."""
+    design = _png(Image.new("RGBA", (PX, PX), (220, 60, 60, 255)))
+    out = _run("tshirt", "L", {"design": design}, position="左胸")
+
+    assert out.filename == "md-1_Tshirts_front_L_297x406.pdf"  # ファイル名は正面と同じ
+    reader = PdfReader(io.BytesIO(out.content))
+    page = reader.pages[0]
+    page_w, page_h = float(page.trimbox.width), float(page.trimbox.height)
+    assert (page_w / MM, page_h / MM) == pytest.approx((297.0, 405.9), abs=0.5)
+    assert _icc_descriptions(reader) == {"sRGB IEC61966-2.1"}
+
+    placed = _placed_image(page)
+    x, y, w, h = placed
+    box = 100 * MM
+    margin = 1 * MM
+    # 正方形の画像なので 98×98mm に収まる
+    assert (w / MM, h / MM) == pytest.approx((98.0, 98.0), abs=0.1)
+    # 枠の中央 = ページ右端から 50mm、上端から 50mm
+    assert _center(placed) == pytest.approx((page_w - box / 2, page_h - box / 2), abs=0.5)
+    assert x + w <= page_w - margin + 0.1 and y + h <= page_h - margin + 0.1
+    # 製造委託先のサンプル（Illustrator で手作業。余白なしで 100mm 角いっぱい）と中心が一致する
+    sample = _placed_image(PdfReader(str(LEFT_CHEST_SAMPLE)).pages[0])
+    assert _center(placed) == pytest.approx(_center(sample), abs=0.5)
+    assert sample[3] / MM == pytest.approx(100.0, abs=0.1)
+
+
+def test_tshirt_front_still_fills_the_artboard() -> None:
+    design = _png(Image.new("RGBA", (PX, PX), (220, 60, 60, 255)))
+    out = _run("tshirt", "L", {"design": design}, position="正面")
+    page = PdfReader(io.BytesIO(out.content)).pages[0]
+    x, y, w, h = _placed_image(page)
+    assert w / MM == pytest.approx(295.0, abs=0.1)  # 297mm − 余白 1mm × 2
+    assert x + w / 2 == pytest.approx(float(page.trimbox.width) / 2, abs=0.5)
 
 
 def _icc_descriptions(reader: PdfReader) -> set[str]:

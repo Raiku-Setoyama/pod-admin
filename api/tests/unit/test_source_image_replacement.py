@@ -364,6 +364,7 @@ class TestIntakeKeepsReplacedSource:
             product_code="RKSYO-1",
             product_type="acrylic_keychain",
             size="50x50mm",
+            position=None,
             source_images=[
                 {"layer_type": "color", "url": color_url},
                 {"layer_type": "cutline", "url": "https://x/cutline.png"},

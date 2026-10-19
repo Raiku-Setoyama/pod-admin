@@ -5,6 +5,7 @@ import pytest
 from app.utils.mfg_product_mapping import (
     MfgMappingError,
     build_generation_spec,
+    position_from_variant,
 )
 
 
@@ -82,3 +83,43 @@ class TestUnsupported:
     def test_missing_size(self) -> None:
         with pytest.raises(MfgMappingError):
             build_generation_spec("acrylic_keychain", None, {"color", "cutline"})
+
+
+class TestTshirtPosition:
+    """REQ-0070: 印刷位置は variant に載せる（manufacturing_data に position 列は無い）."""
+
+    def test_left_chest_becomes_variant(self) -> None:
+        m = build_generation_spec("tshirt", "M", {"design"}, position="左胸")
+        assert m.variant == "left_chest"
+        assert m.required_layers == ("design",)
+
+    @pytest.mark.parametrize("position", ["正面", None])
+    def test_front_keeps_variant_none(self, position: str | None) -> None:
+        # 既存の製造データ行（variant NULL）と同じキャッシュキーに当たる
+        m = build_generation_spec("tshirt", "M", {"design"}, position=position)
+        assert m.variant is None
+
+    def test_unknown_position_fails_closed(self) -> None:
+        with pytest.raises(MfgMappingError, match="背面"):
+            build_generation_spec("tshirt", "M", {"design"}, position="背面")
+
+    def test_tote_bag_has_no_left_chest(self) -> None:
+        with pytest.raises(MfgMappingError, match="左胸"):
+            build_generation_spec("tote_bag", "M", {"design"}, position="左胸")
+
+    def test_position_is_ignored_for_other_products(self) -> None:
+        m = build_generation_spec("sticker", "50x50mm", {"color", "cutline"}, position="左胸")
+        assert m.variant == "clear"
+
+    @pytest.mark.parametrize(("variant", "position"), [(None, None), ("left_chest", "左胸")])
+    def test_position_from_variant_round_trips(self, variant: str | None, position: str | None) -> None:
+        # 行からの再生成は variant しか持たないので、position に戻してから spec を作る
+        assert position_from_variant("tshirt", variant) == position
+        assert build_generation_spec("tshirt", "M", {"design"}, position=position).variant == variant
+
+    def test_position_from_variant_rejects_unknown_tshirt_variant(self) -> None:
+        with pytest.raises(MfgMappingError, match="pocket"):
+            position_from_variant("tshirt", "pocket")
+
+    def test_position_from_variant_is_none_for_other_products(self) -> None:
+        assert position_from_variant("acrylic_keychain", "color") is None

@@ -26,9 +26,6 @@ _ACRYLIC = {
     "acrylic_stand": pipelines.acrylic_stand,
     "sticker": pipelines.sticker,
 }
-_ON_TEMPLATE = {"tshirt": pipelines.tshirt, "tote_bag": pipelines.tote_bag}
-
-
 def generate(
     spec: GenerationSpec,
     images: dict[str, bytes],
@@ -69,10 +66,14 @@ def generate(
             # VectorCraft を閉じてから書き直す（子プロセスの文書と、書き直しのメモリを重ねない）
             return GeneratedFile(filename, to_illustrator8(raw, filename))
 
-        if spec.product_type in _ON_TEMPLATE:
+        if spec.product_type in pipelines.TEMPLATE_BOXES:
+            # variant（T シャツの印刷位置）が不正なら VectorCraft を起こす前に止める
+            pipelines.check_template_variant(spec.product_type, spec.variant)
             image = paths[spec.required_layers[0]]
             with VectorCraft(cli, timeout_seconds=timeout_seconds) as vc:
-                saved = _ON_TEMPLATE[spec.product_type](pipelines.Job(vc, workdir), image, "out.pdf")
+                saved = pipelines.on_template(
+                    pipelines.Job(vc, workdir), spec.product_type, spec.variant, image, "out.pdf"
+                )
                 raw = saved.read_bytes()
             return GeneratedFile(filename, finish_pdf(raw, ICC_SRGB.read_bytes()))
 

@@ -11,7 +11,7 @@ illustrator-vm の ExtendScript（`scripts/*.jsx`）と同じ手順を VectorCra
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -26,6 +26,7 @@ from app.generator.products import (
     stand_tab_template,
 )
 from app.generator.vectorcraft import VectorCraft
+from app.utils.mfg_product_mapping import TSHIRT_LEFT_CHEST_VARIANT
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,8 @@ TEMPLATE_IMAGE_MARGIN_PT = 1 * MM
 # トートの「印刷範囲」。テンプレートでは塗りも線もない名前付きパスで、VectorCraft が読む PDF 部分に
 # 出てこないため、Illustrator 上の値を固定で持つ（アートボード左上原点・y 下向き。x, y, 幅, 高さ）
 TOTE_PRINT_AREA = (99.2126, 14.1732, 892.9134 - 99.2126, 722.835 - 14.1732)
+# T シャツの左胸ワンポイント（REQ-0070）: アートボード右上に接する 100×100mm の正方形
+TSHIRT_LEFT_CHEST_AREA_PT = 100 * MM
 # T シャツ・トートのテンプレートで、画像を置くレイヤー
 DESIGN_LAYER = "デザイン"
 
@@ -526,18 +529,23 @@ def acrylic_stand(job: Job, images: AcrylicImages, mm: int, name: str) -> Path:
 # --- T シャツ・トート（tshirt_297x406.jsx / tote_bag_280x250.jsx） ----------------
 
 
+Box = tuple[float, float, float, float]
+
+
+def _artboard_box(artboard: dict[str, float]) -> Box:
+    return (artboard["x"], artboard["y"], artboard["width"], artboard["height"])
+
+
 def _place_on_template(
-    job: Job, template: Path, image: Path, box: tuple[float, float, float, float] | None, name: str
+    job: Job, template: Path, image: Path, box: Callable[[dict[str, float]], Box], name: str
 ) -> Path:
+    """テンプレートを開き、アートボードから求めた ``box`` に 1mm の余白で画像を収めて PDF にする."""
     job.open(template)
     design = job.layer(DESIGN_LAYER)
     # テンプレートの空のレイヤーは PDF 部分に残らないので、無ければ作る
     layer_id = design["id"] if design else job.new_layer(DESIGN_LAYER)
     job.set_current_layer(layer_id)
-    if box is None:
-        ab = job.artboard()
-        box = (ab["x"], ab["y"], ab["width"], ab["height"])
-    job.place_image_fit(image, box, TEMPLATE_IMAGE_MARGIN_PT)
+    job.place_image_fit(image, box(job.artboard()), TEMPLATE_IMAGE_MARGIN_PT)
     for layer in job.layers():
         if layer["name"] != DESIGN_LAYER:
             job.vc.cmd("layer.setProps", id=layer["id"], locked=False)
@@ -545,11 +553,32 @@ def _place_on_template(
     return job.export_pdf(name)
 
 
-def tshirt(job: Job, image: Path, name: str) -> Path:
-    """アートボードに 1mm の余白で収め、中央に置く."""
-    return _place_on_template(job, TSHIRT_TEMPLATE, image, None, name)
+def tshirt_left_chest_box(artboard: dict[str, float]) -> Box:
+    """左胸ワンポイントの箱（x, y, 幅, 高さ）。TOTE_PRINT_AREA と同じ左上原点・y 下向き."""
+    side = TSHIRT_LEFT_CHEST_AREA_PT
+    return (artboard["x"] + artboard["width"] - side, artboard["y"], side, side)
 
 
-def tote_bag(job: Job, image: Path, name: str) -> Path:
-    """印刷範囲に 1mm の余白で収め、中央に置く."""
-    return _place_on_template(job, TOTE_TEMPLATE, image, TOTE_PRINT_AREA, name)
+def _tote_box(_: dict[str, float]) -> Box:
+    return TOTE_PRINT_AREA
+
+
+# テンプレート商品: product_type → variant → 画像を収める箱。variant の正本はここだけ
+TEMPLATE_BOXES: dict[str, dict[str | None, Callable[[dict[str, float]], Box]]] = {
+    "tshirt": {None: _artboard_box, TSHIRT_LEFT_CHEST_VARIANT: tshirt_left_chest_box},
+    "tote_bag": {None: _tote_box},
+}
+_TEMPLATES = {"tshirt": TSHIRT_TEMPLATE, "tote_bag": TOTE_TEMPLATE}
+
+
+def check_template_variant(product_type: str, variant: str | None) -> None:
+    """variant が ``product_type`` で生成できるものか確かめる（VectorCraft を起こす前に呼べる）."""
+    if variant not in TEMPLATE_BOXES[product_type]:
+        raise GenerationError(f"{product_type}: unsupported variant '{variant}'")
+
+
+def on_template(job: Job, product_type: str, variant: str | None, image: Path, name: str) -> Path:
+    """T シャツ・トート: variant が決める箱に 1mm の余白で画像を収め、中央に置く."""
+    check_template_variant(product_type, variant)
+    box = TEMPLATE_BOXES[product_type][variant]
+    return _place_on_template(job, _TEMPLATES[product_type], image, box, name)
