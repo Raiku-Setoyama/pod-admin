@@ -1,7 +1,7 @@
 name: ci
 
 # プロジェクトの静的解析（ビルド・テストゲート）。
-# REQ-0041 で全件を緑化したため、ruff / mypy / eslint / tsc はすべてブロッキングで実行する。
+# ruff / mypy / eslint / tsc はすべてブロッキングで実行する。
 # マージ後にブランチ保護の必須チェックへ昇格させること。
 # テスト（pytest / vitest / Playwright）は DB・インフラ準備後に追加する。
 # infra/ の Terraform は fmt と validate だけを見る（apply は CI では行わない）。

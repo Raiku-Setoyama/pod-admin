@@ -1,8 +1,9 @@
 # infra — GCP のインフラ定義（Terraform）
 
 POD Admin の GCP リソースをコードで管理する。設計の詳細は
-`docs/superpowers/specs/2026-08-27-gcp-migration-design.md`、
-判断の記録は `docs/02-decisions/ADR-0026`〜`ADR-0028`、`ADR-0030`〜`ADR-0032`。
+`docs/superpowers/specs/2026-08-27-gcp-migration-design.md`。
+本文とコード中の `ADR-XXXX` は削除済みの意思決定記録で、コミット `0ffcb22` 時点の
+`docs/02-decisions/ADR-XXXX.md` にある（`git show 0ffcb22:docs/02-decisions/ADR-0031.md`）。
 
 ## 構成
 
@@ -498,6 +499,48 @@ API の `POST /api/v1/internal/monitoring-alerts` → SendGrid である。発�
 3. **生成処理を起動できなかった生成は放っておいてよい。** 直れば次のワーカーが拾う。
    管理画面で「要対応」になったものだけ、エラー内容を見て再生成する
    （入力の誤り。例: アクリルスタンドの土台が見つからない → ADR-0038）
+
+## API が止まったとき（5xx・応答なし）
+
+上の監視はワーカーのログを見ている。**API 自身は別に見ている**（`modules/monitoring`）。
+**本番だけが呼ぶ**（ステージングは `monitoring_enabled = false`）。
+
+| アラート | 鳴る条件 | 見ているもの |
+|---|---|---|
+| API が 5xx を返している | 5 分間に **5 回以上** | Cloud Run のリクエスト数（`response_code_class="5xx"`） |
+| API が応答していない | `/health` が **2 地域以上**で 5 分続けて失敗 | 外形監視（5 分ごとに外から叩く） |
+
+**メトリクスのアラートは「メトリクスが届くこと」を前提にしている。**
+サービスごと落ちるとその前提が崩れるので、外から叩く 1 本を別に持っている。
+
+宛先は Terraform の `alert_emails` である。**製造データ生成のアラートと違い、管理画面からは変えられない**
+（API が落ちているときは管理画面も落ちているため）。
+
+**通知先が空ならアラートは 1 本も作られない。** 「監視してあるはず」で済まないように、
+入力ではなく**作られた実体**から導く出力を置いてある。
+
+```bash
+cd infra/envs/prod && terraform output alerting_active   # false なら誰にも届かない
+```
+
+### 鳴ったら
+
+1. **直前のデプロイが原因なら切り戻す**（上記「切り戻す（デプロイが原因のとき）」）。
+   受注の 5xx は**あとから復旧できない**（相手側が再送しない限り DB に何も残らない）ので、
+   原因の究明より先に戻す
+2. 5xx は、どのパスで出ているかをログで絞る
+
+   ```bash
+   gcloud logging read \
+     'resource.type="cloud_run_revision"
+      AND resource.labels.service_name="pod-admin-api"
+      AND httpRequest.status>=500' \
+     --project tosyo-api-504104 --limit 20 --freshness 1h
+   ```
+
+3. **「応答していない」だけが鳴って 5xx が出ていないなら、API の手前を見る。**
+   起動に失敗したリビジョンはトラフィックを受けないので、5xx はそもそも記録されない。
+   Cloud Run のリビジョンの状態・DB 接続・マイグレーションの完了を確認する
 
 ## Terraform が管理しないもの
 
