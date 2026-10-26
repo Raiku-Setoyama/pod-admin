@@ -12,7 +12,9 @@ Illustrator 8 形式は PostScript ベースのテキストで、Illustrator 202
 
 Illustrator 8 形式そのものの制約:
 
-- 画像の透明（アルファ）を持てない。透明部分はインキ 0%（紙白）に合成する。印刷するインキの量は同じ
+- 画像の透明（アルファ）を持てない。透明部分はインキ 0%（紙白）に合成する。印刷するインキの量は同じ。
+  背景を透過して見せるため、アクリル系の印刷画像は絵の外形のクリッピングマスクで切り抜いてある
+  （``pipelines._clip_to_art``、#153）。マスクは Illustrator と同じ ``q`` 〜 ``Q`` で書く
 - ICC プロファイルを埋め込めない。CMYK の数値はそのまま
 """
 
@@ -166,6 +168,15 @@ class _Writer:
         # 小文字 = 閉じたパス。f 塗り / s 線 / b 両方 / n どちらも無し
         return "b" if filled and stroked else "f" if filled else "s" if stroked else "n"
 
+    def _end_op(self, node: dict[str, Any], clip: bool) -> str:
+        """パスの書式（色・線の設定）を書き、サブパスの終わり方を返す.
+
+        マスクのパスは、Illustrator が書くとおり閉じて（h）マスクに加え（W）、塗らない（n）。
+        VectorCraft はマスクにしたパスの塗りと線を外すので、書くのは線の設定の行だけになる。
+        """
+        painted = self._paint(node)
+        return "h\nW\nn" if clip else self._op(*painted)
+
     def _subpath(self, sp: dict[str, Any], op: str) -> None:
         anchors = sp["anchors"]
         x, y = self._pt(anchors[0]["p"])
@@ -185,27 +196,39 @@ class _Writer:
                 )
         self._out.append(op if sp.get("closed") else op.upper())
 
-    def _node(self, node: dict[str, Any]) -> None:
+    def _node(self, node: dict[str, Any], *, clip: bool = False) -> None:
+        """``clip``: クリッピングマスクのパスとして書く（塗りも線も無く、サブパスごとにマスクへ加える）."""
         kind = node["kind"]
         t = kind["type"]
+        if clip and t not in ("path", "compound"):
+            raise GenerationError(f"unsupported clipping path in the document: {t}")
         if t == "path":
             subpaths = kind["path"]["subpaths"]
             # サブパスが複数あるパスは複合パスとして書く。別々に書くと穴が塗りつぶされる
             compound = len(subpaths) > 1
             if compound:
                 self._out.append("*u")
-            op = self._op(*self._paint(node))
+            op = self._end_op(node, clip)
             for sp in subpaths:
                 self._subpath(sp, op)
             if compound:
                 self._out.append("*U")
         elif t == "compound":
             self._out.append("*u")
-            op = self._op(*self._paint(node))
+            op = self._end_op(node, clip)
             for child in kind["children"]:
                 for sp in child["kind"]["path"]["subpaths"]:
                     self._subpath(sp, op)
             self._out.append("*U")
+        elif t == "group" and kind.get("clip"):
+            # クリッピンググループ。VectorCraft ではマスクのパスが最初（最背面）の子になる。
+            # Illustrator 8 形式では q 〜 Q で囲み、マスクのパスを先頭に書く（#153）
+            mask, *rest = kind["children"]
+            self._out.append("q")
+            self._node(mask, clip=True)
+            for child in rest:
+                self._node(child)
+            self._out.append("Q")
         elif t == "group":
             self._out.append("u")
             for child in kind["children"]:
