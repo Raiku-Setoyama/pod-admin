@@ -1,8 +1,9 @@
 # infra — GCP のインフラ定義（Terraform）
 
 POD Admin の GCP リソースをコードで管理する。設計の詳細は
-`docs/superpowers/specs/2026-08-27-gcp-migration-design.md`、
-判断の記録は `docs/02-decisions/ADR-0026`〜`ADR-0028`、`ADR-0030`〜`ADR-0032`。
+`docs/superpowers/specs/2026-08-27-gcp-migration-design.md`。
+本文とコード中の `ADR-XXXX` は削除済みの意思決定記録で、コミット `0ffcb22` 時点の
+`docs/02-decisions/ADR-XXXX.md` にある（`git show 0ffcb22:docs/02-decisions/ADR-0031.md`）。
 
 ## 構成
 
