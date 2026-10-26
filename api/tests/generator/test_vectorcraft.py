@@ -66,6 +66,12 @@ def _acrylic_inputs(*, base: str = "flat", keyhole: bool = False, white_hole: bo
             d.rectangle((120, 470, 480, 560), fill=fill)  # 土台（下辺 y=560）
         if base == "protruding":
             d.ellipse((400, 540, 440, 580), fill=fill)  # 土台の下へ約 1.7mm はみ出す足先
+        if base == "legs":
+            # 土台の左右に約 2.5mm（50mm のとき）のすき間を空けて、脚が土台と同じ高さの床に着く
+            # （椅子やピアノの脚、#154）。土台の幅はどのサイズのタブも収まる 220px
+            d.rectangle((190, 470, 410, 560), fill=fill)
+            d.rectangle((125, 400, 160, 560), fill=fill)
+            d.rectangle((440, 400, 475, 560), fill=fill)
         if keyhole:
             d.ellipse((290, 75, 310, 95), fill=(0, 0, 0, 0))  # キー穴（直径 ≈1.7mm）
 
@@ -141,6 +147,12 @@ def _clip_size(layer: str) -> tuple[float, float]:
             pts.append((v[0], v[1]))
     xs, ys = [p[0] for p in pts], [p[1] for p in pts]
     return max(xs) - min(xs), max(ys) - min(ys)
+
+
+def _anchor_height(layer: str) -> float:
+    """レイヤーのパスのアンカーの上下の幅（pt）."""
+    ys = [float(line.split()[-2]) for line in layer.splitlines() if line.endswith((" m", " L", " C"))]
+    return max(ys) - min(ys)
 
 
 def _assert_acrylic_structure(ai: Ai8, *, stroke_pt: float, white: str) -> None:
@@ -239,9 +251,12 @@ def test_white_plate_holes_under_semi_transparent_art_are_filled() -> None:
 
 
 @pytest.mark.parametrize(("size", "mm"), [("50mm", 50), ("70mm", 70), ("100mm", 100)])
-@pytest.mark.parametrize("base", ["flat", "protruding"])
+@pytest.mark.parametrize("base", ["flat", "protruding", "legs"])
 def test_acrylic_stand_merges_the_tab(size: str, mm: int, base: str) -> None:
-    """ADR-0038: 絵柄が土台より下に出ていても、土台を延ばしてタブを付ける."""
+    """ADR-0038: 絵柄が土台より下に出ていても、土台を延ばしてタブを付ける.
+
+    #154: 脚が土台と同じ高さで床に着いていても、本体の輪郭を失わない。
+    """
     out = _run("acrylic_stand", f"{mm}x{mm}mm", _acrylic_inputs(base=base))
 
     assert out.filename == f"【md-1】アクリルフィギュアスタンド_{size}_本体.ai"
@@ -250,6 +265,9 @@ def test_acrylic_stand_merges_the_tab(size: str, mm: int, base: str) -> None:
     # アートボードは台座テンプレートと同じ高さ（本体＋タブ）
     assert ai.art_size == pytest.approx((mm * MM, (mm + 5) * MM), abs=0.6)
     assert _subpath_count(ai.layers["CutLine"]) == 1  # タブを合成した 1 本のパス
+    # カットラインは本体全体を囲む。入力の輪郭は画像の高さの 5/6（y=60〜560）で、下にタブ（3mm）が付く。
+    # #154 では下端付近だけが残り、高さが 3 割ほどになった
+    assert _anchor_height(ai.layers["CutLine"]) > 0.8 * mm * MM
 
 
 def test_acrylic_stand_without_a_base_fails() -> None:
