@@ -12,6 +12,7 @@
 | [BUG-0003](BUG-0003.md) | purchase-order | アクリルスタンドの製造データ（本体）の一部で、台座への差し込み部分（タブ）が無いまま生成成功になる | [REQ-0020](../01-requirements/REQ-0020.md) | must | done |
 | [BUG-0004](BUG-0004.md) | purchase-order | アクリル系の製造データで、印刷画像（ColorPrint）の背景が透過されていない | [REQ-0067](../01-requirements/REQ-0067.md) | must | not-started |
 | [BUG-0005](BUG-0005.md) | purchase-order | アクリルスタンドの製造データで、本体のカットラインが下端付近だけになり、生成成功になる | [REQ-0067](../01-requirements/REQ-0067.md) | must | not-started |
+| [BUG-0006](BUG-0006.md) | purchase-order | 白版の補正が、絵に囲まれた透明なすき間（本当の抜き）まで白版で埋める | [REQ-0067](../01-requirements/REQ-0067.md) | must | not-started |
 
 ## 不具合と要件の違い
 
