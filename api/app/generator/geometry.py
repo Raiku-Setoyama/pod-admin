@@ -461,8 +461,13 @@ def merge_pedestal_tab(main: SubPath, tab: SubPath) -> SubPath:
 
     タブはテンプレートの形と大きさのまま平行移動するだけで、変形しない（ADR-0038 の必須条件）。
 
+    最下点の高さには、土台のほかに床に着いた脚などの辺が離れてあることがある（#154）。
+    底の高さに続けて並ぶアンカーの列のうち、タブの中心（本体の中心）の下にあるものを土台とし、
+    その列だけをノッチで置き換える。ほかの列は本体の輪郭としてそのまま残す。
+
     Raises:
-        GenerationError: 底辺に平らな辺が無い、またはテンプレートにノッチが無い。
+        GenerationError: 底辺に平らな辺が無い・タブが土台に収まらない・テンプレートにノッチが無い、
+            または合成の結果、本体の外形が変わった。
     """
     tab_a, tab_l, tab_r = tab.A, tab.LD, tab.RD
     n = len(tab_a)
@@ -470,32 +475,24 @@ def merge_pedestal_tab(main: SubPath, tab: SubPath) -> SubPath:
     tab_top_y = find_joint_y(tab_a, 0.5)
     mb = bounds([main])
     cut_bottom = mb[3]
-    dx = (mb[0] + mb[2]) / 2 - (tb[0] + tb[2]) / 2
+    cx = (mb[0] + mb[2]) / 2
+    dx = cx - (tb[0] + tb[2]) / 2
     dy = cut_bottom - tab_top_y
     c_a, c_l, c_r = main.A, main.LD, main.RD
     cn = len(c_a)
     tol = _FLAT_TOL
 
-    def on_bottom(i: int) -> bool:
-        return abs(c_a[i][1] - cut_bottom) < tol
-
-    bottom = [i for i in range(cn) if on_bottom(i)]
-    if len(bottom) < 2:
+    n_bottom = sum(1 for a in c_a if abs(a[1] - cut_bottom) < tol)
+    if n_bottom < 2:
         raise GenerationError(
-            f"acrylic_stand: need >=2 bottom points to merge the tab, found {len(bottom)}"
+            f"acrylic_stand: need >=2 bottom points to merge the tab, found {n_bottom}"
         )
-    br = max(bottom, key=lambda i: c_a[i][0])
-    bl = min(bottom, key=lambda i: c_a[i][0])
-    # 右下から順にたどって、底辺の上を通ったまま左下に着くなら「右→左」の向き
-    fwd = False
-    t = (br + 1) % cn
-    for _ in range(cn):
-        if t == bl:
-            fwd = True
-            break
-        if not on_bottom(t):
-            break
-        t = (t + 1) % cn
+    # 土台の列 run（順にたどった並び）の両端。s から e へたどると土台の上を通る
+    run = _bottom_run_under(c_a, cut_bottom, tol, cx)
+    s, e = run[0], run[-1]
+    # 右下から左下へたどる向きか
+    fwd = c_a[s][0] > c_a[e][0]
+    base_left, base_right = sorted((c_a[s][0], c_a[e][0]))
 
     top_idx = [i for i in range(n) if abs(tab_a[i][1] - tab_top_y) < 0.5]
     segs: list[list[int]] = []
@@ -515,19 +512,24 @@ def merge_pedestal_tab(main: SubPath, tab: SubPath) -> SubPath:
     l2r = tab_a[segs[0][-1]][0] >= tab_a[segs[0][0]][0]
     if len(segs) > 1:
         segs.sort(key=lambda s: tab_a[s[0]][0], reverse=not l2r)
-    notch = [j for s in segs for j in s]
-    rev = l2r != (not fwd)
+    notch = [j for seg in segs for j in seg]
+    rev = l2r == fwd
     pts = list(reversed(notch)) if rev else notch
+    notch_xs = [tab_a[j][0] + dx for j in notch]
+    if min(notch_xs) < base_left - tol or max(notch_xs) > base_right + tol:
+        raise GenerationError(
+            "acrylic_stand: the tab does not fit on the base "
+            f"(tab {min(notch_xs):.1f}..{max(notch_xs):.1f}pt, base {base_left:.1f}..{base_right:.1f}pt)"
+        )
 
+    # 土台の列の外側（e の次から s まで）が本体の輪郭。土台の途中のアンカーは捨てる
     out = SubPath([], [], [], True)
-    after, to = ((bl + 1) % cn, br) if fwd else ((br + 1) % cn, bl)
-    w = after
+    w = (e + 1) % cn
     for _ in range(cn):
-        if not (on_bottom(w) and w not in (br, bl)):
-            out.A.append(c_a[w])
-            out.LD.append(c_l[w])
-            out.RD.append(c_r[w])
-        if w == to:
+        out.A.append(c_a[w])
+        out.LD.append(c_l[w])
+        out.RD.append(c_r[w])
+        if w == s:
             break
         w = (w + 1) % cn
     last_body = len(out.A) - 1
@@ -539,8 +541,37 @@ def merge_pedestal_tab(main: SubPath, tab: SubPath) -> SubPath:
         out.RD.append((rd[0] + dx, rd[1] + dy))
     out.LD[last_body + 1] = out.A[last_body + 1]
     out.RD[-1] = out.A[-1]
-    closing = bl if fwd else br
-    out.A.append(c_a[closing])
-    out.LD.append(c_a[closing])
-    out.RD.append(c_r[closing])
+    out.A.append(c_a[e])
+    out.LD.append(c_a[e])
+    out.RD.append(c_r[e])
+
+    # 合成で本体の外形が変わっていないこと（下へタブの深さだけ伸びるのは正しい）。
+    # 壊れたカットラインを成功として納入しない（#154 は生成が成功扱いで製造委託先に届いた）
+    ob = bounds([out])
+    if any(abs(ob[k] - mb[k]) > tol for k in range(3)):
+        raise GenerationError("acrylic_stand: merging the tab changed the outline of the body")
     return out
+
+
+def _bottom_run_under(anchors: list[Pt], bottom_y: float, tol: float, x: float) -> list[int]:
+    """高さ ``bottom_y`` に続けて並ぶアンカーの列（順にたどった添字）のうち、``x`` の真下にあるもの.
+
+    Raises:
+        GenerationError: ``x`` の下に、底の高さの辺が無い。
+    """
+    cn = len(anchors)
+    on_bottom = [abs(a[1] - bottom_y) < tol for a in anchors]
+    # 底でないアンカーから数え始めれば、0 番をまたぐ列も切れずに取れる
+    start = next((i for i in range(cn) if not on_bottom[i]), None)
+    if start is not None:
+        run: list[int] = []
+        for k in range(1, cn + 1):
+            i = (start + k) % cn
+            if on_bottom[i]:
+                run.append(i)
+                continue
+            xs = [anchors[j][0] for j in run]
+            if len(run) >= 2 and min(xs) <= x <= max(xs):
+                return run
+            run = []
+    raise GenerationError("acrylic_stand: the tab does not fit on the base (no flat bottom under its center)")
