@@ -53,7 +53,7 @@ def _disk(radius: int) -> Mask:
     return disk
 
 
-def _alpha(png: bytes, name: str, size: tuple[int, int] | None = None) -> npt.NDArray[np.uint8]:
+def read_alpha(png: bytes, name: str, size: tuple[int, int] | None = None) -> npt.NDArray[np.uint8]:
     """画像の不透明度。``size`` を渡すとその大きさ（幅, 高さ）に合わせる."""
     try:
         with Image.open(io.BytesIO(png)) as im:
@@ -67,15 +67,24 @@ def _alpha(png: bytes, name: str, size: tuple[int, int] | None = None) -> npt.ND
     return arr
 
 
+def mask_png(mask: Mask) -> bytes:
+    """``mask`` の真の画素を黒（不透明）、それ以外を透明にした PNG（トレースの入力にする形）."""
+    rgba = np.zeros((*mask.shape, 4), dtype=np.uint8)
+    rgba[mask, 3] = 255
+    out = io.BytesIO()
+    Image.fromarray(rgba, "RGBA").save(out, format="PNG")
+    return out.getvalue()
+
+
 def fill_white_plate(white_png: bytes, color_png: bytes, art_mm: float) -> WhitePlateFix:
     """白版画像（不透明な部分が白版）の抜けを埋めた PNG を返す.
 
     ``art_mm`` は絵柄の一辺（mm）。どの画像もこの大きさに引き伸ばして置くので、
     白版画像の解像度（px/mm）は「幅 ÷ art_mm」になる。
     """
-    white = _alpha(white_png, "white") > 127
+    white = read_alpha(white_png, "white") > 127
     px_per_mm = white.shape[1] / art_mm
-    color = _alpha(color_png, "color", size=(white.shape[1], white.shape[0]))
+    color = read_alpha(color_png, "color", size=(white.shape[1], white.shape[0]))
 
     # 1. 絵のある穴
     holes, n_holes = ndimage.label(ndimage.binary_fill_holes(white) & ~white)
@@ -109,12 +118,8 @@ def fill_white_plate(white_png: bytes, color_png: bytes, art_mm: float) -> White
         filled &= ~np.isin(islands, specks)
         specks_removed = len(specks)
 
-    rgba = np.zeros((*filled.shape, 4), dtype=np.uint8)
-    rgba[..., 3] = np.where(filled, 255, 0)
-    out = io.BytesIO()
-    Image.fromarray(rgba, "RGBA").save(out, format="PNG")
     return WhitePlateFix(
-        png=out.getvalue(),
+        png=mask_png(filled),
         holes_filled=int(has_ink.sum()),
         notches_filled=notches_filled,
         specks_removed=specks_removed,

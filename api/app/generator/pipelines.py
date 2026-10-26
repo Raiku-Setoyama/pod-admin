@@ -72,6 +72,8 @@ class AcrylicImages:
     color: Path
     cutline: Path
     white: Path | None
+    # 印刷画像を切り抜くマスクの元画像（``art_mask``）。透明な画素が無い印刷画像では None
+    color_mask: Path | None = None
 
 
 class Job:
@@ -325,11 +327,37 @@ def _white_plate(job: Job, image: Path, size_pt: float, center: tuple[float, flo
     job.fill_only([job.make_single_compound("White")])
 
 
-def _new_acrylic_document(job: Job, size_pt: float, height_pt: float, color: Path) -> tuple[float, float]:
+def _clip_to_art(
+    job: Job, layer_id: int, image_id: int, mask: Path, size_pt: float, center: tuple[float, float]
+) -> None:
+    """印刷画像を、マスク画像をトレースした外形のクリッピングマスクで切り抜く（BUG-0004）.
+
+    VectorCraft のクリッピンググループは、マスクのパスがグループの最背面の子になる。
+    旧形式 .ai には Illustrator のマスク（``q`` 〜 ``Q``）として書かれる（``legacy_ai``）。
+    """
+    # トレースは別のレイヤーで行い、できた複合パスだけを画像の前面へ移す
+    # （make_single_compound はレイヤーの中身をすべてまとめるので、画像と同じレイヤーでは行えない）
+    work = job.new_layer("ColorMask")
+    job.set_current_layer(work)
+    job.trace(job.place_image(mask, size_pt, center), TRACE)
+    clip = job.make_single_compound("ColorMask")
+    job.vc.cmd("node.move", id=clip, parent=layer_id, index=1)
+    job.vc.cmd("layer.delete", id=work)
+    job.vc.cmd("select.set", ids=[image_id, clip])
+    group: int = job.vc.cmd("object.group")["id"]
+    job.vc.cmd("layer.clippingMask.toggle", id=group)
+    job.set_current_layer(layer_id)
+
+
+def _new_acrylic_document(
+    job: Job, size_pt: float, height_pt: float, images: AcrylicImages
+) -> tuple[float, float]:
     job.new_cmyk(size_pt + 2 * MARGIN_PT, height_pt + 2 * MARGIN_PT)
     center = _canvas_center(job)
-    job.rename_first_layer("ColorPrint")
-    job.place_image(color, size_pt, center)
+    layer_id = job.rename_first_layer("ColorPrint")
+    image_id = job.place_image(images.color, size_pt, center)
+    if images.color_mask is not None:
+        _clip_to_art(job, layer_id, image_id, images.color_mask, size_pt, center)
     return center
 
 
@@ -366,7 +394,7 @@ def acrylic_keychain(job: Job, images: AcrylicImages, mm: int, name: str) -> Pat
     if circle is None:
         raise GenerationError(f"keyhole circles not found in the {mm}mm template")
 
-    center = _new_acrylic_document(job, size, size, images.color)
+    center = _new_acrylic_document(job, size, size, images)
     _trace_cutline(job, images.cutline, size, center)
     paths = job.paths("CutLine")
     sps = G.replace_keyhole([sp for _, sp in paths], circle)
@@ -408,7 +436,7 @@ def acrylic_keychain(job: Job, images: AcrylicImages, mm: int, name: str) -> Pat
 
 def sticker(job: Job, images: AcrylicImages, mm: int, name: str) -> Path:
     size = mm * MM
-    center = _new_acrylic_document(job, size, size, images.color)
+    center = _new_acrylic_document(job, size, size, images)
     color_layer = job.layer("ColorPrint")
     assert color_layer is not None
     _trace_cutline(job, images.cutline, size, center)
@@ -482,7 +510,7 @@ def acrylic_stand(job: Job, images: AcrylicImages, mm: int, name: str) -> Path:
     top_gap = max(tab_artboard_height - size - depth, 0)
     artboard_height = size + depth + top_gap
 
-    center = _new_acrylic_document(job, size, artboard_height, images.color)
+    center = _new_acrylic_document(job, size, artboard_height, images)
     _trace_cutline(job, images.cutline, size, center)
     _extend_base_to_lowest_point(job)
     paths = job.paths("CutLine")

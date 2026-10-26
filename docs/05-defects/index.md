@@ -10,7 +10,7 @@
 | [BUG-0001](BUG-0001.md) | shipment | 配送一覧のキーワード検索が、どんな入力でも 0 件になる | [REQ-0026](../01-requirements/REQ-0026.md) | must | done |
 | [BUG-0002](BUG-0002.md) | billing | 請求書PDFの発行が管理画面・メーカーポータルの双方で 500 エラーになる | [REQ-0030](../01-requirements/REQ-0030.md) | must | done |
 | [BUG-0003](BUG-0003.md) | purchase-order | アクリルスタンドの製造データ（本体）の一部で、台座への差し込み部分（タブ）が無いまま生成成功になる | [REQ-0020](../01-requirements/REQ-0020.md) | must | done |
-| [BUG-0004](BUG-0004.md) | purchase-order | アクリル系の製造データで、印刷画像（ColorPrint）の背景が透過されていない | [REQ-0067](../01-requirements/REQ-0067.md) | must | not-started |
+| [BUG-0004](BUG-0004.md) | purchase-order | アクリル系の製造データで、印刷画像（ColorPrint）の背景が透過されていない | [REQ-0067](../01-requirements/REQ-0067.md) | must | in-progress |
 | [BUG-0005](BUG-0005.md) | purchase-order | アクリルスタンドの製造データで、本体のカットラインが下端付近だけになり、生成成功になる | [REQ-0067](../01-requirements/REQ-0067.md) | must | not-started |
 
 ## 不具合と要件の違い

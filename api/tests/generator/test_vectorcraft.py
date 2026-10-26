@@ -110,6 +110,39 @@ def _subpath_count(layer: str) -> int:
     return len(re.findall(r"^[-\d.]+ [-\d.]+ m$", layer, re.MULTILINE))
 
 
+def _layer_body(layer: str) -> str:
+    return layer.split("\n0 A\n", 1)[1]
+
+
+def _is_clipped(layer: str) -> bool:
+    """レイヤーの中身がクリッピングマスク（``q`` 〜 ``Q``）で始まり、それで終わるか."""
+    body = _layer_body(layer)
+    return body.startswith("q\n") and body.rstrip().endswith("Q\nLB")
+
+
+def _clip_size(layer: str) -> tuple[float, float]:
+    """レイヤーの先頭のクリッピングマスクの、マスクのパス（``q`` 〜 ``W n``）の幅と高さ（pt）."""
+    body = _layer_body(layer)
+    clip = body[: body.index("%AI5_BeginRaster")]
+    clip = clip[: clip.rindex("W\nn\n")]
+    pts: list[tuple[float, float]] = []
+    for line in clip.splitlines():
+        if not line.endswith((" m", " L", " C")):
+            continue
+        v = [float(n) for n in line.split()[:-1]]
+        if line.endswith(" C"):
+            # 曲線の上の点で測る（方向線は外へはみ出し、アンカーだけでは内側に寄る）
+            (x0, y0), (x1, y1, x2, y2, x3, y3) = pts[-1], v
+            for k in range(1, 17):
+                t = k / 16
+                a, b, c, d = (1 - t) ** 3, 3 * (1 - t) ** 2 * t, 3 * (1 - t) * t * t, t**3
+                pts.append((a * x0 + b * x1 + c * x2 + d * x3, a * y0 + b * y1 + c * y2 + d * y3))
+        else:
+            pts.append((v[0], v[1]))
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    return max(xs) - min(xs), max(ys) - min(ys)
+
+
 def _assert_acrylic_structure(ai: Ai8, *, stroke_pt: float, white: str) -> None:
     """``white``: "plate"（白版あり）/ "empty"（空の White レイヤー）/ "none"（レイヤー無し）.
 
@@ -124,6 +157,8 @@ def _assert_acrylic_structure(ai: Ai8, *, stroke_pt: float, white: str) -> None:
     assert f" {stroke_pt:g} w " in cut
     assert "%AI5_BeginRaster" in ai.layers["ColorPrint"]
     assert " 8 4 0 0 0 0" in ai.layers["ColorPrint"]  # 8bit・4 チャンネル（CMYK）
+    # 入力の印刷画像は背景が透明。旧形式は透明を持てないので、絵の外形で切り抜く（BUG-0004）
+    assert _is_clipped(ai.layers["ColorPrint"])
     if white == "plate":
         plate = ai.layers["White"]
         assert plate.count("*u") == 1 and "0 0 0 1 k" in plate  # K100 の複合パス 1 つ
@@ -155,6 +190,45 @@ def test_acrylic_keychain_without_white_plate() -> None:
     out = _run("acrylic_keychain", "50x50mm", images)
     assert out.filename == "md-1_AcrylicKeychain_clear_50x50.ai"
     _assert_acrylic_structure(_parse_ai8(out.content), stroke_pt=0.5, white="none")
+
+
+@pytest.mark.parametrize("mm", [50, 100])
+def test_color_image_is_clipped_to_the_art(mm: int) -> None:
+    """BUG-0004: 印刷画像の透明な背景は、絵の外形のクリッピングマスクで切り抜かれる.
+
+    印刷画像の絵は 376×436px（600px 四方の中）の楕円。
+    """
+    out = _run("acrylic_keychain", f"{mm}x{mm}mm", _acrylic_inputs(base="round", keyhole=True))
+    size = _clip_size(_parse_ai8(out.content).layers["ColorPrint"])
+    art = (376 / PX * mm * MM, 436 / PX * mm * MM)
+    assert size[0] == pytest.approx(art[0], abs=0.5 * MM)
+    assert size[1] == pytest.approx(art[1], abs=0.5 * MM)
+
+
+def test_small_pieces_of_art_are_not_clipped_out() -> None:
+    """絵の小さな島（きらめき・点など）もマスクに入る。捨てると、その絵が印刷から消える.
+
+    VectorCraft 0.4.0 のトレースは noise の値によらず小さな島を捨てない（1px 四方でも残る）。
+    更新でトレースが島を捨てるようになったときに気づくためのテスト。
+    """
+    images = _acrylic_inputs(base="round", keyhole=True)
+    with Image.open(io.BytesIO(images["color"])) as im:
+        color = im.copy()
+    ImageDraw.Draw(color).ellipse((40, 40, 43, 43), fill=(250, 200, 0, 255))  # 直径 4px（50mm で約 0.3mm）
+    images["color"] = _png(color)
+    out = _run("acrylic_keychain", "50x50mm", images)
+    color_layer = _parse_ai8(out.content).layers["ColorPrint"]
+    mask = color_layer[: color_layer.index("%AI5_BeginRaster")]
+    assert mask.count("h\nW\nn") == 2  # 本体と小さな点
+
+
+def test_opaque_color_image_is_not_clipped() -> None:
+    """背景まで塗られた印刷画像（透明な画素が無い）は、切り抜かずにそのまま置く."""
+    images = _acrylic_inputs(base="round", keyhole=True)
+    images["color"] = _png(Image.new("RGBA", (PX, PX), (40, 120, 200, 255)))
+    out = _run("acrylic_keychain", "50x50mm", images)
+    color = _parse_ai8(out.content).layers["ColorPrint"]
+    assert not _is_clipped(color) and "%AI5_BeginRaster" in color
 
 
 def test_white_plate_holes_under_semi_transparent_art_are_filled() -> None:

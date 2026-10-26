@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 from app.generator import GeneratedFile, pipelines
+from app.generator.art_mask import art_mask_png
 from app.generator.errors import GenerationError
 from app.generator.legacy_ai import to_illustrator8
 from app.generator.pdf_finish import finish_pdf
@@ -62,7 +63,12 @@ def generate(
                     fix.notches_filled,
                     fix.specks_removed,
                 )
-            acrylic = pipelines.AcrylicImages(paths["color"], paths["cutline"], white)
+            color_mask = None
+            mask_png = art_mask_png(images["color"])
+            if mask_png is not None:
+                color_mask = workdir / "color_mask.png"
+                color_mask.write_bytes(mask_png)
+            acrylic = pipelines.AcrylicImages(paths["color"], paths["cutline"], white, color_mask)
             with VectorCraft(cli, timeout_seconds=timeout_seconds) as vc:
                 saved = _ACRYLIC[spec.product_type](pipelines.Job(vc, workdir), acrylic, mm, "out.ai")
                 raw = saved.read_bytes()
