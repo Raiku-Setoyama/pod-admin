@@ -82,6 +82,37 @@ class TestMergePedestalTab:
         with pytest.raises(GenerationError, match="need >=2 bottom points"):
             G.merge_pedestal_tab(_circle(100, 100, 80), self._tab())
 
+    # 左右の脚が土台と同じ高さ（y=10）で床に着き、土台（x=60..140）との間にすき間がある。
+    # 椅子やピアノの脚が床に着いている絵柄（BUG-0005）
+    _LEGS: list[tuple[float, float]] = [
+        (0, 10), (20, 10), (20, 30), (60, 30), (60, 10), (140, 10),
+        (140, 30), (180, 30), (180, 10), (200, 10), (200, 300), (0, 300),
+    ]  # fmt: skip
+
+    @pytest.mark.parametrize("reverse", [False, True])
+    @pytest.mark.parametrize("start", [0, 3, 5, 9])
+    def test_keeps_the_body_when_legs_touch_the_floor_beside_the_base(self, reverse: bool, start: int) -> None:
+        """BUG-0005: 底の高さの点が離れて何か所にもあっても、タブは土台だけに付け、本体の輪郭は残す."""
+        pts = list(reversed(self._LEGS)) if reverse else list(self._LEGS)
+        body = _polygon(pts[start:] + pts[:start])
+        merged = G.merge_pedestal_tab(body, self._tab())
+
+        # 本体の外形はそのまま（下だけノッチの深さ 20 伸びる）
+        assert G.bounds([merged]) == pytest.approx((0, 300, 200, -10))
+        # 脚の底は残る
+        assert {(0, 10), (20, 10), (180, 10), (200, 10)} <= set(merged.A)
+        # タブは土台の中央（本体の中心 x=100）に付く
+        notch = {(80, -10), (120, -10), (80, 10), (120, 10)}
+        assert notch <= set(merged.A)
+        # 土台の両端だけがタブの肩につながり、土台の途中の点は残らない
+        assert len(merged.A) == len(body.A) - 2 + 4 + 2
+
+    def test_fails_when_the_tab_is_wider_than_the_base(self) -> None:
+        """土台にタブが収まらないときは、壊れたカットラインを作らずに失敗させる（ADR-0038）."""
+        body = _polygon([(0, 30), (90, 30), (90, 10), (110, 10), (110, 30), (200, 30), (200, 300), (0, 300)])
+        with pytest.raises(GenerationError, match="does not fit"):
+            G.merge_pedestal_tab(body, self._tab())
+
 
 class TestKeyhole:
     def test_finds_the_concentric_inner_and_outer_circles(self) -> None:
