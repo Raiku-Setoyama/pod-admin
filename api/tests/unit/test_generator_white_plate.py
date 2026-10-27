@@ -1,4 +1,4 @@
-"""白版画像の抜けを埋める処理（app/generator/white_plate.py、REQ-0067）."""
+"""白版画像の抜けを埋める処理（app/generator/white_plate.py、REQ-0067・#155）."""
 
 import io
 
@@ -41,16 +41,78 @@ def _plate_and_art() -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.uint8]]:
     return white, color
 
 
-def test_fills_a_hole_where_the_art_is_semi_transparent() -> None:
+def test_fills_a_hole_under_printed_art() -> None:
     white, color = _plate_and_art()
     hole = _disk_mask(200, 200, 20)
     white[hole] = 0
-    color[hole] = 100  # 半透明でほぼ白の模様（白い羽など）
+    color[hole] = 200  # 白版から外れているが、印刷される絵（不透明度 50% 以上）
 
     fix = fill_white_plate(_png(white), _png(color), ART_MM)
 
     assert fix.holes_filled == 1
     assert (_alpha(fix.png)[hole] == 255).all()
+
+
+def test_keeps_a_hole_under_art_that_is_not_printed() -> None:
+    """印刷画像は不透明度 50% 以上で切り抜くので、それ未満の所に白版を置くと白い面だけが見える（#155）."""
+    white, color = _plate_and_art()
+    hole = _disk_mask(200, 200, 20)
+    white[hole] = 0
+    color[hole] = 100
+
+    fix = fill_white_plate(_png(white), _png(color), ART_MM)
+
+    assert fix.holes_filled == 0
+    assert (_alpha(fix.png)[hole] == 0).all()
+
+
+def test_keeps_a_transparent_gap_whose_rim_has_art() -> None:
+    """白版の内寄せで穴の縁には絵がかかる。縁の絵の所だけ埋め、絵に囲まれた透明なすき間は残す（#155）."""
+    white, color = _plate_and_art()
+    hole = _disk_mask(200, 200, 40)
+    gap = _disk_mask(200, 200, 30)  # 印刷画像のすき間。白版の穴はこれより 10px 大きい
+    white[hole] = 0
+    color[gap] = 0
+
+    fix = fill_white_plate(_png(white), _png(color), ART_MM)
+
+    out = _alpha(fix.png)
+    assert fix.holes_filled == 1
+    assert (out[_disk_mask(200, 200, 32)] == 0).all()  # すき間＋縁から空ける幅は透明のまま
+    assert (out[hole & ~_disk_mask(200, 200, 36)] == 255).all()  # 縁の絵の所は白版
+
+
+def test_fills_only_the_art_inside_a_transparent_gap() -> None:
+    """すき間の中を通る棒（ピアノのペダルの棒など）には白版を敷き、両脇のすき間は残す（#155）."""
+    white, color = _plate_and_art()
+    hole = np.zeros((SIZE, SIZE), dtype=bool)
+    hole[150:250, 160:240] = True
+    rod = np.zeros((SIZE, SIZE), dtype=bool)
+    rod[150:250, 190:210] = True  # 幅 20px ≈ 0.85mm
+    white[hole] = 0
+    color[hole & ~rod] = 0
+
+    fix = fill_white_plate(_png(white), _png(color), ART_MM)
+
+    out = _alpha(fix.png)
+    assert fix.holes_filled == 1
+    assert (out[155:245, 195:205] == 255).all()
+    assert (out[155:245, 165:185] == 0).all()
+    assert (out[155:245, 215:235] == 0).all()
+
+
+def test_trims_the_plate_where_the_art_is_not_printed() -> None:
+    """販売サイトの白版が、印刷されない半透明の所にかかっていれば削る（かごの編み目のすき間など、#155）."""
+    white, color = _plate_and_art()
+    faint = _disk_mask(200, 200, 15)
+    color[faint] = 60
+
+    fix = fill_white_plate(_png(white), _png(color), ART_MM)
+
+    out = _alpha(fix.png)
+    assert fix.trimmed_mm2 > 0
+    assert (out[faint] == 0).all()
+    assert (out[_disk_mask(200, 200, 100) & ~_disk_mask(200, 200, 25)] == 255).all()
 
 
 def test_keeps_a_fully_transparent_hole() -> None:
@@ -71,7 +133,7 @@ def test_fills_a_notch_caused_by_semi_transparent_art() -> None:
     notch = np.zeros((SIZE, SIZE), dtype=bool)
     notch[185:215, 330:351] = True  # 外周から内側へ 20px の切れ込み（幅 30px ≈ 1.3mm）
     white[notch] = 0
-    color[notch & (color > 0)] = 100
+    color[notch & (color > 0)] = 140  # 半透明だが印刷される
 
     fix = fill_white_plate(_png(white), _png(color), ART_MM)
 
@@ -99,7 +161,7 @@ def test_removes_specks_that_the_inward_offset_would_crush() -> None:
     speck = np.zeros((SIZE, SIZE), dtype=bool)
     speck[10:13, 10:13] = True  # 9px ≈ 0.016mm²
     white[speck] = 255
-    color[speck] = 255
+    color[4:19, 4:19] = 255  # 下の絵は白版より大きい（印刷される絵の内側にある孤立点）
 
     fix = fill_white_plate(_png(white), _png(color), ART_MM)
 
@@ -111,6 +173,7 @@ def test_outline_is_unchanged_without_holes_or_notches() -> None:
     white, color = _plate_and_art()
     fix = fill_white_plate(_png(white), _png(color), ART_MM)
     assert (fix.holes_filled, fix.notches_filled, fix.specks_removed) == (0, 0, 0)
+    assert fix.trimmed_mm2 == 0
     assert (_alpha(fix.png) == white).all()
 
 
@@ -119,7 +182,7 @@ def test_compares_against_a_color_layer_of_a_different_size() -> None:
     white, color = _plate_and_art()
     hole = _disk_mask(200, 200, 20)
     white[hole] = 0
-    color[hole] = 100
+    color[hole] = 200
     big_color = np.array(Image.fromarray(color).resize((SIZE * 2, SIZE * 2)))
 
     fix = fill_white_plate(_png(white), _png(big_color), ART_MM)

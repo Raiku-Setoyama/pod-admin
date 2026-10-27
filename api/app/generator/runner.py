@@ -58,10 +58,11 @@ def generate(
                 fix = fill_white_plate(images["white"], images["color"], mm)
                 white.write_bytes(fix.png)
                 logger.info(
-                    "white plate fixed: holes=%d notches=%d specks=%d",
+                    "white plate fixed: holes=%d notches=%d specks=%d trimmed=%.2fmm2",
                     fix.holes_filled,
                     fix.notches_filled,
                     fix.specks_removed,
+                    fix.trimmed_mm2,
                 )
             color_mask = None
             mask_png = art_mask_png(images["color"])
