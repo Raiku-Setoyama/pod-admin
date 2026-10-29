@@ -138,6 +138,91 @@ terraform output -raw github_actions_service_account
 2. `terraform plan -detailed-exitcode` が差分なしを返すことを確認する
 3. その結果を添えて Pull Request を出す
 
+## 切り戻す（デプロイが原因のとき）
+
+**先に切り戻す。原因の究明はそのあとでよい。**
+
+Cloud Run はリビジョンを残すので、**イメージを作り直さずに前の状態へ戻せる。**
+所要は 1 分程度である。
+
+```bash
+# 1. いま動いているリビジョンと、その 1 つ前を確認する
+#    （新しい順に並ぶ。ACTIVE が付いているのが今のもの）
+gcloud run revisions list --service pod-admin-api --region asia-northeast1
+
+# 戻す先のイメージ（= コミット SHA）を確かめる
+gcloud run revisions describe <前のリビジョン名> --region asia-northeast1 \
+  --format='value(containers[0].image)'
+
+# 2. 前のリビジョンへ 100% 戻す
+gcloud run services update-traffic pod-admin-api --region asia-northeast1 \
+  --to-revisions <前のリビジョン名>=100
+
+# 3. 管理画面も同じように戻す（API と web は別サービスである）
+gcloud run services update-traffic pod-admin-web --region asia-northeast1 \
+  --to-revisions <前のリビジョン名>=100
+
+# 4. **ワーカーも戻す。** Job にはリビジョンもトラフィック分割も無いので、
+#    前のイメージを指し直す。**ここを忘れると、API だけ戻ってワーカーは
+#    新しいコードのまま動き続ける。**
+gcloud run jobs update pod-admin-worker --region asia-northeast1 \
+  --image asia-northeast1-docker.pkg.dev/tosyo-api-504104/pod-admin/api:<戻す先のコミットSHA>
+```
+
+イメージのタグはコミット SHA なので、戻す先のコミットは一意に辿れる（`deploy.yml` 参照）。
+
+### スキーマが進んでいるときは、そのままでは戻せない
+
+`deploy.yml` は **migrate Job を最初に流す**ので、デプロイが完了していれば
+**スキーマは新しいまま**である。上の手順で戻すのは**コードだけ**であり、
+古いコードが新しいスキーマの上で動くことになる。
+
+**列の追加だけなら動く**（古いコードはその列を知らないまま無視する）。
+**列の削除・改名・NOT NULL 化を含むマイグレーションを流したあとは動かない。**
+その場合はコードを戻すのではなく、**次の修正を前に進めて出す**ほうが速い。
+
+どちらかは `api/alembic/versions/` の当該リビジョンを読めば分かる。
+`op.add_column` だけなら前者、`op.drop_column` / `op.alter_column` があれば後者である。
+
+**このため、後方互換でないマイグレーションは避ける。** 列を消すなら、
+「使うのをやめる」変更を先に出し、次のデプロイで消す。
+
+### データを戻す（Cloud SQL）
+
+コードでもスキーマでもなく、**データが壊れた**とき（誤った一括更新など）に使う。
+
+本番は PITR が有効（`db_pitr_enabled = true`・バックアップ 14 世代）なので、
+**任意の時点へ復元できる。** ただし**既存のインスタンスは上書きしない。**
+新しいインスタンスとして復元し、中身を確かめてから差し替える。
+
+```bash
+# 復元先を新しいインスタンスとして作る（既存には触らない）
+gcloud sql instances clone pod-admin pod-admin-restore-<日付> \
+  --point-in-time '2026-09-12T04:30:00.000Z'   # UTC で指定する
+```
+
+確認してから切り替える。**切り替えは接続先（Secret Manager の `database-url`）を
+書き換えるのではなく、`infra/scripts/migrate-data.sh` で必要なデータだけを
+戻すほうが安全である**（インスタンス名が変わると Terraform の管理から外れるため）。
+
+**復元の前に、まずワーカーの Cloud Scheduler を止めること。**
+止めないと、復元中の DB に対して生成が走る。
+
+```bash
+gcloud scheduler jobs pause pod-admin-worker --location asia-northeast1
+```
+
+### 製造データの生成が止まったとき
+
+**切り戻しは要らない。** 生成待ちの行は `pending` のまま残り、ワーカーが次の起動で作り直す
+（生成処理を起動できなかった分は再試行され、上限に達した分だけが `failed` になる）。
+生成はワーカーの中で動く（REQ-0067）ので、止まる原因はワーカー側である。
+
+1. 管理画面の「製造データ」で、生成待ち・生成失敗の件数を見る
+2. アラート「製造データ生成ワーカーが動いていない」が出ていれば、Cloud Scheduler の
+   ジョブが止まっていないかを見る（保守で止めたまま戻し忘れていないか）
+3. `failed` に落ちた行を「失敗した全件を戻す」でまとめて生成待ちへ戻す
+
 ## データの移送（カットオーバー）
 
 `scripts/migrate-data.sh` が移送の道具である。**当日その場で手順を組み立てない。**
@@ -414,6 +499,48 @@ API の `POST /api/v1/internal/monitoring-alerts` → SendGrid である。発�
 3. **生成処理を起動できなかった生成は放っておいてよい。** 直れば次のワーカーが拾う。
    管理画面で「要対応」になったものだけ、エラー内容を見て再生成する
    （入力の誤り。例: アクリルスタンドの土台が見つからない → ADR-0038）
+
+## API が止まったとき（5xx・応答なし）
+
+上の監視はワーカーのログを見ている。**API 自身は別に見ている**（`modules/monitoring`）。
+**本番だけが呼ぶ**（ステージングは `monitoring_enabled = false`）。
+
+| アラート | 鳴る条件 | 見ているもの |
+|---|---|---|
+| API が 5xx を返している | 5 分間に **5 回以上** | Cloud Run のリクエスト数（`response_code_class="5xx"`） |
+| API が応答していない | `/health` が **2 地域以上**で 5 分続けて失敗 | 外形監視（5 分ごとに外から叩く） |
+
+**メトリクスのアラートは「メトリクスが届くこと」を前提にしている。**
+サービスごと落ちるとその前提が崩れるので、外から叩く 1 本を別に持っている。
+
+宛先は Terraform の `alert_emails` である。**製造データ生成のアラートと違い、管理画面からは変えられない**
+（API が落ちているときは管理画面も落ちているため）。
+
+**通知先が空ならアラートは 1 本も作られない。** 「監視してあるはず」で済まないように、
+入力ではなく**作られた実体**から導く出力を置いてある。
+
+```bash
+cd infra/envs/prod && terraform output alerting_active   # false なら誰にも届かない
+```
+
+### 鳴ったら
+
+1. **直前のデプロイが原因なら切り戻す**（上記「切り戻す（デプロイが原因のとき）」）。
+   受注の 5xx は**あとから復旧できない**（相手側が再送しない限り DB に何も残らない）ので、
+   原因の究明より先に戻す
+2. 5xx は、どのパスで出ているかをログで絞る
+
+   ```bash
+   gcloud logging read \
+     'resource.type="cloud_run_revision"
+      AND resource.labels.service_name="pod-admin-api"
+      AND httpRequest.status>=500' \
+     --project tosyo-api-504104 --limit 20 --freshness 1h
+   ```
+
+3. **「応答していない」だけが鳴って 5xx が出ていないなら、API の手前を見る。**
+   起動に失敗したリビジョンはトラフィックを受けないので、5xx はそもそも記録されない。
+   Cloud Run のリビジョンの状態・DB 接続・マイグレーションの完了を確認する
 
 ## Terraform が管理しないもの
 
