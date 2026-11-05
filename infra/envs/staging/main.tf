@@ -45,4 +45,7 @@ module "stack" {
   # 製造データはワーカーの中で生成するので（REQ-0067）、ステージングでも動かす。
   worker_schedule        = "*/5 * * * *"
   worker_schedule_paused = false
+
+  # ステージングの DB のメーカーに実アドレスが入っていても送らないよう、止めておく。
+  manufacturer_digest_schedule_paused = true
 }

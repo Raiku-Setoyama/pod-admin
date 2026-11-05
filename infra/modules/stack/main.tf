@@ -383,3 +383,28 @@ module "worker_schedule" {
 
   depends_on = [module.worker_job]
 }
+
+# メーカー宛の日次発注メール（api/app/services/manufacturer_daily_digest.py）の起動。
+# 以前は GitHub Actions の schedule で叩いていたが、実際には 4〜7 時間おきにしか
+# 動かず、送信時刻が日によって数時間ずれていた（2026-11）。
+#
+# 送信時刻は管理画面の設定（JST・HH:MM）で、API が「送信時刻を過ぎて最初の呼び出し」
+# だけで送る。日次ガードがあるので、ここでは時刻を気にせず 5 分ごとに叩けばよい。
+# 二重に呼ばれても二重には送らない。
+module "manufacturer_digest_schedule" {
+  source = "../http-scheduler"
+
+  project_id  = var.project_id
+  region      = var.region
+  name        = "pod-admin-manufacturer-digest"
+  description = "メーカー宛の日次発注メールの送信判定（送信時刻は管理画面の設定）"
+  schedule    = "*/5 * * * *"
+  uri         = "${module.api.uri}/api/v1/internal/manufacturer-daily-digest"
+  headers = {
+    "X-Internal-Secret" = random_password.internal_api_secret.result
+  }
+
+  paused = var.manufacturer_digest_schedule_paused
+
+  depends_on = [module.services]
+}

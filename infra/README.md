@@ -255,6 +255,20 @@ gcloud run jobs execute pod-admin-worker \
 ワーカーのイメージは API とは別（`api/Dockerfile` の `worker` ステージ）で、
 生成の依存（VectorCraft・numpy など）はこちらにだけ入っている。**API のサーバーでは生成しない。**
 
+## メーカー宛の日次発注メール
+
+【TOSYO__API発注依頼】メールは、Cloud Scheduler `pod-admin-manufacturer-digest` が 5 分ごとに
+`POST /api/v1/internal/manufacturer-daily-digest` を呼んで送る（`X-Internal-Secret` 付き）。
+**本番だけ有効で、ステージングは止めてある**（DB のメーカーの実アドレスへ届くため）。
+
+送信時刻は管理画面の設定（設定 → メーカー日次発注通知）で決まり、API は
+「送信時刻を過ぎて最初の呼び出し」だけで送る。それ以外の呼び出しは `before_send_time` や
+`already_ran_today` を返して何もしない。**壊れているのではない。**
+
+以前は GitHub Actions（`.github/workflows/manufacturer-daily-digest.yml`）の schedule で
+叩いていたが、実際には 4〜7 時間おきにしか動かず、送信時刻が日によって数時間ずれた。
+workflow は手動の強制送信（`force`）用に残してある。
+
 ## 製造データ生成 VM の撤去（REQ-0067・REQ-0068）
 
 製造データは、以前は Windows VM 上の Adobe Illustrator（illustrator-vm）が作っていた。
