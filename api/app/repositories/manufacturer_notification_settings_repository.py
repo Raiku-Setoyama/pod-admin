@@ -65,6 +65,6 @@ class ManufacturerNotificationSettingsRepository:
     async def update_last_notified_at(
         self, settings: ManufacturerNotificationSettings, notified_at: datetime
     ) -> None:
-        """送信成功時のウォーターマークを更新する."""
+        """送信成功時に最終通知時刻を更新する."""
         settings.last_notified_at = notified_at
         await self._db.flush()
