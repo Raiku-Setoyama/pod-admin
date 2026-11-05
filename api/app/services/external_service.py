@@ -18,9 +18,11 @@ from app.models.order import (
 from app.models.product import ProductType
 from app.repositories.order_repository import OrderRepository
 from app.repositories.product_repository import ProductRepository
+from app.repositories.shipment_repository import ShipmentRepository
 from app.schemas.external import (
     OrderCancelResponse,
     OrderStatusResponse,
+    OrderStatusShipment,
     PriceCalculationRequest,
     PriceCalculationResponse,
     ProductOptionsResponse,
@@ -50,9 +52,15 @@ STICKER_PRICES = {
 class ExternalService:
     """Service for external sales site operations."""
 
-    def __init__(self, product_repo: ProductRepository, order_repo: OrderRepository):
+    def __init__(
+        self,
+        product_repo: ProductRepository,
+        order_repo: OrderRepository,
+        shipment_repo: ShipmentRepository,
+    ):
         self._product_repo = product_repo
         self._order_repo = order_repo
+        self._shipment_repo = shipment_repo
 
     def get_product_options(self, product_type: ProductType) -> ProductOptionsResponse:
         """Get available options for a product type."""
@@ -323,11 +331,18 @@ class ExternalService:
         if not order:
             raise NotFoundError(f"Order with order_number '{order_number}' not found")
 
+        shipment = await self._shipment_repo.find_latest_tracked_for_order(order.id)
+
         return OrderStatusResponse(
             order_number=order.order_number,
             status=OrderStatus(order.status),
             ordered_at=order.ordered_at,
             updated_at=order.updated_at,
+            shipment=(
+                OrderStatusShipment.model_validate(shipment, from_attributes=True)
+                if shipment
+                else None
+            ),
         )
 
     async def cancel_order(self, order_number: str) -> OrderCancelResponse:

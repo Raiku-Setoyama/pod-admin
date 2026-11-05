@@ -136,7 +136,9 @@ class TestExternalCancelPropagatesToItems:
 
     @pytest.mark.asyncio
     async def test_cancel_order_syncs_items(self, mock_order_repo: Any) -> None:
-        service = ExternalService(product_repo=AsyncMock(), order_repo=mock_order_repo)
+        service = ExternalService(
+            product_repo=AsyncMock(), order_repo=mock_order_repo, shipment_repo=AsyncMock()
+        )
         order = create_mock_order(status=OrderStatus.ORDERED.value)
         mock_order_repo.find_by_order_number.return_value = order
         mock_order_repo.update_status.return_value = create_mock_order(

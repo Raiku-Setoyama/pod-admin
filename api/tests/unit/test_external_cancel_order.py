@@ -135,7 +135,9 @@ def external_service(mock_product_repo: Any, mock_order_repo: Any) -> Any:
     """Create ExternalService with mocked dependencies."""
     from app.services.external_service import ExternalService
 
-    return ExternalService(product_repo=mock_product_repo, order_repo=mock_order_repo)
+    return ExternalService(
+        product_repo=mock_product_repo, order_repo=mock_order_repo, shipment_repo=AsyncMock()
+    )
 
 
 # ============================================================
