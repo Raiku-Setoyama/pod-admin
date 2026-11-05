@@ -4,6 +4,10 @@ name: メーカー日次発注通知トリガー
 # pod-admin API 側で「JST が送信時刻以降 かつ 本日未実行」の場合のみ実際に送信されるため、
 # ここでは高頻度で叩くだけでよい（多重発火でも二重送信しない設計）。
 #
+# **定期実行の本体は Cloud Scheduler `pod-admin-manufacturer-digest`（infra/README.md）。**
+# GitHub Actions の schedule は混雑時に遅れ、実際には 4〜7 時間おきにしか動かなかった。
+# この workflow の schedule は予備として残しており、主な用途は手動の強制送信（force）である。
+#
 # 必要な設定（リポジトリの Settings → Secrets and variables → Actions）:
 #   - Variables: API_BASE_URL  例) https://<your-app>.railway.app
 #   - Secrets:   INTERNAL_API_SECRET  （API の環境変数 INTERNAL_API_SECRET と同じ値）
