@@ -79,3 +79,18 @@ class ManufacturingDataListResponse(BaseModel):
     total: int
     page: int
     limit: int
+    # ステータスごとの件数（一覧の絞り込みと同時に全体像を出すため）
+    status_counts: dict[str, int] = {}
+
+
+class ManufacturingDataRetryFailedRequest(BaseModel):
+    """失敗した製造データの一括リトライ要求."""
+
+    # 対象の ID。**省略すると failed の全件が対象になる**（生成が止まっていた後の一括復旧）。
+    ids: list[str] | None = None
+
+
+class ManufacturingDataRetryFailedResponse(BaseModel):
+    """一括リトライの結果."""
+
+    restored: int

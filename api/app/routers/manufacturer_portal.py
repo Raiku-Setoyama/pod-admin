@@ -1,10 +1,10 @@
 """Manufacturer portal router."""
 
 from datetime import date
-from typing import Annotated, Any
+from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.dependencies import (
@@ -38,7 +38,6 @@ from app.services.manufacturer_order_service import ManufacturerOrderService
 from app.services.manufacturer_portal_service import ManufacturerPortalService
 from app.utils.exceptions import NotFoundError
 from app.utils.file_storage import FileStorage
-from app.utils.security import decode_token
 
 router = APIRouter(prefix="/manufacturer-portal", tags=["manufacturer-portal"])
 
@@ -87,28 +86,6 @@ async def update_profile(
     """
     updated = await service.update_profile(manufacturer.id, data)
     return ManufacturerProfileResponse.model_validate(updated)
-
-
-@router.get("/debug-token")
-async def debug_token(
-    authorization: Annotated[str | None, Header()] = None,
-) -> dict[str, Any]:
-    """デバッグ用: トークンの検証状態を確認"""
-    if not authorization:
-        return {"error": "No authorization header", "authorization": None}
-
-    if not authorization.startswith("Bearer "):
-        return {"error": "Invalid format", "authorization": authorization[:50]}
-
-    token = authorization[7:]
-    payload = decode_token(token)
-
-    return {
-        "token_first_20": token[:20] if token else None,
-        "token_length": len(token) if token else 0,
-        "payload": payload,
-        "has_manufacturer_id": bool(payload and payload.get("manufacturer_id")) if payload else False,
-    }
 
 
 @router.get("/order-items", response_model=ManufacturerOrderItemListResponse)
