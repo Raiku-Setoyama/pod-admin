@@ -1,6 +1,6 @@
 """Unit tests for ManufacturerDailyDigestService.
 
-送信判定（マスタスイッチ/送信時刻/日次ガード）・0件スキップ・ウォーターマーク更新・
+送信判定（マスタスイッチ/送信時刻/日次ガード）・0件スキップ・通知済みの記録・
 冪等性・force フラグ・メールサービス未設定時の挙動を、リポジトリ/メールをモックして検証する。
 """
 
@@ -63,14 +63,15 @@ def _make_notif_repo(pairs: Any) -> MagicMock:
     return repo
 
 
-def _make_order_repo(summary_by_id: Any) -> MagicMock:
-    async def get_summary(manufacturer_id: Any, since: Any=None) -> Any:
-        return summary_by_id.get(
-            manufacturer_id, {"ordered_item_count": 0, "total_quantity": 0}
-        )
+def _make_order_repo(items_by_id: Any) -> MagicMock:
+    """items_by_id: メーカーID → 未通知の明細 [(order_item_id, quantity), ...]."""
+
+    async def find_unnotified(manufacturer_id: Any) -> Any:
+        return items_by_id.get(manufacturer_id, [])
 
     repo = MagicMock()
-    repo.get_new_ordered_summary_by_manufacturer = AsyncMock(side_effect=get_summary)
+    repo.find_unnotified_ordered_items_by_manufacturer = AsyncMock(side_effect=find_unnotified)
+    repo.mark_manufacturer_notified = AsyncMock()
     return repo
 
 
@@ -153,14 +154,11 @@ class TestGates:
 
 class TestSending:
     @pytest.mark.asyncio
-    async def test_sends_and_updates_watermark(self) -> None:
-        watermark = datetime(2026, 7, 8, 10, 0, tzinfo=JST)
-        settings = _settings(
-            to_emails=["to@x.com"], cc_emails=["cc@x.com"], last_notified_at=watermark
-        )
+    async def test_sends_and_marks_items_notified(self) -> None:
+        settings = _settings(to_emails=["to@x.com"], cc_emails=["cc@x.com"])
         manufacturer = _manufacturer()
         notif_repo = _make_notif_repo([(settings, manufacturer)])
-        order_repo = _make_order_repo({"m1": {"ordered_item_count": 3, "total_quantity": 7}})
+        order_repo = _make_order_repo({"m1": [("i1", 1), ("i2", 2), ("i3", 4)]})
         email = _make_email_service(True)
         service = _service(notif_repo=notif_repo, order_repo=order_repo, email_service=email)
 
@@ -169,10 +167,7 @@ class TestSending:
         assert result["ran"] is True
         assert result["sent_count"] == 1
         assert result["sent_manufacturer_ids"] == ["m1"]
-        # 集計はウォーターマーク以降（新規分のみ）
-        order_repo.get_new_ordered_summary_by_manufacturer.assert_awaited_once_with(
-            "m1", since=watermark
-        )
+        order_repo.find_unnotified_ordered_items_by_manufacturer.assert_awaited_once_with("m1")
         # 宛先・件数・合計・送信日が渡る
         kwargs = email.send_manufacturer_daily_digest.call_args.kwargs
         assert kwargs["to_emails"] == ["to@x.com"]
@@ -181,14 +176,15 @@ class TestSending:
         assert kwargs["total_quantity"] == 7
         assert kwargs["manufacturer_name"] == "メーカーA"
         assert kwargs["sent_date"] == NOW.date()
-        # 送信成功時のみウォーターマークを実行時刻へ更新
+        # 送信成功時のみ、数えた明細を通知済みにし、最終通知時刻を実行時刻へ更新する
+        order_repo.mark_manufacturer_notified.assert_awaited_once_with(["i1", "i2", "i3"], NOW)
         notif_repo.update_last_notified_at.assert_awaited_once_with(settings, NOW)
 
     @pytest.mark.asyncio
     async def test_skips_zero_item_manufacturer(self) -> None:
         settings = _settings(to_emails=["to@x.com"])
         notif_repo = _make_notif_repo([(settings, _manufacturer())])
-        order_repo = _make_order_repo({"m1": {"ordered_item_count": 0, "total_quantity": 0}})
+        order_repo = _make_order_repo({"m1": []})
         email = _make_email_service()
         service = _service(notif_repo=notif_repo, order_repo=order_repo, email_service=email)
 
@@ -204,7 +200,7 @@ class TestSending:
     async def test_defaults_to_manufacturer_email_when_to_empty(self) -> None:
         settings = _settings(to_emails=[])  # 未設定
         notif_repo = _make_notif_repo([(settings, _manufacturer(email="fallback@x.com"))])
-        order_repo = _make_order_repo({"m1": {"ordered_item_count": 1, "total_quantity": 1}})
+        order_repo = _make_order_repo({"m1": [("i1", 1)]})
         email = _make_email_service(True)
         service = _service(notif_repo=notif_repo, order_repo=order_repo, email_service=email)
 
@@ -214,10 +210,10 @@ class TestSending:
         assert kwargs["to_emails"] == ["fallback@x.com"]
 
     @pytest.mark.asyncio
-    async def test_failed_send_keeps_watermark(self) -> None:
+    async def test_failed_send_keeps_items_unnotified(self) -> None:
         settings = _settings(to_emails=["to@x.com"])
         notif_repo = _make_notif_repo([(settings, _manufacturer())])
-        order_repo = _make_order_repo({"m1": {"ordered_item_count": 2, "total_quantity": 4}})
+        order_repo = _make_order_repo({"m1": [("i1", 1), ("i2", 3)]})
         email = _make_email_service(result=False)  # 送信失敗
         service = _service(notif_repo=notif_repo, order_repo=order_repo, email_service=email)
 
@@ -225,18 +221,21 @@ class TestSending:
 
         assert result["failed_count"] == 1
         assert result["sent_count"] == 0
+        # 送れなかった明細は未通知のまま残り、次回の送信で数えられる
+        order_repo.mark_manufacturer_notified.assert_not_called()
         notif_repo.update_last_notified_at.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_no_email_service_marks_failed(self) -> None:
         settings = _settings(to_emails=["to@x.com"])
         notif_repo = _make_notif_repo([(settings, _manufacturer())])
-        order_repo = _make_order_repo({"m1": {"ordered_item_count": 2, "total_quantity": 4}})
+        order_repo = _make_order_repo({"m1": [("i1", 1), ("i2", 3)]})
         service = _service(notif_repo=notif_repo, order_repo=order_repo, email_service=None)
 
         result = await service.run_daily_digest(now=NOW)
 
         assert result["failed_count"] == 1
+        order_repo.mark_manufacturer_notified.assert_not_called()
         notif_repo.update_last_notified_at.assert_not_called()
 
 
@@ -247,7 +246,7 @@ class TestForce:
         app_repo = _make_app_setting_repo(enabled="false")
         settings = _settings(to_emails=["to@x.com"])
         notif_repo = _make_notif_repo([(settings, _manufacturer())])
-        order_repo = _make_order_repo({"m1": {"ordered_item_count": 5, "total_quantity": 9}})
+        order_repo = _make_order_repo({"m1": [("i1", 9)]})
         email = _make_email_service(True)
         service = _service(
             app_setting_repo=app_repo,

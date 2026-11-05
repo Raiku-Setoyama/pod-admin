@@ -73,6 +73,9 @@ module "stack" {
   #
   worker_schedule_paused = false
 
+  # 有効。メーカー宛の日次発注メールを送る。止めるときも worker と同じくここを true にする。
+  manufacturer_digest_schedule_paused = false
+
   sendgrid_from_email = "noreply@rksyo.com"
   contact_email       = local.ops_email
 

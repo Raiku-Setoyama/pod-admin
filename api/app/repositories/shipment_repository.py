@@ -268,6 +268,26 @@ class ShipmentRepository:
 
         return order_shipment_map
 
+    async def find_latest_tracked_for_order(self, order_id: str) -> Shipment | None:
+        """Find the shipment with a tracking number for the given order.
+
+        現行の作成処理は 1 注文 1 配送に保つが DB に一意制約は無いため、
+        複数あれば発送日時が新しいもの（未発送は後ろ）、次に作成日時が新しいものを返す。
+        """
+        query = (
+            select(Shipment)
+            .join(ShipmentItem, ShipmentItem.shipment_id == Shipment.id)
+            .where(
+                ShipmentItem.order_id == order_id,
+                Shipment.tracking_number.is_not(None),
+                func.trim(Shipment.tracking_number) != "",
+            )
+            .order_by(Shipment.shipped_at.desc().nulls_last(), Shipment.created_at.desc())
+            .limit(1)
+        )
+        result = await self._db.execute(query)
+        return result.scalar_one_or_none()
+
     async def exists_for_order(self, order_id: str) -> bool:
         """Check if a shipment already exists for the given order.
 

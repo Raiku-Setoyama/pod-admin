@@ -163,6 +163,14 @@ variable "worker_schedule_paused" {
   type        = bool
 }
 
+variable "manufacturer_digest_schedule_paused" {
+  description = <<-EOT
+    true ならメーカー宛の日次発注メールの定期起動を止めた状態で作る。
+    メールは DB に登録されたメーカーの実アドレスへ届くので、本番以外では止めておく。
+  EOT
+  type        = bool
+}
+
 variable "alert_emails" {
   description = <<-EOT
     アラートの宛先メールアドレス。**空だとアラートは 1 本も作られない。**

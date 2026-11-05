@@ -79,7 +79,7 @@ class TestStickerOrderValidation:
         """ExternalService のインスタンス（モック依存）"""
         mock_product_repo = AsyncMock()
         mock_order_repo = AsyncMock()
-        return ExternalService(mock_product_repo, mock_order_repo)
+        return ExternalService(mock_product_repo, mock_order_repo, AsyncMock())
 
     def test_ac002_sticker_validation_rejects_clear_color(self, service: ExternalService) -> None:
         """AC-002: ステッカーの受注バリデーションで「クリア」が拒否されること
@@ -137,7 +137,7 @@ class TestStickerProductOptions:
         """ExternalService のインスタンス（モック依存）"""
         mock_product_repo = AsyncMock()
         mock_order_repo = AsyncMock()
-        return ExternalService(mock_product_repo, mock_order_repo)
+        return ExternalService(mock_product_repo, mock_order_repo, AsyncMock())
 
     def test_ac004_sticker_options_returns_only_white(self, service: ExternalService) -> None:
         """AC-004: ステッカーの商品オプション取得で「ホワイト」のみ返ること
@@ -165,7 +165,7 @@ class TestStickerPriceCalculation:
         """ExternalService のインスタンス（モック依存）"""
         mock_product_repo = AsyncMock()
         mock_order_repo = AsyncMock()
-        return ExternalService(mock_product_repo, mock_order_repo)
+        return ExternalService(mock_product_repo, mock_order_repo, AsyncMock())
 
     def test_ac005_sticker_price_rejects_clear_color(self, service: ExternalService) -> None:
         """AC-005: ステッカーの価格計算で「クリア」が拒否されること

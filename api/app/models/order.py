@@ -236,6 +236,13 @@ class OrderItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # メーカーからの納品予定日（注文作成時に営業日計算で算出、確定値）
     expected_delivery_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
 
+    # メーカー宛の日次発注メールで通知した時刻（NULL = 未通知）。
+    # 「送信処理の時点で発注済みか」で数えると、先に製造中へ進んだ明細や、その時点で
+    # 発注準備中だった明細を取りこぼすため、明細ごとに通知済みかを持つ。
+    manufacturer_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # === 外部注文 v2（製造データ生成）用フィールド ===
     # 旧 v1 明細は全て NULL のまま → 旧挙動を完全維持（発注ゲートの対象外）。
     # rksyo の商品識別子（製造データキャッシュキー）

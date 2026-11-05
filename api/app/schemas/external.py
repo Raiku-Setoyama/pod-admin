@@ -39,6 +39,16 @@ class PriceCalculationResponse(BaseModel):
     total_price: int
 
 
+class OrderStatusShipment(BaseModel):
+    """Shipment info in the order status lookup."""
+
+    carrier: str | None = Field(None, description="運送会社名。未登録なら null")
+    tracking_number: str = Field(..., description="伝票番号")
+    shipped_at: datetime | None = Field(
+        None, description="発送日時。伝票番号は登録済みでも未発送なら null"
+    )
+
+
 class OrderStatusResponse(BaseModel):
     """Response schema for order status lookup."""
 
@@ -46,6 +56,13 @@ class OrderStatusResponse(BaseModel):
     status: OrderStatus
     ordered_at: datetime
     updated_at: datetime
+    shipment: OrderStatusShipment | None = Field(
+        None,
+        description=(
+            "配送情報。配送が無い、または伝票番号が未登録なら null。"
+            "1 注文に配送が複数あるときは、伝票番号ありのうち発送日時が新しい 1 件"
+        ),
+    )
 
 
 class OrderCancelResponse(BaseModel):

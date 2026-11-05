@@ -312,9 +312,10 @@ def get_manufacturer_portal_service(
 def get_external_service(
     product_repo: Annotated[ProductRepository, Depends(get_product_repository)],
     order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
+    shipment_repo: Annotated[ShipmentRepository, Depends(get_shipment_repository)],
 ) -> ExternalService:
     """Get external service for external sales site APIs."""
-    return ExternalService(product_repo, order_repo)
+    return ExternalService(product_repo, order_repo, shipment_repo)
 
 
 def get_order_image_service(

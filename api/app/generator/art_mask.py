@@ -12,10 +12,7 @@ Illustrator 8 形式で保存するときは同じ形（インキ 0% に合成�
 
 from __future__ import annotations
 
-from app.generator.white_plate import mask_png, read_alpha
-
-# 絵とみなす不透明度（0〜255）
-ALPHA_THRESHOLD = 128
+from app.generator.white_plate import ART_ALPHA_THRESHOLD, mask_png, read_alpha
 
 
 def art_mask_png(color_png: bytes) -> bytes | None:
@@ -23,7 +20,7 @@ def art_mask_png(color_png: bytes) -> bytes | None:
 
     透明な画素が無い（または絵が無い）ときは切り抜くものが無いので None を返す。
     """
-    art = read_alpha(color_png, "color") >= ALPHA_THRESHOLD
+    art = read_alpha(color_png, "color") >= ART_ALPHA_THRESHOLD
     if art.all() or not art.any():
         return None
     return mask_png(art)

@@ -46,6 +46,9 @@ module "stack" {
   worker_schedule        = "*/5 * * * *"
   worker_schedule_paused = false
 
+  # ステージングの DB のメーカーに実アドレスが入っていても送らないよう、止めておく。
+  manufacturer_digest_schedule_paused = true
+
   # **ステージングでは鳴らさない。** 使い捨て環境の失敗で本番の通知が埋まると、
   # 本物のアラートを読み飛ばすようになる。
   monitoring_enabled = false

@@ -258,45 +258,55 @@ class OrderRepository:
         result = await self._db.execute(query)
         return [dict(row._mapping) for row in result.all()]
 
-    async def get_new_ordered_summary_by_manufacturer(
-        self,
-        manufacturer_id: str,
-        since: datetime | None = None,
-    ) -> dict[str, int]:
-        """メーカー別の「新規の発注済み」明細サマリーを取得（時間窓フィルタ版）.
+    async def find_unnotified_ordered_items_by_manufacturer(
+        self, manufacturer_id: str
+    ) -> list[tuple[str, int]]:
+        """メーカー宛の日次発注メールにまだ載せていない明細を取得する.
 
-        get_ordered_items_summary_by_manufacturer() の時間窓版。
         対象明細 = OrderItem WHERE Product.manufacturer_id = manufacturer_id
-                   AND OrderItem.status = ORDERED
-                   AND (since が None でなければ OrderItem.created_at > since)
+                   AND OrderItem.manufacturer_notified_at IS NULL
+                   AND OrderItem.status IN (発注済み, 製造中, 納入済み)
 
-        注: ORDERED は発注時の初期ステータスのため、OrderItem.created_at を
-        「発注済みになった時刻」とみなす。
+        送信処理の時点のステータスが発注済みかどうかでは絞らない。送信処理より先に
+        製造中へ進んだ明細も、一度も通知していなければ載せる。発注準備中（製造データが
+        未準備）とキャンセル済みは発注できないので載せず、発注済みになった後の回で載せる。
 
         Returns:
-            {"ordered_item_count": 明細数, "total_quantity": 合計数量}
+            [(order_item_id, quantity), ...]
         """
         from app.models.product import Product
 
         query = (
-            select(
-                func.count(OrderItem.id).label("ordered_item_count"),
-                func.coalesce(func.sum(OrderItem.quantity), 0).label("total_quantity"),
-            )
-            .select_from(OrderItem)
+            select(OrderItem.id, OrderItem.quantity)
             .join(Product, Product.id == OrderItem.product_id)
             .where(Product.manufacturer_id == manufacturer_id)
-            .where(OrderItem.status == OrderItemStatus.ORDERED.value)
+            .where(OrderItem.manufacturer_notified_at.is_(None))
+            .where(
+                OrderItem.status.in_(
+                    [
+                        OrderItemStatus.ORDERED.value,
+                        OrderItemStatus.MANUFACTURING.value,
+                        OrderItemStatus.DELIVERED.value,
+                    ]
+                )
+            )
         )
-        if since is not None:
-            query = query.where(OrderItem.created_at > since)
-
         result = await self._db.execute(query)
-        row = result.one()
-        return {
-            "ordered_item_count": int(row.ordered_item_count or 0),
-            "total_quantity": int(row.total_quantity or 0),
-        }
+        return [(row.id, row.quantity) for row in result.all()]
+
+    async def mark_manufacturer_notified(
+        self, order_item_ids: list[str], notified_at: datetime
+    ) -> None:
+        """明細をメーカー宛の日次発注メールで通知済みにする."""
+        if not order_item_ids:
+            return
+        await self._db.execute(
+            update(OrderItem)
+            .where(OrderItem.id.in_(order_item_ids))
+            .values(manufacturer_notified_at=notified_at)
+            .execution_options(synchronize_session=False)
+        )
+        await self._db.flush()
 
     async def find_ordered_items_by_manufacturer_detail(
         self,

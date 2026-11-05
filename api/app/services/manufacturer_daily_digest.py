@@ -5,7 +5,8 @@
 
 冪等性:
 - 全社日次ガード: app_settings の last_run_date を原子的に claim（多重発火でも 1 回だけ）
-- メーカー別ウォーターマーク: last_notified_at を送信成功時のみ更新（新規分のみ・二重送信防止）
+- 明細ごとの通知済み: OrderItem.manufacturer_notified_at を送信成功時のみ記録（二重送信防止）。
+  送れなかった明細は未通知のまま残り、次の送信で載る。
 """
 
 from __future__ import annotations
@@ -83,12 +84,11 @@ class ManufacturerDailyDigestService:
 
         pairs = await self._notif_repo.list_enabled_with_manufacturer()
         for settings, manufacturer in pairs:
-            summary = await self._order_repo.get_new_ordered_summary_by_manufacturer(
-                manufacturer.id, since=settings.last_notified_at
+            items = await self._order_repo.find_unnotified_ordered_items_by_manufacturer(
+                manufacturer.id
             )
-            item_count = summary["ordered_item_count"]
-            if item_count == 0:
-                # 新規の発注済みが 0 件のメーカーは送信しない
+            if not items:
+                # 未通知の発注済み（以降）が 0 件のメーカーは送信しない
                 skipped_zero.append(manufacturer.id)
                 continue
 
@@ -104,15 +104,21 @@ class ManufacturerDailyDigestService:
                 ok = await self._email_service.send_manufacturer_daily_digest(
                     to_emails=to_emails,
                     manufacturer_name=manufacturer.name,
-                    item_count=item_count,
-                    total_quantity=summary["total_quantity"],
+                    item_count=len(items),
+                    total_quantity=sum(quantity for _, quantity in items),
                     cc_emails=settings.cc_emails,
                     sent_date=now_jst.date(),
                 )
 
             if ok:
-                # 送信成功時のみウォーターマークを実行時刻へ更新
+                # 送信成功時のみ、載せた明細を通知済みにする（最終通知時刻は表示用）
+                await self._order_repo.mark_manufacturer_notified(
+                    [item_id for item_id, _ in items], now_jst
+                )
                 await self._notif_repo.update_last_notified_at(settings, now_jst)
+                # メーカーごとに確定させる。後のメーカーで失敗しても、送った分の記録は残す
+                # （残さないと次の回で同じ明細を二重に送る）
+                await self._db.commit()
                 sent.append(manufacturer.id)
             else:
                 failed.append(manufacturer.id)

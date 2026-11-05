@@ -78,9 +78,9 @@ def _acrylic_inputs(*, base: str = "flat", keyhole: bool = False, white_hole: bo
     color = _layer(lambda d, f: _body(d, f, inset=12), fill=(40, 120, 200, 255))
     white = _layer(lambda d, f: _body(d, f, inset=18))
     if white_hole:
-        # 白版の内側の穴。下の印刷画像は半透明の白（白い羽の模様など）
+        # 白版の内側の穴。下の印刷画像は半透明（印刷される不透明度 50% 以上）の白（白い羽の模様など）
         ImageDraw.Draw(white).ellipse((280, 280, 320, 320), fill=(0, 0, 0, 0))
-        ImageDraw.Draw(color).ellipse((280, 280, 320, 320), fill=(250, 250, 250, 100))
+        ImageDraw.Draw(color).ellipse((280, 280, 320, 320), fill=(250, 250, 250, 200))
     return {"color": _png(color), "cutline": _png(_layer(cutline)), "white": _png(white)}
 
 
@@ -243,8 +243,8 @@ def test_opaque_color_image_is_not_clipped() -> None:
     assert not _is_clipped(color) and "%AI5_BeginRaster" in color
 
 
-def test_white_plate_holes_under_semi_transparent_art_are_filled() -> None:
-    """REQ-0067: 白版の、絵がある穴は埋まる（透明アクリルで透けない）."""
+def test_white_plate_holes_under_printed_art_are_filled() -> None:
+    """REQ-0067: 白版の、印刷される絵がある穴は埋まる（透明アクリルで透けない）."""
     images = _acrylic_inputs(base="round", keyhole=True, white_hole=True)
     out = _run("acrylic_keychain", "50x50mm", images)
     assert _subpath_count(_parse_ai8(out.content).layers["White"]) == 1  # 穴の無い外形だけ

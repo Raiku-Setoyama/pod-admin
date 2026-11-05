@@ -13,7 +13,7 @@ class ManufacturerNotificationSettings(Base, UUIDPrimaryKeyMixin, TimestampMixin
     """メーカー別の通知設定モデル.
 
     日次発注ダイジェストメールの宛先（To/CC・各複数可）と有効/無効、および
-    「新規の発注済み」判定の基準となる last_notified_at（ウォーターマーク）を保持する。
+    最後に送信した時刻 last_notified_at を保持する。
     メーカー 1 件につき 1 行（manufacturer_id は unique）。
     """
 
@@ -36,7 +36,8 @@ class ManufacturerNotificationSettings(Base, UUIDPrimaryKeyMixin, TimestampMixin
     cc_emails: Mapped[list[str]] = mapped_column(
         ARRAY(String), default=list, server_default=text("'{}'"), nullable=False
     )
-    # 新規分判定の基準（ウォーターマーク）。送信成功時のみ実行時刻へ更新する
+    # 最後に送信した時刻。送信成功時のみ実行時刻へ更新する。
+    # どの明細を載せるかの判定には使わない（OrderItem.manufacturer_notified_at で判定する）
     last_notified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
