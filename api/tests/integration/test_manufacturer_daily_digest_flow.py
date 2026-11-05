@@ -1,6 +1,6 @@
 """Integration test for the manufacturer daily digest end-to-end flow (requires DB).
 
-実際の DB に対して集計クエリ・原子的な日次 claim・ウォーターマーク更新を検証する。
+実際の DB に対して集計クエリ・原子的な日次 claim・明細の通知済み記録を検証する。
 メール送信は依存性オーバーライドでモックする。
 """
 
@@ -85,11 +85,11 @@ async def seeded_manufacturer(db_session: AsyncSession) -> AsyncIterator[dict[st
     )
     await db_session.commit()
 
-    yield {"manufacturer_id": mid, "item_quantity": 3}
+    yield {"manufacturer_id": mid, "item_quantity": 3, "order_id": oid, "product_id": pid}
 
     for table, key in (
         ("manufacturer_notification_settings", ("manufacturer_id", mid)),
-        ("order_items", ("id", iid)),
+        ("order_items", ("order_id", oid)),
         ("orders", ("id", oid)),
         ("products", ("id", pid)),
         ("manufacturers", ("id", mid)),
@@ -122,7 +122,7 @@ async def test_force_run_sends_then_idempotent(
     assert kwargs["to_emails"] == ["to@example.com"]
     assert kwargs["cc_emails"] == ["cc@example.com"]
 
-    # 2回目（force）: ウォーターマークが進み新規0件 → 0件スキップ（送信されない）
+    # 2回目（force）: 1回目の明細は通知済み → 0件スキップ（送信されない）
     mock_email.send_manufacturer_daily_digest.reset_mock()
     resp2 = await client.post(
         "/api/v1/internal/manufacturer-daily-digest?force=true", headers=internal_headers
@@ -131,6 +131,122 @@ async def test_force_run_sends_then_idempotent(
     assert mid in body2["skipped_zero_manufacturer_ids"]
     assert mid not in body2["sent_manufacturer_ids"]
     mock_email.send_manufacturer_daily_digest.assert_not_called()
+
+
+async def _add_item(
+    db_session: AsyncSession, seeded: dict[str, Any], *, status: str, quantity: int
+) -> str:
+    iid = str(uuid.uuid4())
+    await db_session.execute(
+        text(
+            "INSERT INTO order_items (id, order_id, uid, product_id, product_name, product_type, "
+            "price, quantity, status, created_at, updated_at) "
+            "VALUES (:id, :oid, :uid, :pid, 'T', 'tshirt', 500, :qty, :status, NOW(), NOW())"
+        ),
+        {
+            "id": iid,
+            "oid": seeded["order_id"],
+            "uid": iid[:8],
+            "pid": seeded["product_id"],
+            "qty": quantity,
+            "status": status,
+        },
+    )
+    await db_session.commit()
+    return iid
+
+
+async def _set_status(db_session: AsyncSession, iid: str, status: str) -> None:
+    await db_session.execute(
+        text("UPDATE order_items SET status = :status WHERE id = :id"),
+        {"status": status, "id": iid},
+    )
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_notifies_items_already_advanced_past_ordered(
+    client: Any,
+    internal_headers: dict[str, Any],
+    mock_email: Any,
+    seeded_manufacturer: dict[str, Any],
+    db_session: AsyncSession,
+) -> None:
+    """送信処理より先に製造中・納入済みへ進んだ明細も、未通知なら数える（2026-11-04 の取りこぼし）."""
+    mid = seeded_manufacturer["manufacturer_id"]
+    await _add_item(db_session, seeded_manufacturer, status="manufacturing", quantity=5)
+    await _add_item(db_session, seeded_manufacturer, status="delivered", quantity=2)
+    # 製造に回らない明細は数えない
+    await _add_item(db_session, seeded_manufacturer, status="cancelled", quantity=100)
+
+    resp = await client.post(
+        "/api/v1/internal/manufacturer-daily-digest?force=true", headers=internal_headers
+    )
+
+    assert mid in resp.json()["sent_manufacturer_ids"]
+    kwargs = mock_email.send_manufacturer_daily_digest.await_args.kwargs
+    # 発注済み 3 + 製造中 5 + 納入済み 2
+    assert kwargs["item_count"] == 3
+    assert kwargs["total_quantity"] == 10
+
+
+@pytest.mark.asyncio
+async def test_notifies_item_that_was_preparing_at_previous_run(
+    client: Any,
+    internal_headers: dict[str, Any],
+    mock_email: Any,
+    seeded_manufacturer: dict[str, Any],
+    db_session: AsyncSession,
+) -> None:
+    """送信処理の時点で発注準備中だった明細は、発注済みになった後の回で数える."""
+    mid = seeded_manufacturer["manufacturer_id"]
+    preparing = await _add_item(
+        db_session, seeded_manufacturer, status="preparing_order", quantity=4
+    )
+
+    # 1 回目: 発注準備中の明細は数えない
+    resp = await client.post(
+        "/api/v1/internal/manufacturer-daily-digest?force=true", headers=internal_headers
+    )
+    assert mid in resp.json()["sent_manufacturer_ids"]
+    assert mock_email.send_manufacturer_daily_digest.await_args.kwargs["total_quantity"] == 3
+
+    # 製造データの生成が終わって発注済みになる（作成は 1 回目の送信より前）
+    await _set_status(db_session, preparing, "ordered")
+    mock_email.send_manufacturer_daily_digest.reset_mock()
+
+    # 2 回目: その明細だけを数える
+    resp = await client.post(
+        "/api/v1/internal/manufacturer-daily-digest?force=true", headers=internal_headers
+    )
+    assert mid in resp.json()["sent_manufacturer_ids"]
+    kwargs = mock_email.send_manufacturer_daily_digest.await_args.kwargs
+    assert kwargs["item_count"] == 1
+    assert kwargs["total_quantity"] == 4
+
+
+@pytest.mark.asyncio
+async def test_failed_send_is_retried_next_run(
+    client: Any,
+    internal_headers: dict[str, Any],
+    mock_email: Any,
+    seeded_manufacturer: dict[str, Any],
+) -> None:
+    """送れなかった回の明細は通知済みにせず、次の回で送る."""
+    mid = seeded_manufacturer["manufacturer_id"]
+    mock_email.send_manufacturer_daily_digest.return_value = False
+
+    resp = await client.post(
+        "/api/v1/internal/manufacturer-daily-digest?force=true", headers=internal_headers
+    )
+    assert mid in resp.json()["failed_manufacturer_ids"]
+
+    mock_email.send_manufacturer_daily_digest.return_value = True
+    resp = await client.post(
+        "/api/v1/internal/manufacturer-daily-digest?force=true", headers=internal_headers
+    )
+    assert mid in resp.json()["sent_manufacturer_ids"]
+    assert mock_email.send_manufacturer_daily_digest.await_args.kwargs["total_quantity"] == 3
 
 
 @pytest.mark.asyncio
