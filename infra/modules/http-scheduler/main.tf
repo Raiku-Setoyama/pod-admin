@@ -13,10 +13,8 @@ resource "google_cloud_scheduler_job" "this" {
 
   attempt_deadline = "60s"
 
-  # 定期実行そのものが再試行の役目を果たすので、ここでは再試行しない。
-  retry_config {
-    retry_count = 0
-  }
+  # 再試行はしない（定期実行そのものが再試行の役目を果たす）。retry_config は書かない。
+  # retry_count = 0 は既定値で API が返さないため、書くと plan に差分が出続ける。
 
   http_target {
     http_method = "POST"
