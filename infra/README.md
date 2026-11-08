@@ -352,7 +352,7 @@ gcloud run jobs execute pod-admin-worker \
 
 以前は GitHub Actions（`.github/workflows/manufacturer-daily-digest.yml`）の schedule で
 叩いていたが、実際には 4〜7 時間おきにしか動かず、送信時刻が日によって数時間ずれた。
-workflow は手動の強制送信（`force`）用に残してある。
+その schedule は外し、workflow は手動実行（強制送信 `force` を含む）専用にしてある。
 
 ## 製造データ生成 VM の撤去（REQ-0067・REQ-0068）
 
