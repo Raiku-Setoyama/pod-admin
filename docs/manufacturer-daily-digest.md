@@ -3,8 +3,8 @@
 登録したメールアドレスへ、**メーカーごとの「発注済み」内容を毎日定時に自動送信**する仕組みです。
 メーカーは通知を受け取り、`manufacturer-login` からログインして内容を確認します。
 
-- 送信対象は「前回送信以降に新しく発注済みになった明細」のみ（新規分のみ）
-- 新規の発注済みが 0 件のメーカーには送信しません
+- 送信対象は「まだメールに載せていない、発注済み以降（発注済み・製造中・納入済み）の明細」のみ
+- 対象が 0 件のメーカーには送信しません
 - 送信時刻は**全社共通・1 日 1 回**（運営ダッシュボードから変更可能）
 - 宛先（To/CC・各複数可）と有効/無効は**メーカーごと**に設定
 
@@ -55,7 +55,7 @@
 
 ## 定時実行（外部トリガ → 内部 API）
 
-pod-admin にはスケジューラが無いため、**外部トリガが内部エンドポイントを高頻度で叩く**方式です。
+API 自体はスケジューラを持たないため、**外部トリガが内部エンドポイントを高頻度で叩く**方式です。
 エンドポイントは「現在 JST ≥ 送信時刻 かつ 本日未実行」の場合のみ本処理を実行します。
 
 ### 内部エンドポイント
@@ -68,7 +68,7 @@ Query:  force=true|false   （任意。true で時刻・日次ガードを無視
 
 - 認証は共有シークレット（環境変数 `INTERNAL_API_SECRET`）。未設定なら **403**（無効）。
 - 高頻度（例: 5〜15 分毎）で叩いて問題ありません。**多重発火でも二重送信しません**
-  （全社日次ガード `last_run_date` の原子的 claim ＋ メーカー別ウォーターマーク `last_notified_at`）。
+  （全社日次ガード `last_run_date` の原子的 claim ＋ 明細ごとの通知済み `order_items.manufacturer_notified_at`）。
 
 レスポンス例:
 
@@ -97,46 +97,48 @@ Query:  force=true|false   （任意。true で時刻・日次ガードを無視
 
 ### トリガの設定例
 
-#### A. GitHub Actions（同梱: `.github/workflows/manufacturer-daily-digest.yml`）
+#### A. Cloud Scheduler（本番で使用中）
+
+本番は Cloud Scheduler `pod-admin-manufacturer-digest` が 5 分ごとに叩きます（Terraform 管理。
+`infra/modules/stack/main.tf`、運用は `infra/README.md`）。ステージングは止めてあります。
+
+> 以前は GitHub Actions の schedule（15 分ごと）で叩いていましたが、実際には 4〜7 時間おきにしか
+> 動かず、送信時刻が日によって数時間ずれたため Cloud Scheduler に移しました（#162・#167）。
+
+#### B. GitHub Actions（手動実行のみ: `.github/workflows/manufacturer-daily-digest.yml`）
+
+`Run workflow` から手動で実行します。`force` を付けると時刻・日次ガードを無視して即時送信します
+（未通知の明細があればメーカーへ実際に届くので、再送・テスト以外では使わない）。
 
 リポジトリの `Settings → Secrets and variables → Actions` で設定:
 
-- Variables: `API_BASE_URL` = `https://<your-app>.railway.app`
+- Variables: `API_BASE_URL` = API の URL
 - Secrets: `INTERNAL_API_SECRET` = API と同じ値
-
-15 分ごとに自動実行され、`Run workflow` から `force` 指定での手動送信も可能です。
-
-> 注: GitHub Actions の cron は UTC 実行かつ高負荷時に遅延することがありますが、
-> 送信可否は API 側が JST・日次ガードで判定するため運用上問題ありません。
-
-#### B. 汎用 cron / ホスティングのスケジューラ
-
-```bash
-*/10 * * * * curl -sS -X POST \
-  "https://<your-app>.railway.app/api/v1/internal/manufacturer-daily-digest" \
-  -H "X-Internal-Secret: ${INTERNAL_API_SECRET}"
-```
 
 #### 手動テスト（即時送信）
 
 ```bash
 curl -sS -X POST \
-  "https://<your-app>.railway.app/api/v1/internal/manufacturer-daily-digest?force=true" \
+  "<API の URL>/api/v1/internal/manufacturer-daily-digest?force=true" \
   -H "X-Internal-Secret: ${INTERNAL_API_SECRET}"
 ```
 
 ---
 
-## 集計仕様（新規分のみ）
+## 集計仕様（未通知分のみ）
 
 メーカー `m` について:
 
 - 対象明細 = `OrderItem` WHERE `Product.manufacturer_id = m.id`
-  AND `status = ORDERED` AND `created_at > COALESCE(last_notified_at, '-infinity')`
+  AND `manufacturer_notified_at IS NULL`
+  AND `status IN (ordered, manufacturing, delivered)`
 - **発注中明細数** = 対象明細の件数、**合計数量** = Σ `quantity`
-- 送信**成功時のみ** `last_notified_at` を実行時刻に更新（失敗時は次回再送対象として残す）
+- 送信**成功時のみ**、対象明細の `manufacturer_notified_at` を実行時刻にし、メーカーごとに確定する
+  （失敗時は未通知のまま残り、次回の送信で載る）。`last_notified_at` は「最後に送った時刻」として更新する
 
-> `ORDERED` は発注時の初期ステータスのため、`OrderItem.created_at` を「発注済みになった時刻」とみなします。
+> 送信処理の時点のステータスでは絞りません。送信処理より先に製造中へ進んだ明細（メーカーポータルで
+> 発注資料をダウンロードすると自動で製造中になる）も、一度も通知していなければ載せます。
+> 発注準備中（製造データ未準備）とキャンセル済みは載せず、発注済みになった後の回で載せます（#161）。
 > 日時はすべて JST で扱います。
 
 ## 将来拡張（今回スコープ外）
