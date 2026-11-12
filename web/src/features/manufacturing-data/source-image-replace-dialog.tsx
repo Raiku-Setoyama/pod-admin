@@ -21,6 +21,23 @@ import type {
   SourceImageLayerType,
 } from "@/types/api";
 
+/**
+ * 外部 URL をリンクにしてよいか判定し、よければその URL を返す。
+ *
+ * 外部受注由来の元画像 URL は販売サイトが API で送ってきた値なので、
+ * `javascript:` などが入っているとクリックで管理画面のオリジンでスクリプトが動く。
+ * scheme が http / https のときだけ返し、それ以外（パースできない値も含む）は null。
+ */
+function safeExternalUrl(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const { protocol } = new URL(url);
+    return protocol === "https:" || protocol === "http:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 const layerLabels: Record<SourceImageLayerType, string> = {
   color: "カラー",
   cutline: "カットライン",
@@ -196,6 +213,7 @@ function LayerRow({
 }: LayerRowProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const label = layerLabels[layer.layer_type];
+  const externalUrl = safeExternalUrl(layer.url);
   const [currentUrl, setCurrentUrl] = useState<string | null>(null);
   const previewUrl = useMemo(
     () => (selectedFile ? URL.createObjectURL(selectedFile) : null),
@@ -243,9 +261,9 @@ function LayerRow({
             )}
             <span className="truncate">{layer.filename}</span>
           </div>
-        ) : layer.url ? (
+        ) : externalUrl ? (
           <a
-            href={layer.url}
+            href={externalUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-primary hover:underline"
@@ -253,6 +271,8 @@ function LayerRow({
             <ExternalLink className="h-3.5 w-3.5" />
             受注時の元画像を開く
           </a>
+        ) : layer.url ? (
+          <span>受注時の元画像（開けない URL のためリンクにしていません）</span>
         ) : (
           <span>元画像なし</span>
         )}
