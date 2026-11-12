@@ -15,7 +15,11 @@ from fastapi.responses import StreamingResponse
 
 from app.dependencies import get_current_admin, get_data_export_service
 from app.models.user import User
-from app.schemas.data_export import DataExportColumnsResponse, DataExportCsvRequest
+from app.schemas.data_export import (
+    DataExportColumnsResponse,
+    DataExportCsvRequest,
+    DataExportPreviewResponse,
+)
 from app.services.data_export_service import DataExportService
 
 router = APIRouter(prefix="/data-export", tags=["data-export"])
@@ -28,6 +32,16 @@ async def list_data_export_columns(
 ) -> DataExportColumnsResponse:
     """列にできる項目の一覧（画面に並べる順）."""
     return service.list_columns()
+
+
+@router.post("/preview", response_model=DataExportPreviewResponse)
+async def preview_data_export(
+    data: DataExportCsvRequest,
+    service: Annotated[DataExportService, Depends(get_data_export_service)],
+    current_user: Annotated[User, Depends(get_current_admin)],
+) -> DataExportPreviewResponse:
+    """出力内容のプレビュー（CSV と同じ列・並び・整形で先頭の数行と総件数）."""
+    return await service.preview(data)
 
 
 @router.post("/csv")

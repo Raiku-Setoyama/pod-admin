@@ -56,6 +56,7 @@ PERSONAL_INFO_KEYS = [
 def order_repo() -> Any:
     repo = AsyncMock()
     repo.find_item_rows_for_export.return_value = []
+    repo.count_item_rows_for_export.return_value = 0
     return repo
 
 
@@ -225,6 +226,71 @@ class TestExportCsv:
         kwargs = order_repo.find_item_rows_for_export.call_args.kwargs
         assert kwargs["sort"] is COLUMNS_BY_KEY["ordered_at"].expr
         assert kwargs["descending"] is False
+
+
+class TestPreview:
+    async def test_returns_formatted_rows_and_total(
+        self, service: DataExportService, order_repo: Any
+    ) -> None:
+        order_repo.find_item_rows_for_export.return_value = [
+            ("A-001", "ordered", None),
+            ("A-002", "shipped", 3),
+        ]
+        order_repo.count_item_rows_for_export.return_value = 42
+        request = DataExportCsvRequest(
+            columns=["order_number", "order_status", "item_quantity"]
+        )
+
+        preview = await service.preview(request)
+
+        assert preview.headers == ["注文番号", "受注ステータス", "数量"]
+        # CSV と同じ整形（表示名・NULL は空欄）
+        assert preview.rows == [["A-001", "発注済み", ""], ["A-002", "発送完了", "3"]]
+        assert preview.total_count == 42
+        # 絞り込みなしなら絞り込み前の件数も同じ（数え直さない）
+        assert preview.unfiltered_count == 42
+        assert order_repo.count_item_rows_for_export.call_count == 1
+
+    async def test_limits_rows_and_counts_with_same_filters(
+        self, service: DataExportService, order_repo: Any
+    ) -> None:
+        request = DataExportCsvRequest.model_validate(
+            {
+                "columns": ["order_number"],
+                "filters": {"status": "ordered", "product_type": "sticker", "search": "山田"},
+                "sort": {"column": "item_quantity", "direction": "desc"},
+            }
+        )
+
+        await service.preview(request, limit=5)
+
+        find_kwargs = order_repo.find_item_rows_for_export.call_args.kwargs
+        assert find_kwargs["limit"] == 5
+        assert find_kwargs["sort"] is COLUMNS_BY_KEY["item_quantity"].expr
+        assert find_kwargs["descending"] is True
+        filtered_call, unfiltered_call = order_repo.count_item_rows_for_export.call_args_list
+        assert unfiltered_call.kwargs == {}
+        count_kwargs = filtered_call.kwargs
+        assert count_kwargs == {
+            "status": OrderStatus.ORDERED,
+            "product_type": ProductType.STICKER,
+            "ordered_from": None,
+            "ordered_to": None,
+            "search": "山田",
+            "shipping_from": None,
+            "shipping_to": None,
+        }
+
+    async def test_export_csv_is_not_limited(
+        self, service: DataExportService, order_repo: Any
+    ) -> None:
+        await service.export_csv(DataExportCsvRequest(columns=["order_number"]))
+
+        assert "limit" not in order_repo.find_item_rows_for_export.call_args.kwargs
+
+    async def test_unknown_column_rejected(self, service: DataExportService) -> None:
+        with pytest.raises(ValidationError):
+            await service.preview(DataExportCsvRequest(columns=["nope"]))
 
 
 class TestValidation:

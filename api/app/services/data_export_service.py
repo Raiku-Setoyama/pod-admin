@@ -15,7 +15,7 @@ REQ-0047 / ADR-0023: 出力の 1 行は受注明細 1 件。その明細が属�
 import csv
 import io
 from collections import Counter
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
@@ -35,6 +35,7 @@ from app.schemas.data_export import (
     DataExportColumnResponse,
     DataExportColumnsResponse,
     DataExportCsvRequest,
+    DataExportPreviewResponse,
     SortDirection,
 )
 from app.utils.exceptions import ValidationError
@@ -278,6 +279,9 @@ EXPORT_COLUMNS: tuple[ExportColumn, ...] = (
 
 COLUMNS_BY_KEY: dict[str, ExportColumn] = {c.key: c for c in EXPORT_COLUMNS}
 
+# 画面のプレビューに出す行数
+PREVIEW_LIMIT = 10
+
 
 class DataExportService:
     """データ出力タブの CSV を組み立てる."""
@@ -302,6 +306,45 @@ class DataExportService:
         Raises:
             ValidationError: 未知の項目キー・重複した項目・未知の並べ替えキーが含まれる場合。
         """
+        columns, rows = await self._fetch(request)
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([c.label for c in columns])
+        for row in rows:
+            writer.writerow(self._format_row(columns, row))
+
+        # Excel で文字化けしないよう BOM を付ける（既存の CSV 出力と同じ扱い）
+        csv_bytes = output.getvalue().encode("utf-8-sig")
+        timestamp = datetime.now(JST).strftime("%Y%m%d_%H%M%S")
+        return csv_bytes, f"データ出力_{timestamp}.csv"
+
+    async def preview(
+        self, request: DataExportCsvRequest, limit: int = PREVIEW_LIMIT
+    ) -> DataExportPreviewResponse:
+        """CSV と同じ列・並び・整形で、先頭 ``limit`` 行と件数を返す（画面のプレビュー用）.
+
+        Raises:
+            ValidationError: ``export_csv`` と同じ。
+        """
+        columns, rows = await self._fetch(request, limit=limit)
+        filter_kwargs = self._filter_kwargs(request)
+        total_count = await self._order_repo.count_item_rows_for_export(**filter_kwargs)
+        # 画面で「72 件中 10 件」と出すため、絞り込み前の件数も返す（絞り込みなしなら同じ値）
+        has_filters = any(v is not None and v != "" for v in filter_kwargs.values())
+        unfiltered_count = (
+            await self._order_repo.count_item_rows_for_export() if has_filters else total_count
+        )
+        return DataExportPreviewResponse(
+            headers=[c.label for c in columns],
+            rows=[self._format_row(columns, row) for row in rows],
+            total_count=total_count,
+            unfiltered_count=unfiltered_count,
+        )
+
+    async def _fetch(
+        self, request: DataExportCsvRequest, limit: int | None = None
+    ) -> tuple[list[ExportColumn], Sequence[Sequence[Any]]]:
         columns = self._resolve_columns(request.columns)
 
         sort_expr: ColumnExpr | None = None
@@ -316,30 +359,33 @@ class DataExportService:
             sort_expr = sort_column.expr
             descending = request.sort.direction == SortDirection.DESC
 
-        filters = request.filters
+        kwargs: dict[str, Any] = self._filter_kwargs(request)
+        if limit is not None:
+            kwargs["limit"] = limit
         rows = await self._order_repo.find_item_rows_for_export(
             [c.expr for c in columns],
-            status=filters.status,
-            product_type=filters.product_type,
-            ordered_from=filters.ordered_from,
-            ordered_to=filters.ordered_to,
-            search=filters.search,
-            shipping_from=filters.shipping_from,
-            shipping_to=filters.shipping_to,
             sort=sort_expr,
             descending=descending,
+            **kwargs,
         )
+        return columns, rows
 
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow([c.label for c in columns])
-        for row in rows:
-            writer.writerow([c.format(value) for c, value in zip(columns, row, strict=True)])
+    @staticmethod
+    def _filter_kwargs(request: DataExportCsvRequest) -> dict[str, Any]:
+        filters = request.filters
+        return {
+            "status": filters.status,
+            "product_type": filters.product_type,
+            "ordered_from": filters.ordered_from,
+            "ordered_to": filters.ordered_to,
+            "search": filters.search,
+            "shipping_from": filters.shipping_from,
+            "shipping_to": filters.shipping_to,
+        }
 
-        # Excel で文字化けしないよう BOM を付ける（既存の CSV 出力と同じ扱い）
-        csv_bytes = output.getvalue().encode("utf-8-sig")
-        timestamp = datetime.now(JST).strftime("%Y%m%d_%H%M%S")
-        return csv_bytes, f"データ出力_{timestamp}.csv"
+    @staticmethod
+    def _format_row(columns: Sequence[ExportColumn], row: Sequence[Any]) -> list[str]:
+        return [c.format(value) for c, value in zip(columns, row, strict=True)]
 
     @staticmethod
     def _resolve_columns(keys: list[str]) -> list[ExportColumn]:
