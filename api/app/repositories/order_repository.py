@@ -155,6 +155,7 @@ class OrderRepository:
         shipping_to: date | None = None,
         sort: Any | None = None,
         descending: bool = False,
+        limit: int | None = None,
     ) -> Sequence[Row[Any]]:
         """データ出力用に、受注明細 1 件を 1 行として指定の列を取り出す（ADR-0023）.
 
@@ -166,6 +167,8 @@ class OrderRepository:
 
         並べ替えは ``sort`` の後に、受注一覧と同じ受注日時の新しい順・注文番号・明細の登録順で
         決定的に並べる。NULL は昇順・降順とも末尾に置く。
+
+        ``limit`` を渡すと先頭からその件数だけ返す（画面のプレビュー用）。
         """
         # 配送は受注単位で 1 件（ShipmentService が重複作成を弾いている）。
         # 万一重複していても明細 1 行を崩さないよう、受注ごとに最新の 1 件だけを結合する。
@@ -190,16 +193,15 @@ class OrderRepository:
             .outerjoin(Shipment, Shipment.id == latest_shipment.c.shipment_id)
         )
 
-        conditions = order_list_conditions(
+        conditions = self._export_conditions(
             status=status,
+            product_type=product_type,
             ordered_from=ordered_from,
             ordered_to=ordered_to,
             search=search,
             shipping_from=shipping_from,
             shipping_to=shipping_to,
         )
-        if product_type:
-            conditions.append(OrderItem.product_type == product_type.value)
         if conditions:
             query = query.where(*conditions)
 
@@ -215,9 +217,70 @@ class OrderRepository:
             ]
         )
         query = query.order_by(*order_by)
+        if limit is not None:
+            query = query.limit(limit)
 
         result = await self._db.execute(query)
         return result.all()
+
+    async def count_item_rows_for_export(
+        self,
+        *,
+        status: OrderStatus | None = None,
+        product_type: ProductType | None = None,
+        ordered_from: date | None = None,
+        ordered_to: date | None = None,
+        search: str | None = None,
+        shipping_from: date | None = None,
+        shipping_to: date | None = None,
+    ) -> int:
+        """``find_item_rows_for_export`` が返す行数（= 対象の受注明細の件数）.
+
+        絞り込みは受注と明細の列だけを見るので、他のテーブルは結合しない
+        （結合先はどれも明細 1 件につき高々 1 件なので、行数は変わらない）。
+        """
+        query = (
+            select(func.count(OrderItem.id))
+            .select_from(OrderItem)
+            .join(Order, OrderItem.order_id == Order.id)
+        )
+        conditions = self._export_conditions(
+            status=status,
+            product_type=product_type,
+            ordered_from=ordered_from,
+            ordered_to=ordered_to,
+            search=search,
+            shipping_from=shipping_from,
+            shipping_to=shipping_to,
+        )
+        if conditions:
+            query = query.where(*conditions)
+        result = await self._db.execute(query)
+        return int(result.scalar_one())
+
+    @staticmethod
+    def _export_conditions(
+        *,
+        status: OrderStatus | None,
+        product_type: ProductType | None,
+        ordered_from: date | None,
+        ordered_to: date | None,
+        search: str | None,
+        shipping_from: date | None,
+        shipping_to: date | None,
+    ) -> list[ColumnElement[bool]]:
+        """データ出力の絞り込み条件（商品種別は明細の種別で絞る）."""
+        conditions = order_list_conditions(
+            status=status,
+            ordered_from=ordered_from,
+            ordered_to=ordered_to,
+            search=search,
+            shipping_from=shipping_from,
+            shipping_to=shipping_to,
+        )
+        if product_type:
+            conditions.append(OrderItem.product_type == product_type.value)
+        return conditions
 
     async def create(self, order: Order) -> Order:
         """Create a new order."""

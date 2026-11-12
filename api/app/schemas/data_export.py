@@ -66,3 +66,14 @@ class DataExportCsvRequest(BaseModel):
     sort: DataExportSort | None = Field(
         None, description="並べ替え。省略時は受注日時の新しい順"
     )
+
+
+class DataExportPreviewResponse(BaseModel):
+    """出力内容のプレビュー（CSV と同じ列・同じ整形で先頭の数行）."""
+
+    headers: list[str] = Field(..., description="列の表示名（CSV のヘッダ行と同じ）")
+    rows: list[list[str]] = Field(..., description="先頭から最大 limit 行の値（CSV と同じ整形）")
+    total_count: int = Field(..., description="絞り込みに当てはまる行（受注明細）の総数")
+    unfiltered_count: int = Field(
+        ..., description="絞り込みをかけない場合の行（受注明細）の総数"
+    )

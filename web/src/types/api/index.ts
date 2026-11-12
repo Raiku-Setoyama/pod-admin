@@ -586,3 +586,13 @@ export interface DataExportCsvRequest {
   filters: DataExportFilters;
   sort: { column: string; direction: DataExportSortDirection } | null;
 }
+
+/** POST /data-export/preview の応答（CSV と同じ列・整形で先頭の数行）。 */
+export interface DataExportPreviewResponse {
+  headers: string[];
+  rows: string[][];
+  /** 絞り込みに当てはまる行（受注明細）の総数 */
+  total_count: number;
+  /** 絞り込みをかけない場合の行（受注明細）の総数 */
+  unfiltered_count: number;
+}

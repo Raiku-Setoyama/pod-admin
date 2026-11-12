@@ -25,6 +25,7 @@ from app.models.product import Product
 from app.models.shipment import Shipment, ShipmentItem
 
 CSV_URL = "/api/v1/data-export/csv"
+PREVIEW_URL = "/api/v1/data-export/preview"
 
 
 def _parse(csv_bytes: bytes) -> list[list[str]]:
@@ -290,6 +291,98 @@ async def test_zero_rows_returns_header_only(
     assert rows == [["注文番号", "お客様氏名"]]
 
 
+async def test_preview_matches_csv_and_counts_all_rows(
+    client: AsyncClient, auth_headers: dict[str, Any], dataset: dict[str, Any]
+) -> None:
+    body = {
+        "columns": ["item_uid", "item_product_type", "shipment_status"],
+        "filters": {"search": dataset["token"]},
+        "sort": {"column": "item_uid", "direction": "asc"},
+    }
+    response = await client.post(PREVIEW_URL, json=body, headers=auth_headers)
+    assert response.status_code == 200, response.text
+    preview = response.json()
+
+    rows = await _export(client, auth_headers, body)
+    assert preview["headers"] == rows[0]
+    assert preview["rows"] == rows[1:]
+    assert preview["total_count"] == 3
+
+
+async def test_preview_counts_with_item_product_type(
+    client: AsyncClient, auth_headers: dict[str, Any], dataset: dict[str, Any]
+) -> None:
+    response = await client.post(
+        PREVIEW_URL,
+        json={
+            "columns": ["item_uid"],
+            "filters": {"search": dataset["token"], "product_type": "sticker"},
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["total_count"] == 2
+    # 絞り込み前の件数は DB 全体の明細数（他のテストのデータも含む）なので、下限だけ見る
+    assert response.json()["unfiltered_count"] >= 3
+
+
+async def test_preview_is_limited_to_10_rows(
+    client: AsyncClient,
+    auth_headers: dict[str, Any],
+    db_session: AsyncSession,
+) -> None:
+    token = uuid4().hex[:10]
+    manufacturer = Manufacturer(
+        name=f"プレビューメーカー {token}",
+        email="dxp-mfg@example.com",
+        supported_products=["sticker"],
+        unit_prices={},
+        lead_time_days=3,
+        daily_order_limit=100,
+    )
+    db_session.add(manufacturer)
+    await db_session.flush()
+    product = Product(
+        product_type="sticker", size="50x50mm", position=f"DXP{token}", color=None,
+        manufacturer_id=manufacturer.id, cost=100, lead_time_days=3,
+    )
+    db_session.add(product)
+    order = Order(
+        order_number=f"DXP-{token}",
+        status="ordered",
+        total_price=0,
+        ordered_at=datetime(2026, 11, 1, tzinfo=UTC),
+        customer_name=f"プレビュー {token}",
+        customer_phone="090-0000-0000",
+        customer_postal_code="150-0001",
+        customer_address_prefecture="東京都",
+        customer_address_city="渋谷区1-2-3",
+    )
+    db_session.add(order)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            OrderItem(
+                order_id=order.id, uid=f"{n:07d}", product_id=product.id,
+                product_name="ステッカー",
+                product_type="sticker", status="ordered", price=100, quantity=1,
+            )
+            for n in range(12)
+        ]
+    )
+    await db_session.commit()
+
+    response = await client.post(
+        PREVIEW_URL,
+        json={"columns": ["item_uid"], "filters": {"search": token}},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    preview = response.json()
+    assert len(preview["rows"]) == 10
+    assert preview["total_count"] == 12
+
+
 async def test_no_columns_is_rejected(client: AsyncClient, auth_headers: dict[str, Any]) -> None:
     response = await client.post(CSV_URL, json={"columns": []}, headers=auth_headers)
     assert response.status_code == 422
@@ -306,4 +399,6 @@ async def test_requires_admin(client: AsyncClient) -> None:
     response = await client.post(CSV_URL, json={"columns": ["order_number"]})
     assert response.status_code in (401, 403)
     response = await client.get("/api/v1/data-export/columns")
+    assert response.status_code in (401, 403)
+    response = await client.post(PREVIEW_URL, json={"columns": ["order_number"]})
     assert response.status_code in (401, 403)

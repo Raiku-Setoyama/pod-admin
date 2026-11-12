@@ -1,14 +1,16 @@
 /**
  * データ出力タブ（REQ-0047 / Issue #172）の単体テスト。
  *
- * - 項目が分類ごとに並び、チェックした項目だけがリクエストの列になる
+ * - 項目は分類ごとに折りたたまれ、検索で絞れる。チェックした項目だけがリクエストの列になる
  * - 項目が 0 個なら出力できない
+ * - 選んだ項目でプレビュー（先頭の行と総件数）を出す
+ * - 絞り込みはプレビュー上の条件チップ、並べ替えは見出しのクリックでもできる
  * - 絞り込み・並べ替えがリクエストに入る
  * - サイドバーに「データ出力」がある
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('@/lib/api/client', () => ({
@@ -28,7 +30,8 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/data-export',
 }))
 
-import { downloadFileByPost } from '@/lib/api/client'
+import { SWRConfig } from 'swr'
+import { apiClient, downloadFileByPost } from '@/lib/api/client'
 import { toast } from 'sonner'
 import { DataExportForm } from '@/features/data-export/components/data-export-form'
 import {
@@ -40,6 +43,7 @@ import { Sidebar } from '@/components/layout/sidebar'
 import type { DataExportColumn } from '@/types/api'
 
 const mockDownload = vi.mocked(downloadFileByPost)
+const mockApiClient = vi.mocked(apiClient)
 
 const columns: DataExportColumn[] = [
   { key: 'order_number', label: '注文番号', group: '受注' },
@@ -112,30 +116,79 @@ describe('buildDataExportRequest', () => {
   })
 })
 
+function renderForm() {
+  // テストごとに SWR のキャッシュを分ける
+  return render(
+    <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
+      <DataExportForm columns={columns} />
+    </SWRConfig>
+  )
+}
+
+const previewResponse = {
+  headers: ['注文番号', '数量'],
+  rows: [
+    ['A-001', '2'],
+    ['A-002', ''],
+  ],
+  total_count: 37,
+  unfiltered_count: 120,
+}
+
+/** 最後に投げたプレビューのリクエスト本文 */
+function lastPreviewBody() {
+  const [endpoint, options] = mockApiClient.mock.calls.at(-1)!
+  expect(endpoint).toBe('/data-export/preview')
+  return (options as { body: Record<string, unknown> }).body
+}
+
 describe('DataExportForm', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockApiClient.mockResolvedValue(previewResponse)
   })
 
-  it('分類ごとに項目が並ぶ', () => {
-    render(<DataExportForm columns={columns} />)
-    expect(screen.getByText('受注')).toBeInTheDocument()
-    expect(screen.getByText('顧客（お届け先）')).toBeInTheDocument()
+  it('分類は最初は閉じていて、開くと項目が出る', async () => {
+    const user = userEvent.setup()
+    renderForm()
+    expect(screen.getByRole('button', { name: /顧客（お届け先）/ })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    )
+    expect(screen.queryByLabelText('お客様氏名')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /顧客（お届け先）/ }))
     expect(screen.getByLabelText('お客様氏名')).toBeInTheDocument()
-    expect(screen.getByText('0 / 5 項目を選択中')).toBeInTheDocument()
   })
 
-  it('項目が 0 個のときは出力できない', () => {
-    render(<DataExportForm columns={columns} />)
+  it('項目名で探すと、当てはまる項目だけが分類を開いた状態で出る', async () => {
+    const user = userEvent.setup()
+    renderForm()
+
+    await user.type(screen.getByLabelText('項目を検索'), '電話')
+    expect(screen.getByLabelText('お届け先電話番号')).toBeInTheDocument()
+    expect(screen.queryByLabelText('お客様氏名')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('受注明細の当てはまる項目をすべて選択')).not.toBeInTheDocument()
+
+    await user.clear(screen.getByLabelText('項目を検索'))
+    await user.type(screen.getByLabelText('項目を検索'), '存在しない')
+    expect(screen.getByText('「存在しない」に当てはまる項目はありません')).toBeInTheDocument()
+  })
+
+  it('項目が 0 個のときは出力できず、プレビューも取りに行かない', () => {
+    renderForm()
     expect(screen.getByRole('button', { name: /CSV を出力/ })).toBeDisabled()
-    expect(screen.getByText('出力する項目を 1 つ以上選んでください')).toBeInTheDocument()
+        expect(mockApiClient).not.toHaveBeenCalled()
   })
 
   it('チェックした項目だけを列にして出力する（個人情報は選ばなければ出ない）', async () => {
     const user = userEvent.setup()
-    render(<DataExportForm columns={columns} />)
+    renderForm()
 
+    await user.type(screen.getByLabelText('項目を検索'), '注文番号')
     await user.click(screen.getByLabelText('注文番号'))
+    await user.clear(screen.getByLabelText('項目を検索'))
+    await user.type(screen.getByLabelText('項目を検索'), '数量')
     await user.click(screen.getByLabelText('数量'))
     await user.click(screen.getByRole('button', { name: /CSV を出力/ }))
 
@@ -146,15 +199,23 @@ describe('DataExportForm', () => {
     expect(filename).toMatch(/^データ出力_\d{8}_\d{6}\.csv$/)
   })
 
+  it('選んだ数が項目一覧の見出しに出る', async () => {
+    const user = userEvent.setup()
+    renderForm()
+
+    await user.click(screen.getByLabelText('受注をすべて選択'))
+    expect(screen.getByText('2 / 5')).toBeInTheDocument()
+  })
+
   it('分類のチェックでその分類の項目をまとめて選ぶ・外す', async () => {
     const user = userEvent.setup()
-    render(<DataExportForm columns={columns} />)
+    renderForm()
+    await user.click(screen.getByRole('button', { name: /顧客（お届け先）/ }))
 
     const group = screen.getByLabelText('顧客（お届け先）をすべて選択')
     await user.click(group)
     expect(screen.getByLabelText('お客様氏名')).toBeChecked()
     expect(screen.getByLabelText('お届け先電話番号')).toBeChecked()
-    expect(screen.getByLabelText('注文番号')).not.toBeChecked()
 
     await user.click(group)
     expect(screen.getByLabelText('お客様氏名')).not.toBeChecked()
@@ -162,21 +223,123 @@ describe('DataExportForm', () => {
 
   it('すべて選択・すべて解除', async () => {
     const user = userEvent.setup()
-    render(<DataExportForm columns={columns} />)
+    renderForm()
 
     await user.click(screen.getByRole('button', { name: 'すべて選択' }))
-    expect(screen.getByText('5 / 5 項目を選択中')).toBeInTheDocument()
+    expect(screen.getByText('5 / 5')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'すべて解除' }))
-    expect(screen.getByText('0 / 5 項目を選択中')).toBeInTheDocument()
+    expect(screen.getByText('0 / 5')).toBeInTheDocument()
+  })
+
+  it('項目を選ぶとプレビューを取りに行き、先頭の行と総件数を出す', async () => {
+    const user = userEvent.setup()
+    renderForm()
+
+    await user.click(screen.getByLabelText('受注明細をすべて選択'))
+
+    expect(await screen.findByText('A-001')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '注文番号' })).toBeInTheDocument()
+    expect(screen.getByText('37 件')).toBeInTheDocument()
+    // 絞り込みがないときは「全 N 件」
+    expect(screen.queryByText(/120 件中/)).not.toBeInTheDocument()
+    expect(screen.getByText(/先頭 2 件を表示/)).toBeInTheDocument()
+
+    const [endpoint, options] = mockApiClient.mock.calls.at(-1)!
+    expect(endpoint).toBe('/data-export/preview')
+    expect(options).toMatchObject({ method: 'POST', body: { columns: ['item_quantity'] } })
+  })
+
+  it('当てはまるデータがなければそう出す', async () => {
+    mockApiClient.mockResolvedValue({
+      headers: ['数量'],
+      rows: [],
+      total_count: 0,
+      unfiltered_count: 0,
+    })
+    const user = userEvent.setup()
+    renderForm()
+
+    await user.click(screen.getByLabelText('受注明細をすべて選択'))
+    expect(await screen.findByText(/絞り込みに当てはまるデータがありません/)).toBeInTheDocument()
+  })
+
+  it('ステータスと受注日は最初から条件チップとして並んでいる', () => {
+    renderForm()
+    expect(screen.getByRole('button', { name: 'ステータスで絞り込む' })).toHaveTextContent(
+      'ステータス:すべて'
+    )
+    expect(screen.getByRole('button', { name: '受注日で絞り込む' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'キーワードで絞り込む' })).not.toBeInTheDocument()
+  })
+
+  it('条件チップで絞り込むと、プレビューに条件が渡り「N 件中」と出る', async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await user.click(screen.getByLabelText('受注明細をすべて選択'))
+    await screen.findByText('A-001')
+
+    await user.click(screen.getByRole('button', { name: 'ステータスで絞り込む' }))
+    await user.click(screen.getByRole('option', { name: '製造中' }))
+
+    expect(screen.getByRole('button', { name: 'ステータスで絞り込む' })).toHaveTextContent(
+      'ステータス:製造中'
+    )
+    await waitFor(() =>
+      expect(lastPreviewBody()).toMatchObject({ filters: { status: 'manufacturing' } })
+    )
+    expect(await screen.findByText(/120 件中/)).toBeInTheDocument()
+
+    // ×で条件を外す
+    await user.click(screen.getByRole('button', { name: 'ステータスの条件を外す' }))
+    await waitFor(() =>
+      expect(lastPreviewBody()).toMatchObject({ filters: { status: null } })
+    )
+  })
+
+  it('「条件を追加」からキーワードを足して絞り込む', async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await user.click(screen.getByLabelText('受注明細をすべて選択'))
+
+    await user.click(screen.getByRole('button', { name: '条件を追加' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'キーワード' }))
+    await user.type(await screen.findByLabelText('キーワード'), '山田')
+
+    expect(screen.getByRole('button', { name: 'キーワードで絞り込む' })).toHaveTextContent(
+      '「山田」'
+    )
+    await waitFor(() => expect(lastPreviewBody()).toMatchObject({ filters: { search: '山田' } }))
+  })
+
+  it('表の見出しをクリックすると 昇順 → 降順 → 指定なし の順に並べ替える', async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await user.click(screen.getByLabelText('受注明細をすべて選択'))
+    await screen.findByText('A-001')
+
+    const header = () => screen.getByRole('button', { name: '数量' })
+    await user.click(header())
+    await waitFor(() =>
+      expect(lastPreviewBody()).toMatchObject({ sort: { column: 'item_quantity', direction: 'asc' } })
+    )
+    expect(screen.getByRole('button', { name: '並び順を変える' })).toHaveTextContent('数量（昇順）')
+
+    await user.click(header())
+    await waitFor(() =>
+      expect(lastPreviewBody()).toMatchObject({ sort: { column: 'item_quantity', direction: 'desc' } })
+    )
+
+    await user.click(header())
+    await waitFor(() => expect(lastPreviewBody()).toMatchObject({ sort: null }))
   })
 
   it('出力に失敗したらエラーを出す', async () => {
     mockDownload.mockRejectedValueOnce(new Error('Download failed'))
     const user = userEvent.setup()
-    render(<DataExportForm columns={columns} />)
+    renderForm()
 
-    await user.click(screen.getByLabelText('注文番号'))
+    await user.click(screen.getByLabelText('受注をすべて選択'))
     await user.click(screen.getByRole('button', { name: /CSV を出力/ }))
 
     expect(toast.error).toHaveBeenCalledWith('CSV の出力に失敗しました')
