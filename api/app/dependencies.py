@@ -28,6 +28,7 @@ from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.chat_service import ChatService
 from app.services.dashboard_service import DashboardService
+from app.services.data_export_service import DataExportService
 from app.services.email_service import EmailService
 from app.services.external_order_notification import ExternalOrderNotificationService
 from app.services.external_service import ExternalService
@@ -176,6 +177,13 @@ def get_order_service(
         order_repo, product_repo, shipment_repo, order_source_repo,
         company_holiday_repo, app_setting_repo,
     )
+
+
+def get_data_export_service(
+    order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
+) -> DataExportService:
+    """Get data export service."""
+    return DataExportService(order_repo)
 
 
 def get_email_service() -> EmailService | None:

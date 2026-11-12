@@ -557,3 +557,32 @@ export interface CompanyHoliday {
 export interface CompanyHolidayListResponse {
   items: CompanyHoliday[];
 }
+
+// Data Export types（データ出力タブ。1 行 = 受注明細 1 件）
+export interface DataExportColumn {
+  key: string;
+  label: string;
+  group: string;
+}
+
+export interface DataExportColumnsResponse {
+  columns: DataExportColumn[];
+}
+
+export interface DataExportFilters {
+  status?: OrderStatus | null;
+  product_type?: ProductType | null;
+  ordered_from?: string | null;
+  ordered_to?: string | null;
+  shipping_from?: string | null;
+  shipping_to?: string | null;
+  search?: string | null;
+}
+
+export type DataExportSortDirection = "asc" | "desc";
+
+export interface DataExportCsvRequest {
+  columns: string[];
+  filters: DataExportFilters;
+  sort: { column: string; direction: DataExportSortDirection } | null;
+}
