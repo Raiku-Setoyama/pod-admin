@@ -377,16 +377,14 @@ class OrderRepository:
             )
             query = query.where(search_filter)
 
-        # 納品予定日フィルター（ordered_at + lead_time_days）
+        # 納品予定日フィルター。一覧に表示している明細の納品予定日（注文作成時に営業日・
+        # 〆切時刻を考慮して確定した値）で絞り込む。受注日 + メーカーのリードタイムを
+        # 暦日で足し直すと表示と食い違うため使わない。
         if expected_delivery_from:
-            query = query.where(
-                func.date(Order.ordered_at) + Manufacturer.lead_time_days >= expected_delivery_from
-            )
+            query = query.where(OrderItem.expected_delivery_date >= expected_delivery_from)
 
         if expected_delivery_to:
-            query = query.where(
-                func.date(Order.ordered_at) + Manufacturer.lead_time_days <= expected_delivery_to
-            )
+            query = query.where(OrderItem.expected_delivery_date <= expected_delivery_to)
 
         query = query.order_by(Order.ordered_at.desc())
 
@@ -470,16 +468,14 @@ class OrderRepository:
             )
             query = query.where(search_filter)
 
-        # 納品予定日フィルター（ordered_at + lead_time_days）
+        # 納品予定日フィルター。一覧に表示している明細の納品予定日（注文作成時に営業日・
+        # 〆切時刻を考慮して確定した値）で絞り込む。受注日 + メーカーのリードタイムを
+        # 暦日で足し直すと表示と食い違うため使わない。
         if expected_delivery_from:
-            query = query.where(
-                func.date(Order.ordered_at) + Manufacturer.lead_time_days >= expected_delivery_from
-            )
+            query = query.where(OrderItem.expected_delivery_date >= expected_delivery_from)
 
         if expected_delivery_to:
-            query = query.where(
-                func.date(Order.ordered_at) + Manufacturer.lead_time_days <= expected_delivery_to
-            )
+            query = query.where(OrderItem.expected_delivery_date <= expected_delivery_to)
 
         query = query.order_by(Order.ordered_at.desc())
 
