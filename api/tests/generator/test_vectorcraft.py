@@ -126,18 +126,26 @@ def _is_clipped(layer: str) -> bool:
     return body.startswith("q\n") and body.rstrip().endswith("Q\nLB")
 
 
-def _clip_size(layer: str) -> tuple[float, float]:
-    """レイヤーの先頭のクリッピングマスクの、マスクのパス（``q`` 〜 ``W n``）の幅と高さ（pt）."""
-    body = _layer_body(layer)
-    clip = body[: body.index("%AI5_BeginRaster")]
-    clip = clip[: clip.rindex("W\nn\n")]
+def _is_one_group(layer: str) -> bool:
+    """レイヤーの直下がグループ（``u`` 〜 ``U``）1 つだけで、その中に入れ子のグループが無いか."""
+    lines = _layer_body(layer).rstrip().splitlines()
+    if lines[-1:] != ["LB"]:
+        return False
+    lines = lines[:-1]
+    return bool(lines) and lines[0] == "u" and lines[-1] == "U" and lines.count("u") == lines.count("U") == 1
+
+
+def _curve_points(paths: str) -> list[tuple[float, float]]:
+    """パスの書式（``m`` / ``L`` / ``C``）から、線の上の点を集める.
+
+    曲線は線の上の点で測る（方向線は外へはみ出し、アンカーだけでは内側に寄る）。
+    """
     pts: list[tuple[float, float]] = []
-    for line in clip.splitlines():
+    for line in paths.splitlines():
         if not line.endswith((" m", " L", " C")):
             continue
         v = [float(n) for n in line.split()[:-1]]
         if line.endswith(" C"):
-            # 曲線の上の点で測る（方向線は外へはみ出し、アンカーだけでは内側に寄る）
             (x0, y0), (x1, y1, x2, y2, x3, y3) = pts[-1], v
             for k in range(1, 17):
                 t = k / 16
@@ -145,6 +153,15 @@ def _clip_size(layer: str) -> tuple[float, float]:
                 pts.append((a * x0 + b * x1 + c * x2 + d * x3, a * y0 + b * y1 + c * y2 + d * y3))
         else:
             pts.append((v[0], v[1]))
+    return pts
+
+
+def _clip_size(layer: str) -> tuple[float, float]:
+    """レイヤーの先頭のクリッピングマスクの、マスクのパス（``q`` 〜 ``W n``）の幅と高さ（pt）."""
+    body = _layer_body(layer)
+    clip = body[: body.index("%AI5_BeginRaster")]
+    clip = clip[: clip.rindex("W\nn\n")]
+    pts = _curve_points(clip)
     xs, ys = [p[0] for p in pts], [p[1] for p in pts]
     return max(xs) - min(xs), max(ys) - min(ys)
 
@@ -193,7 +210,19 @@ def test_acrylic_keychain(size: str, mm: int) -> None:
     ai = _parse_ai8(out.content)
     assert ai.art_size == pytest.approx((mm * MM, mm * MM), abs=0.01)
     _assert_acrylic_structure(ai, stroke_pt=0.5, white="plate")
-    assert _subpath_count(ai.layers["CutLine"]) == 2  # 外形とキー穴
+    cut = ai.layers["CutLine"]
+    # 製造委託先の依頼（#171）: 外形とキー穴の 2 本のパスを 1 つのグループにまとめる
+    assert _is_one_group(cut)
+    assert _subpath_count(cut) == 2 and "*u" not in cut  # 複合パスではなく、別々のパス 2 本
+    # グループにしても、カットラインはアートボードの中に収まり、中央に置かれる
+    pts = _curve_points(cut)
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    box = re.search(r"%%HiResBoundingBox: (\S+) (\S+) (\S+) (\S+)", out.content.decode("shift_jis"))
+    assert box is not None
+    left, bottom, right, top = (float(v) for v in box.groups())
+    assert left <= min(xs) and max(xs) <= right and bottom <= min(ys) and max(ys) <= top
+    assert (min(xs) + max(xs)) / 2 == pytest.approx((left + right) / 2, abs=0.1)
+    assert (min(ys) + max(ys)) / 2 == pytest.approx((bottom + top) / 2, abs=0.1)
 
 
 def test_acrylic_keychain_without_white_plate() -> None:
@@ -201,7 +230,9 @@ def test_acrylic_keychain_without_white_plate() -> None:
     del images["white"]
     out = _run("acrylic_keychain", "50x50mm", images)
     assert out.filename == "md-1_AcrylicKeychain_clear_50x50.ai"
-    _assert_acrylic_structure(_parse_ai8(out.content), stroke_pt=0.5, white="none")
+    ai = _parse_ai8(out.content)
+    _assert_acrylic_structure(ai, stroke_pt=0.5, white="none")
+    assert _is_one_group(ai.layers["CutLine"]) and _subpath_count(ai.layers["CutLine"]) == 2
 
 
 @pytest.mark.parametrize("mm", [50, 100])
@@ -265,6 +296,7 @@ def test_acrylic_stand_merges_the_tab(size: str, mm: int, base: str) -> None:
     # アートボードは台座テンプレートと同じ高さ（本体＋タブ）
     assert ai.art_size == pytest.approx((mm * MM, (mm + 5) * MM), abs=0.6)
     assert _subpath_count(ai.layers["CutLine"]) == 1  # タブを合成した 1 本のパス
+    assert not _is_one_group(ai.layers["CutLine"])  # グループにするのはキーホルダーだけ（#171）
     # カットラインは本体全体を囲む。入力の輪郭は画像の高さの 5/6（y=60〜560）で、下にタブ（3mm）が付く。
     # #154 では下端付近だけが残り、高さが 3 割ほどになった
     assert _anchor_height(ai.layers["CutLine"]) > 0.8 * mm * MM
@@ -282,7 +314,9 @@ def test_sticker(size: str) -> None:
     del images["white"]
     out = _run("sticker", f"{size}mm", images)
     assert out.filename == f"md-1_Sticker_clear_{size}.ai"
-    _assert_acrylic_structure(_parse_ai8(out.content), stroke_pt=1, white="empty")
+    ai = _parse_ai8(out.content)
+    _assert_acrylic_structure(ai, stroke_pt=1, white="empty")
+    assert not _is_one_group(ai.layers["CutLine"])  # グループにするのはキーホルダーだけ（#171）
 
 
 @pytest.mark.parametrize(

@@ -222,6 +222,15 @@ class Job:
         self.vc.cmd("paint.setFill", ids=ids, color=K100)
         self.vc.cmd("paint.setStroke", ids=ids, none=True)
 
+    def group_layer(self, layer_name: str) -> int:
+        """レイヤーの中身をグループ 1 つにまとめ、その ID を返す."""
+        ids = [c["id"] for c in self.children(layer_name)]
+        if not ids:
+            raise GenerationError(f"{layer_name}: nothing to group")
+        self.vc.cmd("select.set", ids=ids)
+        group: int = self.vc.cmd("object.group")["id"]
+        return group
+
     def delete(self, ids: list[int]) -> None:
         if ids:
             # ids を渡しても、選択が無いと消えない
@@ -428,6 +437,9 @@ def acrylic_keychain(job: Job, images: AcrylicImages, mm: int, name: str) -> Pat
     dx, dy = acx - (b[0] + b[2]) / 2, acy - (b[1] + b[3]) / 2
     if abs(dx) > 0.01 or abs(dy) > 0.01:
         job.move_all(ACRYLIC_LAYERS, [1, 0, 0, 1, dx, -dy])
+    # 製造委託先の依頼（IRTSK-40、#171）: CutLine の外形とキー穴を 1 つのグループにまとめる。
+    # layer_bounds_up / paths はレイヤー直下のパスしか見ないので、収める処理の後で行う
+    job.group_layer("CutLine")
     return job.save_ai_cmyk(name)
 
 

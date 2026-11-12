@@ -88,3 +88,37 @@ def test_plain_group_is_still_written_as_a_group() -> None:
     layer = text.split("0 A\n", 1)[1].split("LB\n", 1)[0]
     assert layer.startswith("u\n") and layer.rstrip().endswith("U")
     assert "W\nn" not in layer
+
+
+def test_group_of_stroked_paths_is_written_as_one_group() -> None:
+    """#171: アクリルキーホルダーの CutLine（外形とキー穴の 2 本のパスのグループ）.
+
+    グループは ``u`` 〜 ``U`` で囲み、中のパスはそれぞれ線（``s``）として書く。
+    """
+    stroke = {
+        "items": [
+            {"kind": "fill", "paint": None},
+            {
+                "kind": "stroke",
+                "paint": {"type": "solid", "color": {"model": "cmyk", "c": 0, "m": 0, "y": 0, "k": 1}},
+                "width": 0.5,
+            },
+        ]
+    }
+    paths = [
+        {"kind": {"type": "path", "path": {"subpaths": [sq]}}, "appearance": stroke}
+        for sq in (_square(10, 10, 50), _square(30, 2, 4))
+    ]
+    native = {
+        "document": {
+            "artboards": [{"rect": {"x0": 0, "y0": 0, "x1": 100, "y1": 100}}],
+            "layers": [{"name": "CutLine", "kind": {"children": [{"kind": {"type": "group", "children": paths}}]}}],
+        }
+    }
+    text = _Writer(native, [], "t").write().decode("shift_jis")
+    lines = text.split("0 A\n", 1)[1].split("LB\n", 1)[0].splitlines()
+
+    assert lines[0] == "u" and lines[-1] == "U"
+    assert lines.count("u") == 1 and lines.count("U") == 1
+    assert lines.count("0 0 0 1 K") == 2 and lines.count("s") == 2  # K100 の線のパスが 2 本
+    assert "*u" not in lines and "W" not in lines  # 複合パスでもマスクでもない
