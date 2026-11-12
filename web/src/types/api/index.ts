@@ -587,10 +587,20 @@ export interface DataExportCsvRequest {
   sort: { column: string; direction: DataExportSortDirection } | null;
 }
 
-/** POST /data-export/preview の応答（CSV と同じ列・整形で先頭の数行）。 */
+/** POST /data-export/preview のリクエスト（CSV と同じ指定にページを足したもの）。 */
+export interface DataExportPreviewRequest extends DataExportCsvRequest {
+  /** ページ番号（1 始まり） */
+  page: number;
+  /** 1 ページの行数（1〜100） */
+  limit: number;
+}
+
+/** POST /data-export/preview の応答（CSV と同じ列・並び・整形で、指定したページの行）。 */
 export interface DataExportPreviewResponse {
   headers: string[];
   rows: string[][];
+  page: number;
+  limit: number;
   /** 絞り込みに当てはまる行（受注明細）の総数 */
   total_count: number;
   /** 絞り込みをかけない場合の行（受注明細）の総数 */

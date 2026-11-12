@@ -35,6 +35,7 @@ from app.schemas.data_export import (
     DataExportColumnResponse,
     DataExportColumnsResponse,
     DataExportCsvRequest,
+    DataExportPreviewRequest,
     DataExportPreviewResponse,
     SortDirection,
 )
@@ -279,9 +280,6 @@ EXPORT_COLUMNS: tuple[ExportColumn, ...] = (
 
 COLUMNS_BY_KEY: dict[str, ExportColumn] = {c.key: c for c in EXPORT_COLUMNS}
 
-# 画面のプレビューに出す行数
-PREVIEW_LIMIT = 10
-
 
 class DataExportService:
     """データ出力タブの CSV を組み立てる."""
@@ -319,15 +317,17 @@ class DataExportService:
         timestamp = datetime.now(JST).strftime("%Y%m%d_%H%M%S")
         return csv_bytes, f"データ出力_{timestamp}.csv"
 
-    async def preview(
-        self, request: DataExportCsvRequest, limit: int = PREVIEW_LIMIT
-    ) -> DataExportPreviewResponse:
-        """CSV と同じ列・並び・整形で、先頭 ``limit`` 行と件数を返す（画面のプレビュー用）.
+    async def preview(self, request: DataExportPreviewRequest) -> DataExportPreviewResponse:
+        """CSV と同じ列・並び・整形で、指定したページの行と件数を返す（画面のプレビュー用）.
+
+        ページが総件数を超えていれば行は空になる（エラーにしない）。
 
         Raises:
             ValidationError: ``export_csv`` と同じ。
         """
-        columns, rows = await self._fetch(request, limit=limit)
+        columns, rows = await self._fetch(
+            request, limit=request.limit, offset=(request.page - 1) * request.limit
+        )
         filter_kwargs = self._filter_kwargs(request)
         total_count = await self._order_repo.count_item_rows_for_export(**filter_kwargs)
         # 画面で「72 件中 10 件」と出すため、絞り込み前の件数も返す（絞り込みなしなら同じ値）
@@ -338,12 +338,14 @@ class DataExportService:
         return DataExportPreviewResponse(
             headers=[c.label for c in columns],
             rows=[self._format_row(columns, row) for row in rows],
+            page=request.page,
+            limit=request.limit,
             total_count=total_count,
             unfiltered_count=unfiltered_count,
         )
 
     async def _fetch(
-        self, request: DataExportCsvRequest, limit: int | None = None
+        self, request: DataExportCsvRequest, limit: int | None = None, offset: int = 0
     ) -> tuple[list[ExportColumn], Sequence[Sequence[Any]]]:
         columns = self._resolve_columns(request.columns)
 
@@ -362,6 +364,7 @@ class DataExportService:
         kwargs: dict[str, Any] = self._filter_kwargs(request)
         if limit is not None:
             kwargs["limit"] = limit
+            kwargs["offset"] = offset
         rows = await self._order_repo.find_item_rows_for_export(
             [c.expr for c in columns],
             sort=sort_expr,
