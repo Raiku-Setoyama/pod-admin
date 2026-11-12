@@ -11,7 +11,7 @@ name: メーカー日次発注通知トリガー
 # 実際にメールが届くので、手動での再送・テスト以外では使わない。
 #
 # 必要な設定（リポジトリの Settings → Secrets and variables → Actions）:
-#   - Variables: API_BASE_URL  例) https://<your-app>.railway.app
+#   - Variables: API_BASE_URL  本番 API の URL（`terraform output -raw api_url`）
 #   - Secrets:   INTERNAL_API_SECRET  （API の環境変数 INTERNAL_API_SECRET と同じ値）
 
 on:

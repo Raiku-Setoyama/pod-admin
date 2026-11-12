@@ -51,7 +51,7 @@ import app.models  # noqa: F401  # 全モデルをマッパー登録に載せる
 from app.config import settings
 from app.database import get_engine
 from app.generator import check_available
-from app.logging_config import TEXT_FORMAT
+from app.logging_config import TEXT_FORMAT, quiet_noisy_dependencies
 from app.services.manufacturing_data_service import (
     GenerationOutcome,
     claim_next_generation,
@@ -208,6 +208,9 @@ def main() -> None:
     """ジョブのエントリポイント（`python -m app.worker`）."""
     # 素のテキストのまま出す（JSON にしない）。ログベース指標が textPayload で数えている。
     logging.basicConfig(level=logging.INFO, format=TEXT_FORMAT)
+    # ルートに INFO を与えた副作用で依存ライブラリの INFO まで出るので、落とす。
+    # configure_logging を通らない経路なので、ここでも呼ぶ必要がある。
+    quiet_noisy_dependencies()
     warning = settings.lease_margin_warning()
     if warning:
         logger.warning("%s", warning)

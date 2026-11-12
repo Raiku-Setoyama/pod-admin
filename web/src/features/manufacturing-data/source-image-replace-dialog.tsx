@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ApiError, apiClient, fetchBlob } from "@/lib/api/client";
+import { formatDateTime } from "@/lib/utils";
 import type {
   ManufacturingDataDetail,
   SourceImageLayer,
@@ -26,10 +27,6 @@ const layerLabels: Record<SourceImageLayerType, string> = {
   white: "白版",
   design: "デザイン",
 };
-
-function formatDateTime(value: string): string {
-  return new Date(value).toLocaleString("ja-JP");
-}
 
 interface SourceImageReplaceDialogProps {
   manufacturingDataId: string;
