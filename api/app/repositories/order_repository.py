@@ -156,6 +156,7 @@ class OrderRepository:
         sort: Any | None = None,
         descending: bool = False,
         limit: int | None = None,
+        offset: int = 0,
     ) -> Sequence[Row[Any]]:
         """データ出力用に、受注明細 1 件を 1 行として指定の列を取り出す（ADR-0023）.
 
@@ -168,7 +169,7 @@ class OrderRepository:
         並べ替えは ``sort`` の後に、受注一覧と同じ受注日時の新しい順・注文番号・明細の登録順で
         決定的に並べる。NULL は昇順・降順とも末尾に置く。
 
-        ``limit`` を渡すと先頭からその件数だけ返す（画面のプレビュー用）。
+        ``limit`` / ``offset`` を渡すと、並べた結果のその範囲だけ返す（画面のプレビュー用）。
         """
         # 配送は受注単位で 1 件（ShipmentService が重複作成を弾いている）。
         # 万一重複していても明細 1 行を崩さないよう、受注ごとに最新の 1 件だけを結合する。
@@ -219,6 +220,8 @@ class OrderRepository:
         query = query.order_by(*order_by)
         if limit is not None:
             query = query.limit(limit)
+        if offset:
+            query = query.offset(offset)
 
         result = await self._db.execute(query)
         return result.all()

@@ -62,6 +62,7 @@ export function Pagination({
             className="h-8 w-8"
             onClick={() => onPageChange(page - 1)}
             disabled={page <= 1}
+            aria-label="前のページ"
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -76,6 +77,7 @@ export function Pagination({
             className="h-8 w-8"
             onClick={() => onPageChange(page + 1)}
             disabled={page >= totalPages}
+            aria-label="次のページ"
           >
             <ChevronRight className="h-4 w-4" />
           </Button>

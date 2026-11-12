@@ -3,7 +3,7 @@
  *
  * - 項目は分類ごとに折りたたまれ、検索で絞れる。チェックした項目だけがリクエストの列になる
  * - 項目が 0 個なら出力できない
- * - 選んだ項目でプレビュー（先頭の行と総件数）を出す
+ * - 選んだ項目でプレビュー（ページ送りできる行と件数）を出す
  * - 絞り込みはプレビュー上の条件チップ、並べ替えは見出しのクリックでもできる
  * - 絞り込み・並べ替えがリクエストに入る
  * - サイドバーに「データ出力」がある
@@ -131,6 +131,8 @@ const previewResponse = {
     ['A-001', '2'],
     ['A-002', ''],
   ],
+  page: 1,
+  limit: 20,
   total_count: 37,
   unfiltered_count: 120,
 }
@@ -243,7 +245,6 @@ describe('DataExportForm', () => {
     expect(screen.getByText('37 件')).toBeInTheDocument()
     // 絞り込みがないときは「全 N 件」
     expect(screen.queryByText(/120 件中/)).not.toBeInTheDocument()
-    expect(screen.getByText(/先頭 2 件を表示/)).toBeInTheDocument()
 
     const [endpoint, options] = mockApiClient.mock.calls.at(-1)!
     expect(endpoint).toBe('/data-export/preview')
@@ -254,6 +255,8 @@ describe('DataExportForm', () => {
     mockApiClient.mockResolvedValue({
       headers: ['数量'],
       rows: [],
+      page: 1,
+      limit: 20,
       total_count: 0,
       unfiltered_count: 0,
     })
@@ -332,6 +335,30 @@ describe('DataExportForm', () => {
 
     await user.click(header())
     await waitFor(() => expect(lastPreviewBody()).toMatchObject({ sort: null }))
+  })
+
+  it('ページを送ると次のページを取りに行き、条件を変えると 1 ページ目に戻る', async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await user.click(screen.getByLabelText('受注明細をすべて選択'))
+    await screen.findByText('A-001')
+
+    // 37 件 ÷ 20 件 = 2 ページ
+    expect(screen.getByText('1〜20件 / 全37件')).toBeInTheDocument()
+    expect(lastPreviewBody()).toMatchObject({ page: 1, limit: 20 })
+
+    mockApiClient.mockResolvedValue({ ...previewResponse, page: 2 })
+    await user.click(screen.getByRole('button', { name: '次のページ' }))
+    await waitFor(() => expect(lastPreviewBody()).toMatchObject({ page: 2, limit: 20 }))
+    expect(screen.getByText('21〜37件 / 全37件')).toBeInTheDocument()
+    // 行番号は通し番号（2 ページ目の 1 行目は 21）
+    expect(await screen.findByText('21')).toBeInTheDocument()
+
+    // 並び順を変えたら 1 ページ目に戻る
+    await user.click(screen.getByRole('button', { name: '数量' }))
+    await waitFor(() =>
+      expect(lastPreviewBody()).toMatchObject({ page: 1, sort: { column: 'item_quantity' } })
+    )
   })
 
   it('出力に失敗したらエラーを出す', async () => {

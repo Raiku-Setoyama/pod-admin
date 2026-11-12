@@ -68,11 +68,24 @@ class DataExportCsvRequest(BaseModel):
     )
 
 
+# プレビュー 1 ページの件数の上限（画面の選択肢は 10 / 20 / 50 / 100）
+PREVIEW_MAX_LIMIT = 100
+
+
+class DataExportPreviewRequest(DataExportCsvRequest):
+    """出力内容のプレビューのリクエスト（CSV と同じ指定にページを足したもの）."""
+
+    page: int = Field(1, ge=1, description="ページ番号（1 始まり）")
+    limit: int = Field(20, ge=1, le=PREVIEW_MAX_LIMIT, description="1 ページの行数")
+
+
 class DataExportPreviewResponse(BaseModel):
-    """出力内容のプレビュー（CSV と同じ列・同じ整形で先頭の数行）."""
+    """出力内容のプレビュー（CSV と同じ列・並び・整形で、指定したページの行）."""
 
     headers: list[str] = Field(..., description="列の表示名（CSV のヘッダ行と同じ）")
-    rows: list[list[str]] = Field(..., description="先頭から最大 limit 行の値（CSV と同じ整形）")
+    rows: list[list[str]] = Field(..., description="指定したページの行の値（CSV と同じ整形）")
+    page: int = Field(..., description="ページ番号（1 始まり）")
+    limit: int = Field(..., description="1 ページの行数")
     total_count: int = Field(..., description="絞り込みに当てはまる行（受注明細）の総数")
     unfiltered_count: int = Field(
         ..., description="絞り込みをかけない場合の行（受注明細）の総数"
