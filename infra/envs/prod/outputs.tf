@@ -35,3 +35,7 @@ output "github_actions_service_account" {
 output "worker_job_name" {
   value = module.stack.worker_job_name
 }
+
+output "alerting_active" {
+  value = module.stack.alerting_active
+}
