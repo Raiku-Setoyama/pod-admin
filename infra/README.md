@@ -143,33 +143,127 @@ terraform output -raw github_actions_service_account
 **先に切り戻す。原因の究明はそのあとでよい。**
 
 Cloud Run はリビジョンを残すので、**イメージを作り直さずに前の状態へ戻せる。**
-所要は 1 分程度である。
+戻すコマンド自体は 20 秒ほどで終わる（2026-11-12 にステージングで練習した実測で 16 秒）。
+**時間がかかるのは戻す先を決めるところ**なので、下の 1. を先に読んでおく。
+
+**戻すのは API・管理画面・ワーカーの 3 つで、3 つとも戻して初めて戻ったことになる。**
+そして**最後に必ず 4.「元に戻す」までやる。** やらないと、以後のデプロイが反映されない。
+
+**練習はステージング（`tosyo-api-stg`）で行う。** 以下は `PROJECT` を差し替えればそのまま使える。
+
+### 0. 前提
+
+- 権限があるのは **`tosyoworkspace.tokyo` の Google アカウント**だけである。個人の Gmail や
+  `ironiwa.co.jp` のアカウントでは 403 になる。`gcloud auth list` で確かめ、
+  トークンが切れていたら `gcloud auth login <アカウント>` でログインし直す
+  （Terraform を使うときは、別に `gcloud auth application-default login` が要る）
+- **プロジェクトを最初に固定する。** 以下のコマンドはすべて `--project` を明示しているが、
+  既定のプロジェクトが本番を向いたまま「練習」して本番を戻す事故を防ぐため、環境変数でも固定する
 
 ```bash
-# 1. いま動いているリビジョンと、その 1 つ前を確認する
-#    （新しい順に並ぶ。ACTIVE が付いているのが今のもの）
-gcloud run revisions list --service pod-admin-api --region asia-northeast1
-
-# 戻す先のイメージ（= コミット SHA）を確かめる
-gcloud run revisions describe <前のリビジョン名> --region asia-northeast1 \
-  --format='value(containers[0].image)'
-
-# 2. 前のリビジョンへ 100% 戻す
-gcloud run services update-traffic pod-admin-api --region asia-northeast1 \
-  --to-revisions <前のリビジョン名>=100
-
-# 3. 管理画面も同じように戻す（API と web は別サービスである）
-gcloud run services update-traffic pod-admin-web --region asia-northeast1 \
-  --to-revisions <前のリビジョン名>=100
-
-# 4. **ワーカーも戻す。** Job にはリビジョンもトラフィック分割も無いので、
-#    前のイメージを指し直す。**ここを忘れると、API だけ戻ってワーカーは
-#    新しいコードのまま動き続ける。**
-gcloud run jobs update pod-admin-worker --region asia-northeast1 \
-  --image asia-northeast1-docker.pkg.dev/tosyo-api-504104/pod-admin/api:<戻す先のコミットSHA>
+PROJECT=tosyo-api-504104      # 本番。練習のときは tosyo-api-stg
+export CLOUDSDK_CORE_PROJECT=$PROJECT
+export CLOUDSDK_RUN_REGION=asia-northeast1
+REG=asia-northeast1-docker.pkg.dev/$PROJECT/pod-admin
+gcloud config list 2>&1 | grep -E 'account|project'   # 意図したアカウントとプロジェクトか
 ```
 
-イメージのタグはコミット SHA なので、戻す先のコミットは一意に辿れる（`deploy.yml` 参照）。
+### 1. 戻す先を決める
+
+**「一覧の 2 番目のリビジョン」に戻してはいけない。** 同じ中身のイメージを再デプロイしても
+リビジョン番号は増えるので、2 番目が「1 つ前のデプロイ」とは限らない
+（2026-11-12 のステージングでは、3 つのリビジョンが同じ中身だった）。
+**戻す先のコミット SHA を先に決め、それに対応するリビジョンを探す。**
+
+戻す先の SHA は、**直前に成功した deploy-prod の実行のコミット**である
+（GitHub の Actions → deploy-prod の一覧。ステージングは deploy-staging）。
+いま動いている SHA は、ワーカーの Job のイメージタグで分かる（Job はタグのまま記録される）。
+
+```bash
+gcloud run jobs describe pod-admin-worker --project "$PROJECT" \
+  --format='value(spec.template.spec.template.spec.containers[0].image)'   # …/worker:<いまの SHA>
+
+SHA_NOW=<いまの SHA（40 文字）>
+SHA_PREV=<戻す先の SHA（40 文字）>
+
+# マイグレーションが挟まっていないか。空でなければ下の「スキーマが進んでいるとき」を読む
+git diff --name-only "$SHA_PREV" "$SHA_NOW" -- api/alembic/
+```
+
+**サービス（API・管理画面）のリビジョンには、タグ（= SHA）が残らない。** 記録されるのは
+イメージのダイジェスト（`@sha256:…`）で、しかも**タグが指すダイジェストとも一致しない。**
+タグが指すのは provenance attestation と束ねたインデックスで、リビジョンに残るのは
+その中の `linux/amd64` のマニフェストのダイジェストだからである（改善は #178 で検討中）。
+そこで、**SHA から amd64 のダイジェストを引き、それを持つリビジョンを探す。**
+
+```bash
+# 戻す先の SHA の amd64 のダイジェストを引く（API と管理画面は別のイメージ）
+#   初回だけ: gcloud auth configure-docker asia-northeast1-docker.pkg.dev
+docker buildx imagetools inspect "$REG/api:$SHA_PREV" | grep -B2 'linux/amd64'
+docker buildx imagetools inspect "$REG/web:$SHA_PREV" | grep -B2 'linux/amd64'
+#   → 「Name: …@sha256:<ダイジェスト>」の行を控える
+
+# そのダイジェストを持つリビジョンを探す（複数出たら、どれも同じ中身なのでどれでもよい）
+gcloud run revisions list --service pod-admin-api --project "$PROJECT" \
+  --format='table(name,active,spec.containers[0].image)' | grep <API のダイジェストの先頭 12 文字>
+gcloud run revisions list --service pod-admin-web --project "$PROJECT" \
+  --format='table(name,active,spec.containers[0].image)' | grep <管理画面のダイジェストの先頭 12 文字>
+```
+
+### 2. 戻す
+
+```bash
+API_PREV=<1. で見つけた API のリビジョン名>
+WEB_PREV=<1. で見つけた管理画面のリビジョン名>
+
+gcloud run services update-traffic pod-admin-api --project "$PROJECT" --to-revisions "$API_PREV=100"
+gcloud run services update-traffic pod-admin-web --project "$PROJECT" --to-revisions "$WEB_PREV=100"
+
+# **ワーカーも戻す。イメージは api ではなく worker である。** ワーカーは生成の依存
+# （VectorCraft）を足した別のイメージで動く（deploy.yml「ワーカーのイメージを揃える」）。
+# api のイメージを指すと、**製造データが 1 件も作られなくなる。**
+# 戻し忘れると、API だけ戻ってワーカーは新しいコードのまま動き続ける。
+gcloud run jobs update pod-admin-worker --project "$PROJECT" --image "$REG/worker:$SHA_PREV"
+```
+
+**migrate Job は戻さないし、切り戻し中に手で実行しない。** `pod-admin-migrate` のイメージは
+新しい SHA のまま残っているので、実行すると新しいマイグレーションが流れる。
+
+### 3. 戻ったことを確かめる
+
+```bash
+gcloud run services describe pod-admin-api --project "$PROJECT" --format='yaml(status.traffic)'
+gcloud run services describe pod-admin-web --project "$PROJECT" --format='yaml(status.traffic)'
+
+API=$(gcloud run services describe pod-admin-api --project "$PROJECT" --format='value(status.url)')
+WEB=$(gcloud run services describe pod-admin-web --project "$PROJECT" --format='value(status.url)')
+curl -s -o /dev/null -w 'api %{http_code}\n' "$API/health"
+curl -s -o /dev/null -w 'web %{http_code}\n' "$WEB"
+
+# 生成待ちが無ければ processed=0 で正常終了する
+gcloud run jobs execute pod-admin-worker --project "$PROJECT" --wait
+```
+
+### 4. 元に戻す（修正を出したら必ず）
+
+**トラフィックを特定のリビジョンに固定している間は、デプロイしても新しいリビジョンに
+トラフィックが移らない。** `gcloud run deploy` は成功し（`serving 0 percent of traffic`）、
+`deploy.yml` の疎通確認も古いリビジョンが応答するので通ってしまう。
+**「デプロイしたのに反映されていない」ことに誰も気づかない**（2026-11-12 にステージングで確認）。
+
+修正をデプロイしたら（または切り戻しを取りやめるなら）、最新のリビジョンへ戻す。
+
+```bash
+gcloud run services update-traffic pod-admin-api --project "$PROJECT" --to-latest
+gcloud run services update-traffic pod-admin-web --project "$PROJECT" --to-latest
+
+# latestRevision: true / percent: 100 になっていること
+gcloud run services describe pod-admin-api --project "$PROJECT" --format='yaml(status.traffic)'
+gcloud run services describe pod-admin-web --project "$PROJECT" --format='yaml(status.traffic)'
+```
+
+ワーカーは、修正のデプロイ（`deploy.yml`「ワーカーのイメージを揃える」）が新しい SHA に揃える。
+**デプロイせずに切り戻しを取りやめるときだけ**、手で `--image "$REG/worker:$SHA_NOW"` に戻す。
 
 ### スキーマが進んでいるときは、そのままでは戻せない
 
@@ -197,7 +291,7 @@ gcloud run jobs update pod-admin-worker --region asia-northeast1 \
 
 ```bash
 # 復元先を新しいインスタンスとして作る（既存には触らない）
-gcloud sql instances clone pod-admin pod-admin-restore-<日付> \
+gcloud sql instances clone pod-admin pod-admin-restore-<日付> --project tosyo-api-504104 \
   --point-in-time '2026-09-12T04:30:00.000Z'   # UTC で指定する
 ```
 
@@ -209,7 +303,10 @@ gcloud sql instances clone pod-admin pod-admin-restore-<日付> \
 止めないと、復元中の DB に対して生成が走る。
 
 ```bash
-gcloud scheduler jobs pause pod-admin-worker --location asia-northeast1
+gcloud scheduler jobs pause pod-admin-worker --project tosyo-api-504104 --location asia-northeast1
+
+# **復元が終わったら必ず再開する。** 止めたままだと製造データが 1 件も作られない
+gcloud scheduler jobs resume pod-admin-worker --project tosyo-api-504104 --location asia-northeast1
 ```
 
 ### 製造データの生成が止まったとき
