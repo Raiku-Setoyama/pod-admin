@@ -5,6 +5,7 @@ import { Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { downloadFileByPost } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
+import { Pagination } from "@/components/common/pagination";
 import { ColumnPicker } from "@/features/data-export/components/column-picker";
 import { ExportPreview } from "@/features/data-export/components/export-preview";
 import {
@@ -12,7 +13,10 @@ import {
   hasActiveFilters,
   type DataExportFilterValues,
 } from "@/features/data-export/components/filter-bar";
-import { useDataExportPreview } from "@/features/data-export/hooks/use-data-export-preview";
+import {
+  dataExportRequestKey,
+  useDataExportPreview,
+} from "@/features/data-export/hooks/use-data-export-preview";
 import {
   buildDataExportRequest,
   dataExportFilename,
@@ -20,6 +24,8 @@ import {
 import type { DataExportColumn, DataExportSortDirection } from "@/types/api";
 
 const panelClass = "flex min-h-0 flex-col rounded-xl border bg-card shadow-sm";
+
+const DEFAULT_PAGE_LIMIT = 20;
 
 const EMPTY_FILTERS: DataExportFilterValues = {
   search: "",
@@ -61,7 +67,17 @@ export function DataExportForm({ columns }: DataExportFormProps) {
       }),
     [columns, selectedKeys, filters, sortColumn, sortDirection]
   );
-  const { preview, error: previewError, isUpdating } = useDataExportPreview(request);
+  // ページは出力条件ごとに持つ。項目・絞り込み・並び順が変わったら 1 ページ目に戻る
+  const requestKey = dataExportRequestKey(request);
+  const [pageState, setPageState] = useState({ requestKey, page: 1 });
+  const page = pageState.requestKey === requestKey ? pageState.page : 1;
+  const [pageLimit, setPageLimit] = useState(DEFAULT_PAGE_LIMIT);
+
+  const {
+    preview,
+    error: previewError,
+    isUpdating,
+  } = useDataExportPreview(request, page, pageLimit);
   const filtered = hasActiveFilters(filters);
 
   const toggleKeys = (keys: string[], checked: boolean) => {
@@ -93,7 +109,7 @@ export function DataExportForm({ columns }: DataExportFormProps) {
   };
 
   return (
-    <div className="grid gap-4 lg:h-full lg:min-h-0 lg:grid-cols-[300px_minmax(0,1fr)]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:h-full lg:min-h-0 lg:grid-cols-[300px_minmax(0,1fr)]">
       {/* 項目の一覧 */}
       <section aria-label="項目の一覧" className={`${panelClass} h-[420px] lg:h-auto`}>
         <div className="flex items-center gap-2 whitespace-nowrap border-b py-2.5 pl-4 pr-2">
@@ -131,7 +147,7 @@ export function DataExportForm({ columns }: DataExportFormProps) {
         />
       </section>
 
-      <div className="flex min-h-0 flex-col gap-4">
+      <div className="flex min-h-0 min-w-0 flex-col gap-4">
         {/* 出力内容：絞り込み・並び順・プレビュー・出力 */}
         <section
           aria-label="出力内容"
@@ -152,9 +168,6 @@ export function DataExportForm({ columns }: DataExportFormProps) {
                       {preview.total_count.toLocaleString()} 件
                     </span>
                     × {selectedCount} 項目
-                    {preview.total_count > preview.rows.length && (
-                      <span className="text-xs">（先頭 {preview.rows.length} 件を表示）</span>
-                    )}
                   </>
                 ) : null}
                 {isUpdating && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-label="更新中" />}
@@ -189,6 +202,21 @@ export function DataExportForm({ columns }: DataExportFormProps) {
             sortDirection={sortDirection}
             onSortChange={changeSort}
           />
+
+          {preview && selectedCount > 0 && preview.total_count > 0 && (
+            <div className="shrink-0 border-t px-2 [&>div]:py-2">
+              <Pagination
+                page={page}
+                limit={pageLimit}
+                total={preview.total_count}
+                onPageChange={(next) => setPageState({ requestKey, page: next })}
+                onLimitChange={(next) => {
+                  setPageLimit(next);
+                  setPageState({ requestKey, page: 1 });
+                }}
+              />
+            </div>
+          )}
         </section>
       </div>
     </div>

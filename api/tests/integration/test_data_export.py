@@ -326,7 +326,7 @@ async def test_preview_counts_with_item_product_type(
     assert response.json()["unfiltered_count"] >= 3
 
 
-async def test_preview_is_limited_to_10_rows(
+async def test_preview_pages_through_all_rows(
     client: AsyncClient,
     auth_headers: dict[str, Any],
     db_session: AsyncSession,
@@ -372,15 +372,40 @@ async def test_preview_is_limited_to_10_rows(
     )
     await db_session.commit()
 
+    async def page(page: int, limit: int) -> dict[str, Any]:
+        response = await client.post(
+            PREVIEW_URL,
+            json={
+                "columns": ["item_uid"],
+                "filters": {"search": token},
+                "sort": {"column": "item_uid"},
+                "page": page,
+                "limit": limit,
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200, response.text
+        result: dict[str, Any] = response.json()
+        return result
+
+    # 5 件ずつ 3 ページで、12 件すべてを重複なく見られる
+    pages = [await page(n, 5) for n in (1, 2, 3)]
+    assert [len(p["rows"]) for p in pages] == [5, 5, 2]
+    assert all(p["total_count"] == 12 for p in pages)
+    uids = [row[0] for p in pages for row in p["rows"]]
+    assert uids == [f"{n:07d}" for n in range(12)]
+
+    # 総件数を超えたページは空（エラーにしない）
+    assert (await page(4, 5))["rows"] == []
+
+
+async def test_preview_rejects_too_large_limit(
+    client: AsyncClient, auth_headers: dict[str, Any]
+) -> None:
     response = await client.post(
-        PREVIEW_URL,
-        json={"columns": ["item_uid"], "filters": {"search": token}},
-        headers=auth_headers,
+        PREVIEW_URL, json={"columns": ["item_uid"], "limit": 101}, headers=auth_headers
     )
-    assert response.status_code == 200, response.text
-    preview = response.json()
-    assert len(preview["rows"]) == 10
-    assert preview["total_count"] == 12
+    assert response.status_code == 422
 
 
 async def test_no_columns_is_rejected(client: AsyncClient, auth_headers: dict[str, Any]) -> None:

@@ -11,7 +11,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from app.models.order import OrderStatus
 from app.models.product import ProductType
-from app.schemas.data_export import DataExportCsvRequest
+from app.schemas.data_export import DataExportCsvRequest, DataExportPreviewRequest
 from app.services.data_export_service import (
     COLUMNS_BY_KEY,
     EXPORT_COLUMNS,
@@ -237,7 +237,7 @@ class TestPreview:
             ("A-002", "shipped", 3),
         ]
         order_repo.count_item_rows_for_export.return_value = 42
-        request = DataExportCsvRequest(
+        request = DataExportPreviewRequest(
             columns=["order_number", "order_status", "item_quantity"]
         )
 
@@ -250,22 +250,31 @@ class TestPreview:
         # 絞り込みなしなら絞り込み前の件数も同じ（数え直さない）
         assert preview.unfiltered_count == 42
         assert order_repo.count_item_rows_for_export.call_count == 1
+        # ページ未指定なら 1 ページ目・20 行
+        assert (preview.page, preview.limit) == (1, 20)
+        find_kwargs = order_repo.find_item_rows_for_export.call_args.kwargs
+        assert (find_kwargs["limit"], find_kwargs["offset"]) == (20, 0)
 
-    async def test_limits_rows_and_counts_with_same_filters(
+    async def test_pages_rows_and_counts_with_same_filters(
         self, service: DataExportService, order_repo: Any
     ) -> None:
-        request = DataExportCsvRequest.model_validate(
+        request = DataExportPreviewRequest.model_validate(
             {
                 "columns": ["order_number"],
                 "filters": {"status": "ordered", "product_type": "sticker", "search": "山田"},
                 "sort": {"column": "item_quantity", "direction": "desc"},
+                "page": 3,
+                "limit": 5,
             }
         )
 
-        await service.preview(request, limit=5)
+        preview = await service.preview(request)
 
+        assert (preview.page, preview.limit) == (3, 5)
         find_kwargs = order_repo.find_item_rows_for_export.call_args.kwargs
         assert find_kwargs["limit"] == 5
+        # 3 ページ目は 11 行目から
+        assert find_kwargs["offset"] == 10
         assert find_kwargs["sort"] is COLUMNS_BY_KEY["item_quantity"].expr
         assert find_kwargs["descending"] is True
         filtered_call, unfiltered_call = order_repo.count_item_rows_for_export.call_args_list
@@ -290,7 +299,12 @@ class TestPreview:
 
     async def test_unknown_column_rejected(self, service: DataExportService) -> None:
         with pytest.raises(ValidationError):
-            await service.preview(DataExportCsvRequest(columns=["nope"]))
+            await service.preview(DataExportPreviewRequest(columns=["nope"]))
+
+    @pytest.mark.parametrize("page_spec", [{"page": 0}, {"limit": 0}, {"limit": 101}])
+    def test_page_out_of_range_rejected_by_schema(self, page_spec: dict[str, int]) -> None:
+        with pytest.raises(PydanticValidationError):
+            DataExportPreviewRequest.model_validate({"columns": ["order_number"], **page_spec})
 
 
 class TestValidation:

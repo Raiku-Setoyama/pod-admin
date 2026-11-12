@@ -17,7 +17,7 @@ interface ExportPreviewProps {
   onSortChange: (column: string | null, direction: DataExportSortDirection) => void;
 }
 
-/** 出力される CSV の先頭の数行を表で見せる。見出しをクリックすると並べ替える。 */
+/** 出力される CSV の行を 1 ページぶん表で見せる。見出しをクリックすると並べ替える。 */
 export function ExportPreview({
   preview,
   hasColumns,
@@ -127,7 +127,7 @@ export function ExportPreview({
             preview.rows.map((row, rowIndex) => (
               <tr key={rowIndex} className="hover:bg-muted/40">
                 <td className="sticky left-0 border-b border-r bg-card px-3 py-1.5 text-right text-xs tabular-nums text-muted-foreground">
-                  {rowIndex + 1}
+                  {(preview.page - 1) * preview.limit + rowIndex + 1}
                 </td>
                 {row.map((value, i) => (
                   <td

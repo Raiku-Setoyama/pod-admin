@@ -18,6 +18,7 @@ from app.models.user import User
 from app.schemas.data_export import (
     DataExportColumnsResponse,
     DataExportCsvRequest,
+    DataExportPreviewRequest,
     DataExportPreviewResponse,
 )
 from app.services.data_export_service import DataExportService
@@ -36,11 +37,11 @@ async def list_data_export_columns(
 
 @router.post("/preview", response_model=DataExportPreviewResponse)
 async def preview_data_export(
-    data: DataExportCsvRequest,
+    data: DataExportPreviewRequest,
     service: Annotated[DataExportService, Depends(get_data_export_service)],
     current_user: Annotated[User, Depends(get_current_admin)],
 ) -> DataExportPreviewResponse:
-    """出力内容のプレビュー（CSV と同じ列・並び・整形で先頭の数行と総件数）."""
+    """出力内容のプレビュー（CSV と同じ列・並び・整形で、指定したページの行と件数）."""
     return await service.preview(data)
 
 

@@ -142,6 +142,30 @@ describe('SourceImageReplaceDialog', () => {
     expect(screen.getByText('差し替え済み')).toBeInTheDocument()
   })
 
+  it('http(s) 以外の外部 URL（javascript: など）はリンクにしない', async () => {
+    mockedApiClient.mockResolvedValue({
+      ...detail,
+      id: 'md-unsafe-url',
+      source_images: [
+        { layer_type: 'color', origin: 'external', url: 'javascript:alert(1)', filename: null },
+        { layer_type: 'white', origin: 'external', url: 'not a url', filename: null },
+      ],
+    })
+
+    // SWR のキャッシュはテスト間で共有されるので、他のテストと別の ID を使う
+    render(
+      <SourceImageReplaceDialog manufacturingDataId="md-unsafe-url" open onClose={vi.fn()} />
+    )
+
+    expect(await screen.findByText('カラー')).toBeInTheDocument()
+    expect(screen.getByText('白版')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /受注時の元画像を開く/ })).not.toBeInTheDocument()
+    expect(document.querySelector('a[href^="javascript:"]')).toBeNull()
+    expect(
+      screen.getAllByText('受注時の元画像（開けない URL のためリンクにしていません）')
+    ).toHaveLength(2)
+  })
+
   it('選択したレイヤーだけを multipart で送信し、完了後にコールバックを呼ぶ', async () => {
     mockedApiClient.mockResolvedValue(detail)
     const onReplaced = vi.fn()
