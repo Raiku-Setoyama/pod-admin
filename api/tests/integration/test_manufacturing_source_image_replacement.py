@@ -85,7 +85,11 @@ async def keychain_setup(db_session: AsyncSession) -> AsyncIterator[dict[str, An
 
 
 async def _create_v2_order(
-    client: AsyncClient, db_session: AsyncSession, api_key: str, order_number: str
+    client: AsyncClient,
+    db_session: AsyncSession,
+    api_key: str,
+    order_number: str,
+    product_code: str | None = None,
 ) -> dict[str, Any]:
     """v2 受注を1件作成し、注文IDと紐付いた製造データIDを返す.
 
@@ -111,7 +115,7 @@ async def _create_v2_order(
                 "quantity": 1,
                 "size": "50x50mm",
                 "color": "アクリル",
-                "product_code": f"RKSYO-{uuid4().hex[:6]}",
+                "product_code": product_code or f"RKSYO-{uuid4().hex[:6]}",
                 "source_images": [
                     {"layer_type": "color", "url": "https://example.com/color.png"},
                     {"layer_type": "cutline", "url": "https://example.com/cutline.png"},
@@ -291,3 +295,145 @@ class TestReplaceSourceImagesAPI:
             files={"color": ("fixed_color.png", PNG, "image/png")},
         )
         assert resp.status_code == 401, resp.text
+
+
+class _Upload:
+    """FileStorage.save に渡す最小のアップロード（テスト用）."""
+
+    def __init__(self, content: bytes, filename: str) -> None:
+        self._content = content
+        self.filename: str | None = filename
+
+    async def read(self) -> bytes:
+        return self._content
+
+    async def seek(self, offset: int) -> None:
+        pass
+
+
+class TestManufacturingDataDetailAPI:
+    """製造データ詳細の「使っている注文」と、生成済みファイルのダウンロード."""
+
+    @pytest.mark.asyncio
+    async def test_detail_lists_referencing_order_items(
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        keychain_setup: dict[str, Any],
+        auth_headers: dict[str, Any],
+    ) -> None:
+        order_number = _order_number()
+        created = await _create_v2_order(
+            client, db_session, keychain_setup["api_key"], order_number
+        )
+
+        resp = await client.get(
+            f"/api/v1/manufacturing-data/{created['mfg_id']}", headers=auth_headers
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["order_items_total"] == 1
+        [ref] = body["order_items"]
+        assert ref["order_id"] == created["order_id"]
+        assert ref["order_number"] == order_number
+        assert ref["product_name"] == "アクリルキーホルダー デザインA"
+        assert ref["quantity"] == 1
+        assert ref["item_status"]
+        assert ref["order_status"]
+
+    @pytest.mark.asyncio
+    async def test_detail_lists_every_order_sharing_the_row(
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        keychain_setup: dict[str, Any],
+        auth_headers: dict[str, Any],
+    ) -> None:
+        # 同じ受注元・商品コード・サイズの明細は、同じ製造データ行を共有する
+        product_code = f"RKSYO-{uuid4().hex[:6]}"
+        first = await _create_v2_order(
+            client, db_session, keychain_setup["api_key"], _order_number(), product_code
+        )
+        second = await _create_v2_order(
+            client, db_session, keychain_setup["api_key"], _order_number(), product_code
+        )
+        assert first["mfg_id"] == second["mfg_id"]
+
+        resp = await client.get(
+            f"/api/v1/manufacturing-data/{first['mfg_id']}", headers=auth_headers
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["order_items_total"] == 2
+        assert {ref["order_id"] for ref in body["order_items"]} == {
+            first["order_id"],
+            second["order_id"],
+        }
+
+    @pytest.mark.asyncio
+    async def test_file_download_is_404_until_generated(
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        keychain_setup: dict[str, Any],
+        auth_headers: dict[str, Any],
+    ) -> None:
+        created = await _create_v2_order(
+            client, db_session, keychain_setup["api_key"], _order_number()
+        )
+
+        resp = await client.get(
+            f"/api/v1/manufacturing-data/{created['mfg_id']}/file", headers=auth_headers
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_file_download_returns_generated_ai(
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        keychain_setup: dict[str, Any],
+        auth_headers: dict[str, Any],
+    ) -> None:
+        from app.config import settings
+        from app.utils.file_storage import build_file_storage
+
+        created = await _create_v2_order(
+            client, db_session, keychain_setup["api_key"], _order_number()
+        )
+        content = b"%PDF-1.5 fake illustrator body"
+        path = await build_file_storage(settings).save(
+            _Upload(content, "KC_製造データ.ai"),
+            prefix="manufacturing_data",
+        )
+        await db_session.execute(
+            text(
+                "UPDATE manufacturing_data SET status = 'ready', file_path = :path, "
+                "output_filename = 'KC_製造データ.ai' WHERE id = :id"
+            ),
+            {"path": path, "id": created["mfg_id"]},
+        )
+        await db_session.commit()
+
+        resp = await client.get(
+            f"/api/v1/manufacturing-data/{created['mfg_id']}/file", headers=auth_headers
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.content == content
+        disposition = resp.headers["content-disposition"]
+        assert disposition.startswith("attachment; filename*=UTF-8''")
+        assert "KC_" in disposition
+
+    @pytest.mark.asyncio
+    async def test_file_download_requires_admin(
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        keychain_setup: dict[str, Any],
+    ) -> None:
+        created = await _create_v2_order(
+            client, db_session, keychain_setup["api_key"], _order_number()
+        )
+
+        resp = await client.get(f"/api/v1/manufacturing-data/{created['mfg_id']}/file")
+        assert resp.status_code == 401

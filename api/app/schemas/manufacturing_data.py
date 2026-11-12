@@ -44,10 +44,27 @@ class ManufacturingDataResponse(BaseModel):
     updated_at: datetime
 
 
+class ManufacturingDataOrderItemRef(BaseModel):
+    """この製造データを使っている受注明細 1 件（詳細の「使っている注文」）."""
+
+    order_id: str
+    order_number: str
+    order_status: str
+    ordered_at: datetime
+    item_id: str
+    item_status: str
+    product_name: str
+    quantity: int
+
+
 class ManufacturingDataDetailResponse(ManufacturingDataResponse):
-    """製造データ詳細レスポンス（元画像レイヤー一覧つき）."""
+    """製造データ詳細レスポンス（元画像レイヤー一覧・使っている明細つき）."""
 
     source_images: list[SourceImageLayer] = []
+    # **製造データは複数の注文で共有される**（受注元 × 商品コード × サイズ × バリアント）。
+    # 人気の商品だと件数が膨らむので、新しい注文から上限件数だけ返し、総数を別に返す。
+    order_items: list[ManufacturingDataOrderItemRef] = []
+    order_items_total: int = 0
 
     @field_validator("source_images", mode="before")
     @classmethod
