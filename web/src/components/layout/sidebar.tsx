@@ -9,6 +9,7 @@ import {
   Factory,
   Package,
   Layers,
+  FileDown,
   MessageSquare,
   Settings,
   LogOut,
@@ -23,6 +24,7 @@ const navigation = [
   { name: "メーカー", href: "/manufacturers", icon: Factory },
   { name: "商品マスタ", href: "/products", icon: Package },
   { name: "製造データ", href: "/manufacturing-data", icon: Layers },
+  { name: "データ出力", href: "/data-export", icon: FileDown },
   { name: "チャット", href: "/chat", icon: MessageSquare },
 ];
 

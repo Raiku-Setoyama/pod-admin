@@ -8,6 +8,8 @@ from sqlalchemy import ColumnElement, Row, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.manufacturer import Manufacturer
+from app.models.manufacturing_data import ManufacturingData
 from app.models.order import (
     Order,
     OrderItem,
@@ -15,11 +17,46 @@ from app.models.order import (
     OrderStatus,
     item_status_for_manufacturing_ready,
 )
-from app.models.product import ProductType
+from app.models.order_source import OrderSource
+from app.models.product import Product, ProductType
+from app.models.shipment import Shipment, ShipmentItem
 
 if TYPE_CHECKING:
     # 型注釈でのみ使う。リポジトリがスキーマを実行時に読み込まないようにする。
     from app.schemas.shipment import PendingOrderStatus
+
+
+def order_list_conditions(
+    *,
+    status: OrderStatus | None = None,
+    ordered_from: date | None = None,
+    ordered_to: date | None = None,
+    search: str | None = None,
+    shipping_from: date | None = None,
+    shipping_to: date | None = None,
+) -> list[ColumnElement[bool]]:
+    """受注一覧の絞り込み条件（商品種別を除く）を組み立てる.
+
+    受注一覧（``find_all``）とデータ出力（``find_item_rows_for_export``）が同じ条件で
+    絞り込めるよう、1 か所にまとめている。商品種別だけは 1 行の単位が違う
+    （一覧は受注、データ出力は受注明細）ので、それぞれの呼び出し側で組み立てる。
+    """
+    conditions: list[ColumnElement[bool]] = []
+    if status:
+        conditions.append(Order.status == status.value)
+    if ordered_from:
+        conditions.append(func.date(Order.ordered_at) >= ordered_from)
+    if ordered_to:
+        conditions.append(func.date(Order.ordered_at) <= ordered_to)
+    if search:
+        conditions.append(
+            Order.order_number.ilike(f"%{search}%") | Order.customer_name.ilike(f"%{search}%")
+        )
+    if shipping_from:
+        conditions.append(Order.estimated_shipping_date >= shipping_from)
+    if shipping_to:
+        conditions.append(Order.estimated_shipping_date <= shipping_to)
+    return conditions
 
 
 class OrderRepository:
@@ -71,50 +108,26 @@ class OrderRepository:
         )
         count_query = select(func.count(Order.id))
 
-        # Apply filters
-        if status:
-            query = query.where(Order.status == status.value)
-            count_query = count_query.where(Order.status == status.value)
-
+        conditions = order_list_conditions(
+            status=status,
+            ordered_from=ordered_from,
+            ordered_to=ordered_to,
+            search=search,
+            shipping_from=shipping_from,
+            shipping_to=shipping_to,
+        )
         if product_type:
             # Filter orders that have items with the specified product type
-            query = query.where(
+            conditions.append(
                 Order.id.in_(
                     select(OrderItem.order_id).where(
                         OrderItem.product_type == product_type.value
                     )
                 )
             )
-            count_query = count_query.where(
-                Order.id.in_(
-                    select(OrderItem.order_id).where(
-                        OrderItem.product_type == product_type.value
-                    )
-                )
-            )
-
-        if ordered_from:
-            query = query.where(func.date(Order.ordered_at) >= ordered_from)
-            count_query = count_query.where(func.date(Order.ordered_at) >= ordered_from)
-
-        if ordered_to:
-            query = query.where(func.date(Order.ordered_at) <= ordered_to)
-            count_query = count_query.where(func.date(Order.ordered_at) <= ordered_to)
-
-        if search:
-            search_filter = Order.order_number.ilike(f"%{search}%") | Order.customer_name.ilike(
-                f"%{search}%"
-            )
-            query = query.where(search_filter)
-            count_query = count_query.where(search_filter)
-
-        if shipping_from:
-            query = query.where(Order.estimated_shipping_date >= shipping_from)
-            count_query = count_query.where(Order.estimated_shipping_date >= shipping_from)
-
-        if shipping_to:
-            query = query.where(Order.estimated_shipping_date <= shipping_to)
-            count_query = count_query.where(Order.estimated_shipping_date <= shipping_to)
+        if conditions:
+            query = query.where(*conditions)
+            count_query = count_query.where(*conditions)
 
         # Get total count
         total_result = await self._db.execute(count_query)
@@ -128,6 +141,83 @@ class OrderRepository:
         orders = list(result.scalars().all())
 
         return orders, total
+
+    async def find_item_rows_for_export(
+        self,
+        columns: Sequence[Any],
+        *,
+        status: OrderStatus | None = None,
+        product_type: ProductType | None = None,
+        ordered_from: date | None = None,
+        ordered_to: date | None = None,
+        search: str | None = None,
+        shipping_from: date | None = None,
+        shipping_to: date | None = None,
+        sort: Any | None = None,
+        descending: bool = False,
+    ) -> Sequence[Row[Any]]:
+        """データ出力用に、受注明細 1 件を 1 行として指定の列を取り出す（ADR-0023）.
+
+        明細に受注・受注元・商品マスタ・メーカー・製造データ・配送を結合する。
+        ``columns`` / ``sort`` はこれらのモデルの列（または列からなる式）であること。
+
+        絞り込みは受注一覧と同じ条件（``order_list_conditions``）。ただし商品種別は
+        1 行の単位に合わせて **明細の** 商品種別で絞る（受注一覧は「その種別の明細を含む受注」）。
+
+        並べ替えは ``sort`` の後に、受注一覧と同じ受注日時の新しい順・注文番号・明細の登録順で
+        決定的に並べる。NULL は昇順・降順とも末尾に置く。
+        """
+        # 配送は受注単位で 1 件（ShipmentService が重複作成を弾いている）。
+        # 万一重複していても明細 1 行を崩さないよう、受注ごとに最新の 1 件だけを結合する。
+        latest_shipment = (
+            select(ShipmentItem.order_id, ShipmentItem.shipment_id)
+            .distinct(ShipmentItem.order_id)
+            .order_by(ShipmentItem.order_id, ShipmentItem.created_at.desc())
+            .subquery()
+        )
+
+        query = (
+            select(*columns)
+            .select_from(OrderItem)
+            .join(Order, OrderItem.order_id == Order.id)
+            .outerjoin(OrderSource, Order.order_source_id == OrderSource.id)
+            .outerjoin(Product, OrderItem.product_id == Product.id)
+            .outerjoin(Manufacturer, Product.manufacturer_id == Manufacturer.id)
+            .outerjoin(
+                ManufacturingData, OrderItem.manufacturing_data_id == ManufacturingData.id
+            )
+            .outerjoin(latest_shipment, latest_shipment.c.order_id == Order.id)
+            .outerjoin(Shipment, Shipment.id == latest_shipment.c.shipment_id)
+        )
+
+        conditions = order_list_conditions(
+            status=status,
+            ordered_from=ordered_from,
+            ordered_to=ordered_to,
+            search=search,
+            shipping_from=shipping_from,
+            shipping_to=shipping_to,
+        )
+        if product_type:
+            conditions.append(OrderItem.product_type == product_type.value)
+        if conditions:
+            query = query.where(*conditions)
+
+        order_by: list[Any] = []
+        if sort is not None:
+            order_by.append((sort.desc() if descending else sort.asc()).nulls_last())
+        order_by.extend(
+            [
+                Order.ordered_at.desc(),
+                Order.order_number.asc(),
+                OrderItem.created_at.asc(),
+                OrderItem.id.asc(),
+            ]
+        )
+        query = query.order_by(*order_by)
+
+        result = await self._db.execute(query)
+        return result.all()
 
     async def create(self, order: Order) -> Order:
         """Create a new order."""
