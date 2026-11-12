@@ -37,12 +37,15 @@ interface ManufacturingDataListProps {
   /** 選択中の ID。`onSelectChange` を渡したときだけ選択列が出る。 */
   selectedIds?: string[];
   onSelectChange?: (ids: string[]) => void;
+  /** 行をクリックしたときに呼ばれる（詳細を開く）。渡したときだけ行がクリックできる。 */
+  onRowClick?: (id: string) => void;
 }
 
 export function ManufacturingDataList({
   items,
   selectedIds = [],
   onSelectChange,
+  onRowClick,
 }: ManufacturingDataListProps) {
   const hasSelection = onSelectChange !== undefined;
   // **選べるのは失敗した行だけである。** ready を巻き戻すと、その行を共有する
@@ -99,9 +102,26 @@ export function ManufacturingDataList({
           {items.map((row) => {
             const detail = pendingDetail(row);
             return (
-              <TableRow key={row.id}>
+              <TableRow
+                key={row.id}
+                className={cn(onRowClick && "cursor-pointer hover:bg-muted/50")}
+                onClick={onRowClick ? () => onRowClick(row.id) : undefined}
+                onKeyDown={
+                  onRowClick
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onRowClick(row.id);
+                        }
+                      }
+                    : undefined
+                }
+                tabIndex={onRowClick ? 0 : undefined}
+                aria-label={onRowClick ? `${row.product_code} の詳細を開く` : undefined}
+              >
                 {hasSelection && (
-                  <TableCell>
+                  // チェックボックスの操作で詳細が開かないよう、セルでクリックを止める
+                  <TableCell onClick={(e) => e.stopPropagation()}>
                     {row.status === "failed" && (
                       <Checkbox
                         checked={selectedIds.includes(row.id)}

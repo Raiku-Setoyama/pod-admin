@@ -16,6 +16,7 @@ import {
   isManufacturingDataStatus,
 } from "@/constants/status";
 import { ManufacturingDataList } from "@/features/manufacturing-data/components/manufacturing-data-list";
+import { ManufacturingDataDetailSheet } from "@/features/manufacturing-data/components/manufacturing-data-detail-sheet";
 import { useManufacturingData } from "@/features/manufacturing-data/hooks/use-manufacturing-data";
 
 const filterOptions = getManufacturingDataFilterOptions();
@@ -30,6 +31,8 @@ export default function ManufacturingDataPage() {
   const searchParams = useSearchParams();
   const updateSearchParams = useSearchParamUpdater();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // 詳細パネルで開いている製造データ（null なら閉じている）
+  const [openedId, setOpenedId] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
 
   const rawStatus = searchParams.get("status");
@@ -159,6 +162,7 @@ export default function ManufacturingDataPage() {
               items={items}
               selectedIds={selectedIds}
               onSelectChange={setSelectedIds}
+              onRowClick={setOpenedId}
             />
             <Pagination
               page={page}
@@ -177,6 +181,11 @@ export default function ManufacturingDataPage() {
           </>
         )}
       </div>
+
+      <ManufacturingDataDetailSheet
+        manufacturingDataId={openedId}
+        onClose={() => setOpenedId(null)}
+      />
     </PageContainer>
   );
 }

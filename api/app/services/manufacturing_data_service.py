@@ -39,6 +39,7 @@ from app.repositories.order_repository import OrderRepository
 from app.schemas.manufacturing_data import (
     ManufacturingDataDetailResponse,
     ManufacturingDataListResponse,
+    ManufacturingDataOrderItemRef,
     ManufacturingDataResponse,
 )
 from app.utils.exceptions import ConflictError, NotFoundError, ValidationError
@@ -78,6 +79,8 @@ LOG_MARK_DEFERRED = "manufacturing_data_deferred"
 
 # 生成済みファイルの保存先プレフィックス（FileStorage 上）
 _STORAGE_PREFIX = "manufacturing_data"
+# 製造データ詳細で返す「使っている明細」の上限件数（総数は別に返す）
+_DETAIL_ORDER_ITEMS_LIMIT = 50
 
 # 差し替えた元データ（PNGレイヤー）の保存先プレフィックス（FileStorage 上）
 _SOURCE_IMAGE_PREFIX = "source_images"
@@ -602,9 +605,32 @@ class ManufacturingDataService:
         return ManufacturingDataResponse.model_validate(md)
 
     async def get_detail(self, md_id: str) -> ManufacturingDataDetailResponse:
-        """製造データ詳細（元画像レイヤー一覧つき）を取得する."""
+        """製造データ詳細（元画像レイヤー一覧・使っている明細つき）を取得する."""
         md = await self._require_row(md_id)
-        return ManufacturingDataDetailResponse.model_validate(md)
+        detail = ManufacturingDataDetailResponse.model_validate(md)
+        rows, total = await self._order_repo.find_items_by_manufacturing_data(
+            md.id, limit=_DETAIL_ORDER_ITEMS_LIMIT
+        )
+        detail.order_items = [
+            ManufacturingDataOrderItemRef.model_validate(dict(row._mapping)) for row in rows
+        ]
+        detail.order_items_total = total
+        return detail
+
+    async def get_output_file(self, md_id: str) -> tuple[bytes, str]:
+        """生成済みの製造データ（.ai）の内容とファイル名を返す.
+
+        生成が終わっていない（ready でない）行や、保存先から消えている行は 404 とする。
+        """
+        md = await self._require_row(md_id)
+        content = (
+            await self._storage().get(md.file_path)
+            if md.status == MfgDataStatus.READY.value and md.file_path
+            else None
+        )
+        if content is None:
+            raise NotFoundError("ManufacturingDataFile", md_id)
+        return content, md.output_filename or f"{md.product_code}.ai"
 
     async def replace_source_images(
         self,

@@ -846,6 +846,38 @@ class OrderRepository:
                     item.is_manufacturing_ready
                 )
 
+    async def find_items_by_manufacturing_data(
+        self, manufacturing_data_id: str, limit: int
+    ) -> tuple[Sequence[Row[Any]], int]:
+        """指定した製造データを参照する明細を、新しい注文から ``limit`` 件と総数を返す.
+
+        製造データ詳細の「使っている注文」に使う。明細・注文の関連（selectin）を
+        引き込まないよう、表示に要る列だけを取る。
+        """
+        condition = OrderItem.manufacturing_data_id == manufacturing_data_id
+        rows = (
+            await self._db.execute(
+                select(
+                    Order.id.label("order_id"),
+                    Order.order_number,
+                    Order.status.label("order_status"),
+                    Order.ordered_at,
+                    OrderItem.id.label("item_id"),
+                    OrderItem.status.label("item_status"),
+                    OrderItem.product_name,
+                    OrderItem.quantity,
+                )
+                .join(Order, OrderItem.order_id == Order.id)
+                .where(condition)
+                .order_by(Order.ordered_at.desc(), OrderItem.id)
+                .limit(limit)
+            )
+        ).all()
+        total = (
+            await self._db.execute(select(func.count(OrderItem.id)).where(condition))
+        ).scalar() or 0
+        return rows, total
+
     async def has_manufacturing_or_delivered_items(
         self, manufacturing_data_id: str
     ) -> bool:

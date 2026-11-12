@@ -1,9 +1,10 @@
 """Manufacturing data router (admin).
 
-製造データの状態一覧・手動リトライ・再作成、および元画像（PNGレイヤー）の差し替えを提供する。
+製造データの状態一覧・詳細・ダウンロード・手動リトライ・再作成、および元画像（PNGレイヤー）の差し替えを提供する。
 """
 
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 
@@ -67,6 +68,25 @@ async def get_manufacturing_data(
 ) -> ManufacturingDataDetailResponse:
     """製造データ詳細を取得する（元画像レイヤーの由来つき一覧を含む）."""
     return await service.get_detail(mfg_data_id)
+
+
+@router.get("/{mfg_data_id}/file")
+async def download_manufacturing_data_file(
+    mfg_data_id: str,
+    service: Annotated[ManufacturingDataService, Depends(get_manufacturing_data_service)],
+    current_user: Annotated[User, Depends(get_current_admin)],
+) -> Response:
+    """生成済みの製造データ（.ai）を 1 件ダウンロードする.
+
+    受注単位のダウンロード（`/orders/{id}/manufacturing-data`）とは別に、製造データの
+    行から直接落とせるようにする。生成が終わっていない行は 404 を返す。
+    """
+    content, filename = await service.get_output_file(mfg_data_id)
+    return Response(
+        content=content,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
 
 
 @router.post("/{mfg_data_id}/retry", response_model=ManufacturingDataResponse)

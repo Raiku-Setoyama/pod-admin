@@ -65,14 +65,32 @@ export interface ManufacturingDataListResponse {
   status_counts: Partial<Record<ManufacturingDataStatus, number>>;
 }
 
-// 製造データ詳細（元画像レイヤー一覧つき）
+// 製造データを使っている受注明細 1 件（製造データ詳細の「使っている注文」）
+export interface ManufacturingDataOrderItemRef {
+  order_id: string;
+  order_number: string;
+  order_status: string;
+  ordered_at: string;
+  item_id: string;
+  item_status: string;
+  product_name: string;
+  quantity: number;
+}
+
+// 製造データ詳細（元画像レイヤー一覧・使っている明細つき）
 export interface ManufacturingDataDetail extends MfgDataItemInfo {
   product_code: string;
   product_type: ProductType;
   size: string | null;
   variant: string | null;
+  attempts: number;
+  created_at: string;
+  updated_at: string;
   source_images: SourceImageLayer[];
   source_images_replaced_by: string | null;
+  // **製造データは複数の注文で共有される。** 新しい注文から上限件数だけ返り、総数は別に返る
+  order_items: ManufacturingDataOrderItemRef[];
+  order_items_total: number;
 }
 
 export interface OrderItem {

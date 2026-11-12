@@ -54,6 +54,11 @@ const detail: ManufacturingDataDetail = {
   ],
   source_images_replaced_at: '2026-07-26T10:00:00Z',
   source_images_replaced_by: 'admin@example.com',
+  attempts: 3,
+  created_at: '2026-07-26T09:00:00Z',
+  updated_at: '2026-07-26T10:00:00Z',
+  order_items: [],
+  order_items_total: 0,
 }
 
 function pngFile(name = 'new_color.png'): File {

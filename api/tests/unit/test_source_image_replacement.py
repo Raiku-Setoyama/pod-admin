@@ -56,6 +56,7 @@ def _service(md: ManufacturingData | None, *, storage: Any=None, order_repo: Any
     if order_repo is None:
         order_repo = AsyncMock()
         order_repo.has_manufacturing_or_delivered_items.return_value = False
+        order_repo.find_items_by_manufacturing_data.return_value = ([], 0)
     svc = ManufacturingDataService(
         md_repo=md_repo,
         order_repo=order_repo,
