@@ -13,6 +13,7 @@ from app.routers import (
     chat,
     company_holidays,
     dashboard,
+    data_export,
     external,
     internal,
     manufacturer_portal,
@@ -100,6 +101,7 @@ app.include_router(internal.router, prefix=settings.API_V1_PREFIX)
 app.include_router(settings_router.router, prefix=settings.API_V1_PREFIX)
 app.include_router(company_holidays.router, prefix=settings.API_V1_PREFIX)
 app.include_router(manufacturing_data.router, prefix=settings.API_V1_PREFIX)
+app.include_router(data_export.router, prefix=settings.API_V1_PREFIX)
 
 # v2 endpoints (製造データ生成方式の注文受付。後方互換のため別プレフィックス)
 app.include_router(orders_v2.router, prefix=settings.API_V2_PREFIX)

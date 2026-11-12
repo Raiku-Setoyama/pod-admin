@@ -47,6 +47,11 @@ output "worker_job_name" {
   value       = module.worker_job.name
 }
 
+output "alerting_active" {
+  description = "API のアラート（5xx・外形監視）が実際に作られているか。false なら誰にも通知が届かない（説明は modules/monitoring/outputs.tf）"
+  value       = module.monitoring.alerting_active
+}
+
 # **これだけは envs/*/outputs.tf に写さない。** 監視モジュールへ渡すための配線であり、
 # terraform output で人が読む値ではない（シークレットを出力に並べない）。
 output "internal_api_secret" {
