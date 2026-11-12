@@ -14,29 +14,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ApiError, apiClient, fetchBlob } from "@/lib/api/client";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, safeExternalUrl } from "@/lib/utils";
 import type {
   ManufacturingDataDetail,
   SourceImageLayer,
   SourceImageLayerType,
 } from "@/types/api";
-
-/**
- * 外部 URL をリンクにしてよいか判定し、よければその URL を返す。
- *
- * 外部受注由来の元画像 URL は販売サイトが API で送ってきた値なので、
- * `javascript:` などが入っているとクリックで管理画面のオリジンでスクリプトが動く。
- * scheme が http / https のときだけ返し、それ以外（パースできない値も含む）は null。
- */
-function safeExternalUrl(url: string | null): string | null {
-  if (!url) return null;
-  try {
-    const { protocol } = new URL(url);
-    return protocol === "https:" || protocol === "http:" ? url : null;
-  } catch {
-    return null;
-  }
-}
 
 const layerLabels: Record<SourceImageLayerType, string> = {
   color: "カラー",

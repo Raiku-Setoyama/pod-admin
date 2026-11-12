@@ -21,7 +21,7 @@ import {
 } from "@/constants/status";
 import { getProductTypeLabel } from "@/constants/product";
 import { apiClient, downloadFile } from "@/lib/api/client";
-import { cn, formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime, safeExternalUrl } from "@/lib/utils";
 import type {
   ManufacturingDataDetail,
   SourceImageLayer,
@@ -38,22 +38,6 @@ const layerLabels: Record<SourceImageLayerType, string> = {
 /** 明細・注文のステータスの表示名（未知の値はそのまま出す）。 */
 function statusLabel(status: string): string {
   return (ORDER_STATUS_LABELS as Record<string, string>)[status] ?? status;
-}
-
-/**
- * 外部受注の元画像の URL を、リンクとして開いてよいときだけ返す。
- *
- * **URL は外部の受注元が送ってきた値である。** `javascript:` などを `href` に入れると、
- * クリックした管理者の画面で任意のスクリプトが動く。http(s) だけを通す。
- */
-function safeExternalUrl(url: string | null): string | null {
-  if (!url) return null;
-  try {
-    const { protocol } = new URL(url);
-    return protocol === "https:" || protocol === "http:" ? url : null;
-  } catch {
-    return null;
-  }
 }
 
 function formatFileSize(bytes: number | null): string | null {

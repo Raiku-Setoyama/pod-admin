@@ -24,3 +24,21 @@ const dateTimeFormatter = new Intl.DateTimeFormat("ja-JP", {
 export function formatDateTime(value: string | null | undefined): string {
   return value ? dateTimeFormatter.format(new Date(value)) : "—";
 }
+
+/**
+ * 外部 URL をリンクにしてよいか判定し、よければその URL を返す。
+ *
+ * **外部受注由来の URL は、販売サイトが API で送ってきた値である。** `javascript:` などを
+ * `href` に入れると、クリックした管理者の画面（管理画面のオリジン）でスクリプトが動く
+ * （アクセストークンは localStorage にある）。scheme が http / https のときだけ返し、
+ * それ以外（パースできない値も含む）は null を返す。
+ */
+export function safeExternalUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const { protocol } = new URL(url);
+    return protocol === "https:" || protocol === "http:" ? url : null;
+  } catch {
+    return null;
+  }
+}
