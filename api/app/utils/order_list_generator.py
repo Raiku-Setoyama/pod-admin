@@ -2,12 +2,16 @@
 
 import csv
 import io
+import math
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+
+from app.utils.mfg_product_mapping import DTF_PRODUCT_TYPES, VARIANT_DTF
 
 # Product type to Japanese name mapping
 PRODUCT_TYPE_NAMES: dict[str, str] = {
@@ -17,6 +21,23 @@ PRODUCT_TYPE_NAMES: dict[str, str] = {
     "tote_bag": "トートバッグ",
     "mug": "マグカップ",
     "tshirt": "Tシャツ",
+}
+
+
+# DTF 版（T シャツ・トート）の発注リストに足す列の値（#189）。
+# メーカーは発注リストに書かれた位置をもとに製造側で位置合わせをする。
+PRINT_METHOD_DTF = "DTF印刷"
+# 印刷位置の基準の呼び方（「{基準}{n}cm」の {基準}）。
+# トートは取引先が呼び方を確認中（当社案＝メーカー回答と同じ「リブ下」）。確定したらここを変える。
+PRINT_POSITION_REFERENCE: dict[str, str] = {
+    "tshirt": "リブ下",
+    "tote_bag": "リブ下",
+}
+# 白版の種類（manufacturing_data.white_plate。値は生成 app/generator/dtf.py の WhitePlateKind）
+WHITE_PLATE_LABELS: dict[str, str] = {
+    "color_only": "カラーのみ（縮小なし）",
+    "white_only": "ホワイトのみ（縮小なし）",
+    "mixed": "混在（カラー部分を縮小済み）",
 }
 
 
@@ -49,6 +70,33 @@ def format_product_detail(
     if color:
         detail_parts.append(color)
     return " - ".join(detail_parts)
+
+
+def format_print_position(product_type: str, top_below_rib_mm: float | None) -> str:
+    """リブ下から絵柄の最上部まで（mm）を発注リストの印刷位置（例: ``リブ下13.6cm``）にする.
+
+    0.1cm 単位に四捨五入する（組み込みの ``round`` は偶数丸めで 13.55 が 13.6 にならないことが
+    あるので ``Decimal`` の ``ROUND_HALF_UP``）。値が無いとき・DTF 版の無い商品は空文字。
+    """
+    reference = PRINT_POSITION_REFERENCE.get(product_type)
+    if top_below_rib_mm is None or reference is None or not math.isfinite(top_below_rib_mm):
+        return ""
+    # float の 2 進誤差を持ち込まないよう、10 進の文字列を経由する
+    cm = (Decimal(str(top_below_rib_mm)) / 10).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    return f"{reference}{cm}cm"
+
+
+def format_white_plate(white_plate: str | None) -> str:
+    """白版の種類（color_only / white_only / mixed）を発注リストの表示にする。値が無ければ空文字."""
+    if not white_plate:
+        return ""
+    return WHITE_PLATE_LABELS.get(white_plate, white_plate)
+
+
+def is_dtf_item(item: dict[str, Any], product_type: str | None = None) -> bool:
+    """発注リストの明細が T シャツ・トートの DTF 版の製造データを持つか."""
+    item_product_type = product_type or item.get("product_type", "")
+    return item_product_type in DTF_PRODUCT_TYPES and item.get("variant") == VARIANT_DTF
 
 
 class OrderListGenerator:
@@ -159,8 +207,18 @@ class OrderListGenerator:
         - 個数: OrderItem.quantity
         - シール用テキスト情報: {商品名}【個数】{個数}個_{注文番号}_{製品番号}_{MMDD}
 
+        T シャツ・トートで DTF 版の製造データ（variant ``dtf``）の明細が 1 件でもあるときだけ、
+        「商品種類」の右に 3 列を足す（#189。インクジェット版の明細は 3 列とも空欄）:
+        - 印刷方法: ``DTF印刷``
+        - 印刷位置: ``リブ下13.6cm``（manufacturing_data.art_top_below_rib_mm を 0.1cm 単位に四捨五入）
+        - 白版: ``カラーのみ（縮小なし）`` など（manufacturing_data.white_plate）
+
         Args:
-            items: List of dicts containing order item data
+            items: List of dicts containing order item data. DTF の列には次のキーを使う
+                （無ければインクジェット版として扱う）:
+                - variant: str | None（manufacturing_data.variant）
+                - art_top_below_rib_mm: float | None
+                - white_plate: str | None
             product_type: Product type code (e.g., "tshirt")
 
         Returns:
@@ -182,16 +240,17 @@ class OrderListGenerator:
             bottom=Side(style="thin"),
         )
 
-        # Column headers (6 columns, excluding 商品名 and 原価)
-        headers = [
-            "注文日",
-            "注文番号",
-            "製品番号",
-            "商品種類",
-            "個数",
-            "シール用テキスト情報",
-        ]
-        column_widths = [12, 20, 15, 35, 8, 60]
+        dtf_flags = [is_dtf_item(item, product_type) for item in items]
+        with_dtf_columns = any(dtf_flags)
+
+        # Column headers (6 columns, excluding 商品名 and 原価; DTF のときは 9 列)
+        headers = ["注文日", "注文番号", "製品番号", "商品種類"]
+        column_widths = [12, 20, 15, 35]
+        if with_dtf_columns:
+            headers += ["印刷方法", "印刷位置", "白版"]
+            column_widths += [12, 15, 30]
+        headers += ["個数", "シール用テキスト情報"]
+        column_widths += [8, 60]
 
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col, value=header)
@@ -201,7 +260,7 @@ class OrderListGenerator:
             cell.alignment = Alignment(horizontal="center")
 
         # Data rows
-        for row_idx, item in enumerate(items, 2):
+        for row_idx, (item, is_dtf) in enumerate(zip(items, dtf_flags, strict=True), 2):
             ordered_date: datetime | None = item.get("ordered_date")
             order_number = item.get("order_number", "")
             uid = item.get("uid", "")
@@ -229,26 +288,26 @@ class OrderListGenerator:
             # Build seal text: {商品種類}【個数】{個数}個_{注文番号}_{製品番号}_{MMDD}
             seal_text = f"{product_detail}【個数】{quantity}個_{order_number}_{uid}_{mmdd}"
 
-            # Write row data
+            values: list[Any] = [formatted_date, order_number, uid, product_detail]
+            if with_dtf_columns:
+                if is_dtf:
+                    values += [
+                        PRINT_METHOD_DTF,
+                        format_print_position(
+                            item_product_type, item.get("art_top_below_rib_mm")
+                        ),
+                        format_white_plate(item.get("white_plate")),
+                    ]
+                else:
+                    # 同じグループのインクジェット版の明細は空欄
+                    values += ["", "", ""]
+            values += [quantity, seal_text]
+
+            for col, value in enumerate(values, 1):
+                ws.cell(row=row_idx, column=col, value=value).border = thin_border
+
             # Column 1: 注文日 (as text string)
-            date_cell = ws.cell(row=row_idx, column=1, value=formatted_date)
-            date_cell.border = thin_border
-            date_cell.number_format = "@"  # Text format
-
-            # Column 2: 注文番号
-            ws.cell(row=row_idx, column=2, value=order_number).border = thin_border
-
-            # Column 3: 製品番号
-            ws.cell(row=row_idx, column=3, value=uid).border = thin_border
-
-            # Column 4: 商品種類
-            ws.cell(row=row_idx, column=4, value=product_detail).border = thin_border
-
-            # Column 5: 個数
-            ws.cell(row=row_idx, column=5, value=quantity).border = thin_border
-
-            # Column 6: シール用テキスト情報
-            ws.cell(row=row_idx, column=6, value=seal_text).border = thin_border
+            ws.cell(row=row_idx, column=1).number_format = "@"  # Text format
 
         # Adjust column widths
         for col, width in enumerate(column_widths, 1):
