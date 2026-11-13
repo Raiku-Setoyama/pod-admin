@@ -6,6 +6,7 @@ illustrator-vm の `config/products.yaml` から、pod-admin が使う 5 商品�
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from app.generator.errors import GenerationError
@@ -35,6 +36,46 @@ _FILENAME_PATTERNS: dict[str, str] = {
 }
 
 _PDF_PRODUCTS = frozenset({"tshirt", "tote_bag"})
+
+# --- DTF（T シャツ・トート。#187） ----------------------------------------------------
+# 大きさと配置はインクジェットのとき（テンプレートに 1mm の余白で収めて上下左右中央）と同じ。
+# 印刷位置の値は、メーカー回答「261106_DTF用印刷データに関する回答」（2026-11-06）による。
+
+# 画像を枠に収めるときの余白（インクジェットの ``pipelines.TEMPLATE_IMAGE_MARGIN_PT`` と同じ 1mm）
+DTF_IMAGE_MARGIN_MM = 1.0
+# T シャツの枠（テンプレート「Tシャツ_正面_ALLsize_297x406」のアートボード。全サイズ共通）
+TSHIRT_FRAME_MM = (297.0, 406.0)
+# T シャツの標準位置: リブ下から枠の上端まで。正面・背面共通（メーカー回答）
+TSHIRT_FRAME_TOP_BELOW_RIB_MM: dict[str, float] = {"S": 60.0, "M": 60.0, "L": 80.0, "XL": 80.0}
+# トートの水色のガイド（DTF テンプレート「キャンバストート(M)_36x37x11」のパス「W300xH270」）。
+# 上端＝リブ下 3cm（メーカー回答「リブ下から 3cm が印刷可能開始位置（水色のガイド内）」）
+TOTE_GUIDE_MM = (300.0, 270.0)
+TOTE_GUIDE_TOP_BELOW_RIB_MM = 30.0
+# トートの印刷範囲（インクジェットと同じ 280×250）。ガイドの中央に置く（#191「決めたこと 2」）
+TOTE_PRINT_AREA_MM = (280.0, 250.0)
+_TOTE_SIZES = frozenset({"M"})
+
+
+@dataclass(frozen=True)
+class DtfPlacement:
+    """DTF で画像を収める枠（mm）. 画像は余白 ``DTF_IMAGE_MARGIN_MM`` で縦横比を保って収め、中央に置く."""
+
+    width_mm: float
+    height_mm: float
+    # リブ下から枠の上端まで
+    top_below_rib_mm: float
+
+
+def dtf_placement(product_type: str, size: str) -> DtfPlacement:
+    """DTF の製造データで、画像を収める枠."""
+    if product_type == "tshirt" and size in TSHIRT_FRAME_TOP_BELOW_RIB_MM:
+        w, h = TSHIRT_FRAME_MM
+        return DtfPlacement(w, h, TSHIRT_FRAME_TOP_BELOW_RIB_MM[size])
+    if product_type == "tote_bag" and size in _TOTE_SIZES:
+        w, h = TOTE_PRINT_AREA_MM
+        top = TOTE_GUIDE_TOP_BELOW_RIB_MM + (TOTE_GUIDE_MM[1] - h) / 2
+        return DtfPlacement(w, h, top)
+    raise GenerationError(f"unsupported size '{size}' for DTF {product_type}")
 
 
 def output_filename(product_type: str, size: str, variant: str | None, order_id: str) -> str:

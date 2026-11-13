@@ -1,6 +1,6 @@
 """製造データを 1 件作る本体.
 
-**このモジュールは numpy / scipy / pypdf を読み込む。** 直接 import せず、``app.generator`` の
+**このモジュールは numpy / scipy / pypdf / Pillow を読み込む。** 直接 import せず、``app.generator`` の
 ``generate`` / ``check_available`` を通して使う（モジュール docstring を参照）。
 """
 
@@ -12,6 +12,7 @@ from pathlib import Path
 
 from app.generator import GeneratedFile, pipelines
 from app.generator.art_mask import art_mask_png
+from app.generator.dtf import DtfOptions, generate_dtf
 from app.generator.errors import GenerationError
 from app.generator.legacy_ai import to_illustrator8
 from app.generator.pdf_finish import finish_pdf
@@ -28,6 +29,8 @@ _ACRYLIC = {
     "sticker": pipelines.sticker,
 }
 _ON_TEMPLATE = {"tshirt": pipelines.tshirt, "tote_bag": pipelines.tote_bag}
+# DTF 版を作れる商品（variant が DTF_VARIANT のとき。VectorCraft を使わない）
+DTF_VARIANT = "dtf"
 
 
 def generate(
@@ -37,12 +40,31 @@ def generate(
     *,
     cli: str,
     timeout_seconds: float,
+    dtf_options: DtfOptions | None = None,
 ) -> GeneratedFile:
     """製造データを 1 件作る（引数と例外は ``app.generator.generate`` を参照）.
 
-    ``cli`` は VectorCraft の実行ファイル、``timeout_seconds`` は 1 件の生成にかけてよい時間の上限。
+    ``cli`` は VectorCraft の実行ファイル、``timeout_seconds`` は 1 件の生成にかけてよい時間の上限
+    （VectorCraft を使う生成だけに効く）。``dtf_options`` は DTF 版の設定値（省略時は既定値）。
     """
     filename = output_filename(spec.product_type, spec.size, spec.variant, order_id)
+    if spec.product_type in _ON_TEMPLATE and spec.variant == DTF_VARIANT:
+        dtf = generate_dtf(
+            images[spec.required_layers[0]],
+            spec.product_type,
+            spec.size,
+            Path(filename).stem,
+            dtf_options,
+        )
+        return GeneratedFile(
+            filename,
+            dtf.pdf,
+            source_dpi=dtf.source_dpi,
+            art_width_mm=dtf.art_width_mm,
+            art_height_mm=dtf.art_height_mm,
+            art_top_below_rib_mm=dtf.art_top_below_rib_mm,
+            white_plate=dtf.white_plate,
+        )
     with tempfile.TemporaryDirectory(prefix="mfg-") as tmp:
         workdir = Path(tmp)
         paths = {}

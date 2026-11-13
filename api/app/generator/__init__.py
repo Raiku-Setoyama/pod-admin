@@ -15,6 +15,7 @@ numpy / scipy / pypdf）はワーカー用のイメージにだけ入ってお�
 - ``white_plate``: 白版画像の抜けを埋める
 - ``legacy_ai``: Illustrator がレイヤー付きで開ける旧形式（Illustrator 8 形式）の .ai に書き直す
 - ``pdf_finish``: T シャツ・トートの PDF を整える
+- ``dtf``: T シャツ・トートの DTF 版（``variant == "dtf"``）。VectorCraft を使わず PDF/X-4 を作る（#187）
 """
 
 from __future__ import annotations
@@ -47,10 +48,22 @@ __all__ = [
 
 @dataclass(frozen=True)
 class GeneratedFile:
-    """生成した製造データ."""
+    """生成した製造データ.
+
+    記録用の数値は DTF 版（T シャツ・トート）だけが持つ。アクリル系とインクジェット版は None。
+    """
 
     filename: str
     content: bytes
+    # 元画像の実寸解像度（dpi。元の画素数 ÷ 置く大きさ）
+    source_dpi: float | None = None
+    # 絵柄の外形の幅・高さ（mm）
+    art_width_mm: float | None = None
+    art_height_mm: float | None = None
+    # リブ下から絵柄の最上部まで（mm）
+    art_top_below_rib_mm: float | None = None
+    # 白版の種類（color_only / white_only / mixed）
+    white_plate: str | None = None
 
 
 def generate(spec: GenerationSpec, images: dict[str, bytes], order_id: str) -> GeneratedFile:
