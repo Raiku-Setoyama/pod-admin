@@ -79,21 +79,37 @@ def generate(spec: GenerationSpec, images: dict[str, bytes], order_id: str) -> G
         GeneratorUnavailableError: 生成処理を動かせない（依存が無い・VectorCraft が起動しない・落ちた）。
     """
     try:
-        from app.generator import runner
+        from app.generator import dtf, runner
     except ImportError as exc:
         raise GeneratorUnavailableError(f"generator dependencies are not installed: {exc}") from exc
     # 時間切れは 1 回だけやり直す（VM の頃と同じ。REQ-0069）。1 件の上限は変えないので、
     # 上限を半分ずつ 2 回に分ける。生成待ちへは戻さない（やり直しを待ち行列に任せると、
     # 遅い入力 1 件のためにその起動の残りが止まる）
     half = settings.GENERATOR_TIMEOUT_SECONDS / 2
+    dtf_options = dtf.DtfOptions(
+        white_min_rgb=settings.GENERATOR_DTF_WHITE_MIN_RGB,
+        ignore_white_area_mm2=settings.GENERATOR_DTF_IGNORE_WHITE_AREA_MM2,
+        choke_mm=settings.GENERATOR_DTF_CHOKE_MM,
+        max_source_pixels=settings.GENERATOR_DTF_MAX_SOURCE_PIXELS,
+    )
     try:
         return runner.generate(
-            spec, images, order_id, cli=settings.GENERATOR_VECTORCRAFT_CLI, timeout_seconds=half
+            spec,
+            images,
+            order_id,
+            cli=settings.GENERATOR_VECTORCRAFT_CLI,
+            timeout_seconds=half,
+            dtf_options=dtf_options,
         )
     except GenerationTimeoutError as exc:
         logger.warning("generation timed out; retrying once: %s", exc)
     return runner.generate(
-        spec, images, order_id, cli=settings.GENERATOR_VECTORCRAFT_CLI, timeout_seconds=half
+        spec,
+        images,
+        order_id,
+        cli=settings.GENERATOR_VECTORCRAFT_CLI,
+        timeout_seconds=half,
+        dtf_options=dtf_options,
     )
 
 

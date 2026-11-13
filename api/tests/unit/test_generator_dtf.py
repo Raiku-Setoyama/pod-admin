@@ -552,3 +552,20 @@ def test_runner_passes_dtf_options() -> None:
         dtf_options=DtfOptions(ignore_white_area_mm2=10**6),
     )
     assert out.white_plate == "color_only"
+
+
+def test_entry_point_uses_dtf_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """入口の ``app.generator.generate`` は設定（GENERATOR_DTF_*）を DTF の生成に渡す."""
+    from app import generator
+    from app.config import settings
+
+    rgba = _rgba(300, 300)
+    rgba[100:200, 100:200, :3] = 255
+    images = {"design": _png(rgba)}
+    spec = _spec("tote_bag", "M", "dtf")
+    assert generator.generate(spec, images, "1").white_plate == "mixed"
+    monkeypatch.setattr(settings, "GENERATOR_DTF_IGNORE_WHITE_AREA_MM2", 10.0**6)
+    assert generator.generate(spec, images, "1").white_plate == "color_only"
+    monkeypatch.setattr(settings, "GENERATOR_DTF_MAX_SOURCE_PIXELS", 1000)
+    with pytest.raises(GenerationError, match="too large"):
+        generator.generate(spec, images, "1")

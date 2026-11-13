@@ -65,7 +65,7 @@ Mask = npt.NDArray[np.bool_]
 
 @dataclass(frozen=True)
 class DtfOptions:
-    """DTF の生成の設定値."""
+    """DTF の生成の設定値. 本番では ``app.config`` の ``GENERATOR_DTF_*`` から作る."""
 
     # 「真っ白」とみなす RGB の下限（3 つとも、この値以上）
     white_min_rgb: int = 255
