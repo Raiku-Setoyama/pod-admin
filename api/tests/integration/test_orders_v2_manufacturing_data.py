@@ -10,12 +10,15 @@ API -> Service -> Repository -> DB の一連の流れで検証する。
 import json
 from collections.abc import AsyncIterator
 from typing import Any
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
 
 
 @pytest.fixture
@@ -72,6 +75,37 @@ async def mfg_keychain_product(db_session: AsyncSession, mfg_manufacturer: dict[
             "color": None,
             "manufacturer_id": mfg_manufacturer["id"],
             "cost": 300,
+            "lead_time_days": 5,
+            "is_active": True,
+        },
+    )
+    await db_session.commit()
+    yield {"id": product_id}
+
+
+@pytest.fixture
+async def mfg_tshirt_product(db_session: AsyncSession, mfg_manufacturer: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
+    """tshirt のマスタ商品."""
+    product_id = str(uuid4())
+    await db_session.execute(
+        text("""
+            INSERT INTO products (
+                id, product_type, size, position, color, manufacturer_id, cost,
+                lead_time_days, is_active, created_at, updated_at
+            )
+            VALUES (
+                :id, :product_type, :size, :position, :color, :manufacturer_id, :cost,
+                :lead_time_days, :is_active, NOW(), NOW()
+            )
+        """),
+        {
+            "id": product_id,
+            "product_type": "tshirt",
+            "size": f"TS-{product_id[:8]}",
+            "position": None,
+            "color": None,
+            "manufacturer_id": mfg_manufacturer["id"],
+            "cost": 1500,
             "lead_time_days": 5,
             "is_active": True,
         },
@@ -140,6 +174,22 @@ def _keychain_item(uid: str, product_code: str, *, with_white: bool = False) -> 
         "color": "アクリル",
         "product_code": product_code,
         "source_images": layers,
+        "thumbnail_image_url": "https://example.com/thumb.png",
+    }
+
+
+def _tshirt_item(uid: str, product_code: str) -> dict[str, Any]:
+    return {
+        "uid": uid,
+        "product_type": "tshirt",
+        "product_name": "Tシャツ デザインA",
+        "price": 3500,
+        "quantity": 1,
+        "size": "M",
+        "color": "白",
+        "position": "正面",
+        "product_code": product_code,
+        "source_images": [{"layer_type": "design", "url": "https://example.com/design.png"}],
         "thumbnail_image_url": "https://example.com/thumb.png",
     }
 
@@ -428,6 +478,65 @@ class TestV2Intake:
             headers=auth_headers,
         )
         assert resp2.status_code == 200, resp2.text
+
+
+class TestDtfSwitch:
+    """T シャツ・トートの DTF 版への切り替え（#188）."""
+
+    @pytest.mark.asyncio
+    async def test_reorder_after_switch_creates_separate_dtf_row(
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        mfg_tshirt_product: dict[str, Any],
+        mfg_order_source: dict[str, Any],
+    ) -> None:
+        product_code = f"RKSYO-{uuid4().hex[:6]}"
+        headers = {"X-API-Key": mfg_order_source["api_key"]}
+
+        # 切り替え前: インクジェット版（variant なし）
+        with patch.object(settings, "MFG_DTF_ENABLED", False):
+            resp1 = await client.post(
+                "/api/v2/orders",
+                json={
+                    "order_number": "1000201",
+                    "customer": _customer(),
+                    "items": [_tshirt_item("2000201", product_code)],
+                },
+                headers=headers,
+            )
+        # 切り替え後の再注文（同じ受注元・商品コード・サイズ）
+        with patch.object(settings, "MFG_DTF_ENABLED", True):
+            resp2 = await client.post(
+                "/api/v2/orders",
+                json={
+                    "order_number": "1000202",
+                    "customer": _customer(),
+                    "items": [_tshirt_item("2000202", product_code)],
+                },
+                headers=headers,
+            )
+        assert resp1.status_code == 201, resp1.text
+        assert resp2.status_code == 201, resp2.text
+
+        rows = (
+            await db_session.execute(
+                text(
+                    "SELECT o.order_number, md.variant, md.status, md.source_dpi, md.white_plate "
+                    "FROM order_items oi "
+                    "JOIN orders o ON o.id = oi.order_id "
+                    "JOIN manufacturing_data md ON md.id = oi.manufacturing_data_id "
+                    "WHERE md.product_code = :pc AND md.order_source_id = :sid "
+                    "ORDER BY o.order_number"
+                ),
+                {"pc": product_code, "sid": mfg_order_source["id"]},
+            )
+        ).fetchall()
+        # インクジェット用の行を使い回さず、DTF 用の行が別に作られる
+        assert [tuple(r) for r in rows] == [
+            ("1000201", None, "pending", None, None),
+            ("1000202", "dtf", "pending", None, None),
+        ]
 
 
 class TestV1BackwardCompatibility:

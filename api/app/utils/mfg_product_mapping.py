@@ -2,8 +2,8 @@
 
 生成は商品ごとに以下を要求する（illustrator-vm の `config/products.yaml` から引き継いだ規則）:
 
-- tshirt:           design（無ければ color）1 枚  / variant なし              / S,M,L,XL
-- tote_bag:         design（無ければ color）1 枚  / variant なし              / M
+- tshirt:           design（無ければ color）1 枚  / variant なし（DTF 版は dtf）/ S,M,L,XL
+- tote_bag:         design（無ければ color）1 枚  / variant なし（DTF 版は dtf）/ M
 - acrylic_keychain: color+cutline[+white]         / variant 必須(clear/color) / 50x50,70x70,100x100
 - acrylic_stand:    color+cutline[+white]         / variant なし              / 50mm,70mm,100mm
 - sticker:          color+cutline                 / variant 必須(clear)       / 50x50,70x70,100x100
@@ -15,6 +15,11 @@
 バリアントは受注値ではなく「提供された元データのレイヤー構成」から決定的に導出する:
 - keychain: white レイヤーがあれば "color"（白版あり）、なければ "clear"
 - sticker:  常に "clear"（white は扱わない）
+
+T シャツ・トートの DTF 版（#188）は variant を "dtf" にして、インクジェット版とキャッシュを分ける
+（同じ絵柄の再注文でインクジェット用のデータを使い回さない）。DTF 版にするかは呼び出し側が決める:
+行を探す・新しく作るときは設定（``MFG_DTF_ENABLED``）、
+生成するときは**行に保存された variant**で決める。
 """
 
 from __future__ import annotations
@@ -28,6 +33,11 @@ LAYER_COLOR = "color"
 LAYER_CUTLINE = "cutline"
 LAYER_WHITE = "white"
 LAYER_DESIGN = "design"
+
+# T シャツ・トートの DTF 版の variant（生成側 app/generator/runner.py もこの値で DTF 版を作る）
+VARIANT_DTF = "dtf"
+# DTF 版がある商品
+DTF_PRODUCT_TYPES = frozenset({"tshirt", "tote_bag"})
 
 # source_images で扱うレイヤー種別（受注スキーマ・製造データスキーマ共通の語彙）
 LayerType = Literal["color", "cutline", "white", "design"]
@@ -79,10 +89,20 @@ def _normalize_size(product_type: str, size: str | None) -> str:
     return normalized
 
 
+def dtf_variant(product_type: str, dtf: bool) -> str | None:
+    """T シャツ・トートの variant を返す（DTF 版なら ``VARIANT_DTF``、インクジェット版なら None）.
+
+    T シャツ・トート以外は None（その商品の variant は ``build_generation_spec`` が決める）。
+    """
+    return VARIANT_DTF if dtf and product_type in DTF_PRODUCT_TYPES else None
+
+
 def build_generation_spec(
     product_type: str,
     size: str | None,
     provided_layers: Iterable[str],
+    *,
+    dtf: bool = False,
 ) -> GenerationSpec:
     """pod-admin の商品属性から生成のパラメータを構築する.
 
@@ -90,6 +110,8 @@ def build_generation_spec(
         product_type: pod-admin の商品タイプ（tshirt / acrylic_keychain 等）。
         size: pod-admin のサイズ（例 "50x50mm", "M"）。
         provided_layers: v2 明細の source_images で提供されたレイヤー種別の集合。
+        dtf: T シャツ・トートを DTF 版にするか（variant が ``VARIANT_DTF`` になる）。
+            ほかの商品には効かない。
 
     Raises:
         MfgMappingError: 未対応の商品タイプ／サイズ、または必須レイヤー不足の場合。
@@ -109,7 +131,7 @@ def build_generation_spec(
         return GenerationSpec(
             product_type=product_type,
             size=_normalize_size(product_type, size),
-            variant=None,
+            variant=dtf_variant(product_type, dtf),
             required_layers=required,
         )
 

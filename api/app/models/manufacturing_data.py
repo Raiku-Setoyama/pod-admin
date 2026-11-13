@@ -11,7 +11,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -58,7 +58,8 @@ class ManufacturingData(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # pod-admin サイズ（元の受注値をそのまま保持）
     size: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    # 生成のバリアント（keychain: clear/color、sticker: clear、その他: None）
+    # 生成のバリアント（keychain: clear/color、sticker: clear、T シャツ・トートの DTF 版: dtf、
+    # その他: None）。**生成はこの値で作り方を決める**（設定の切り替えで、既にある行の作り方を変えない）
     variant: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # 生成ステータス（MfgDataStatus の value を保存）
@@ -87,6 +88,19 @@ class ManufacturingData(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # FileStorage 上の保存先
     file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # 生成の結果の記録（T シャツ・トートの DTF 版だけ。インクジェット版・アクリル系は NULL。#188）。
+    # 生成が ready になったときに書く。発注リスト（#189）と管理画面（#190）が使う。
+    # 元画像の実寸解像度（dpi。元の画素数 ÷ 置く大きさ）
+    source_dpi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # 絵柄の幅・高さ（mm。切り抜く前の絵柄の外形）
+    art_width_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    art_height_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # リブ下から絵柄の最上部まで（mm）
+    art_top_below_rib_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # 白版の種類（color_only / white_only / mixed＝カラーのみ／ホワイトのみ／混在。
+    # 値は生成 app/generator/dtf.py の WhitePlateKind）
+    white_plate: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # 失敗時のエラーメッセージ
     error_message: Mapped[str | None] = mapped_column(String(1000), nullable=True)

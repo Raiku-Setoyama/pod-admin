@@ -92,6 +92,10 @@ class Settings(BaseSettings):
     GENERATOR_DTF_CHOKE_MM: float = 0.15
     # 元画像の画素数の上限。超えたら作らない（ワーカーは 1 CPU・1GiB。上限付近でピーク約 400MB）
     GENERATOR_DTF_MAX_SOURCE_PIXELS: int = 25_000_000
+    # T シャツ・トートの製造データを DTF 版で作るか（#188）。既定は無効＝インクジェット版のまま。
+    # 有効にした後に**新しく作る**製造データの行だけが DTF 版（variant "dtf"）になる。既にある行は
+    # 行に保存された variant のまま作り直す（生成待ち・再生成・元画像の差し替えを含む）
+    MFG_DTF_ENABLED: bool = False
 
     # 外部注文 v2 の元データ画像取得（SSRF/DoS 防御）
     # 信頼して素通しするホスト名の許可リスト（例: ["assets.rksyo.com"]）。空なら
