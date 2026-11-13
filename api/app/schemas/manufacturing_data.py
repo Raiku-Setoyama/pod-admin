@@ -3,13 +3,29 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, computed_field, field_validator
 
+from app.config import settings
 from app.utils.mfg_product_mapping import LayerType
 
 # DTF 版の白版の種類（生成 app/generator/dtf.py の WhitePlateKind と同じ値。
 # あちらは numpy を読み込むので import しない）
 WhitePlateKind = Literal["color_only", "white_only", "mixed"]
+
+# 元画像の実寸解像度の区分（#190）。low: 警告の値未満 / upscaled: 目標未満（拡大して作成）/
+# ok: 目標以上。閾値は設定（MFG_RESOLUTION_*_DPI）で、画面は閾値を持たずこの区分を出す
+ResolutionLevel = Literal["low", "upscaled", "ok"]
+
+
+def classify_resolution(source_dpi: float | None) -> ResolutionLevel | None:
+    """元画像の実寸解像度（dpi）の区分を返す（記録が無ければ None）."""
+    if source_dpi is None:
+        return None
+    if source_dpi < settings.MFG_RESOLUTION_WARN_DPI:
+        return "low"
+    if source_dpi < settings.MFG_RESOLUTION_TARGET_DPI:
+        return "upscaled"
+    return "ok"
 
 
 class SourceImageLayer(BaseModel):
@@ -56,6 +72,12 @@ class ManufacturingDataResponse(BaseModel):
     white_plate: WhitePlateKind | None = None
     created_at: datetime
     updated_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]  # pydantic 公式の書き方。mypy が @property の重ね掛けを解釈できない
+    @property
+    def resolution_level(self) -> ResolutionLevel | None:
+        """元画像の実寸解像度の区分（source_dpi の記録が無ければ None）."""
+        return classify_resolution(self.source_dpi)
 
 
 class ManufacturingDataOrderItemRef(BaseModel):

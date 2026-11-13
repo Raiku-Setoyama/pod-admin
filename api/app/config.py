@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     # 有効にした後に**新しく作る**製造データの行だけが DTF 版（variant "dtf"）になる。既にある行は
     # 行に保存された variant のまま作り直す（生成待ち・再生成・元画像の差し替えを含む）
     MFG_DTF_ENABLED: bool = False
+    # DTF 版の元画像の実寸解像度（dpi）の区分の閾値（#190。管理画面の製造データ一覧・詳細に出す）。
+    # 目標（絵柄を作る解像度）未満は「拡大して作成」、警告の値未満は「低解像度」。どちらも
+    # 作れないわけではなく、仕上がりが粗くなりうるという目印である
+    MFG_RESOLUTION_WARN_DPI: float = 150.0
+    MFG_RESOLUTION_TARGET_DPI: float = 300.0
 
     # 外部注文 v2 の元データ画像取得（SSRF/DoS 防御）
     # 信頼して素通しするホスト名の許可リスト（例: ["assets.rksyo.com"]）。空なら

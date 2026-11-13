@@ -42,8 +42,29 @@ export interface SourceImageLayer {
   filename: string | null;
 }
 
+// DTF 版の白版の種類（カラーのみ／ホワイトのみ／混在）
+export type WhitePlateKind = "color_only" | "white_only" | "mixed";
+
+// 元画像の実寸解像度の区分（API が設定の閾値で判定する。画面は閾値を持たない）
+// low: 低解像度（警告）/ upscaled: 拡大して作成 / ok: 目標以上
+export type ResolutionLevel = "low" | "upscaled" | "ok";
+
+// 生成の結果の記録（T シャツ・トートの DTF 版だけ。ほかは null）
+// **再生成・元画像の差し替えで生成待ちに戻しても、次に ready になるまで前回の値のまま残る。**
+export interface MfgDataPrintRecord {
+  // 元画像の実寸解像度（dpi）
+  source_dpi: number | null;
+  resolution_level: ResolutionLevel | null;
+  // 絵柄の幅・高さ（mm）
+  art_width_mm: number | null;
+  art_height_mm: number | null;
+  // リブ下から絵柄の最上部まで（mm）
+  art_top_below_rib_mm: number | null;
+  white_plate: WhitePlateKind | null;
+}
+
 // 製造データ一覧の 1 行（管理画面の製造データ一覧）
-export interface ManufacturingDataRow extends MfgDataItemInfo {
+export interface ManufacturingDataRow extends MfgDataItemInfo, MfgDataPrintRecord {
   order_source_id: string | null;
   product_code: string;
   product_type: ProductType;
@@ -78,7 +99,7 @@ export interface ManufacturingDataOrderItemRef {
 }
 
 // 製造データ詳細（元画像レイヤー一覧・使っている明細つき）
-export interface ManufacturingDataDetail extends MfgDataItemInfo {
+export interface ManufacturingDataDetail extends MfgDataItemInfo, MfgDataPrintRecord {
   product_code: string;
   product_type: ProductType;
   size: string | null;
