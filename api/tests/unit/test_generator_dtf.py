@@ -334,6 +334,72 @@ def test_white_min_rgb_setting() -> None:
     assert generate_dtf(_png(rgba), "tote_bag", "M", "t", opts).white_plate == "mixed"
 
 
+def _light_rect(canvas: int, rgb: tuple[int, int, int]) -> U8:
+    """透明の中に、``rgb`` の四角（stg 検証の再現。四角は上下左右とも透明に接する）."""
+    rgba = _rgba(canvas, canvas, alpha=0)
+    s = canvas / CANVAS
+    rgba[round(380 * s) : round(800 * s), round(80 * s) : canvas - round(80 * s)] = (*rgb, 255)
+    return rgba
+
+
+@pytest.mark.parametrize("canvas", [CANVAS, 3600])
+@pytest.mark.parametrize("value", [238, 245, 250, 254])
+def test_near_white_next_to_transparency_is_color_only(canvas: int, value: int) -> None:
+    """真っ白でない明るい色（明るいグレー・書き出しで 254 になった白）は、生地に接していても
+    「カラーのみ」（#198。拡大の行き過ぎで縁が真っ白になり、混在と判定されていた）."""
+    rgba = _light_rect(canvas, (value, value, value))
+    assert generate_dtf(_png(rgba), "tshirt", "M", "t").white_plate == "color_only"
+
+
+def test_near_white_next_to_dark_is_color_only() -> None:
+    """ほぼ白の文字が暗い色に接していても「カラーのみ」（暗い色との境目の行き過ぎで真っ白にしない）."""
+    rgba = _light_rect(CANVAS, (40, 40, 40))
+    rgba[450:730, 200:980, :3] = 250
+    rgba[520:660, 300:880, :3] = 40
+    assert generate_dtf(_png(rgba), "tshirt", "M", "t").white_plate == "color_only"
+
+
+def test_opaque_edge_is_not_brighter_than_the_source() -> None:
+    """拡大の行き過ぎで不透明度を 1 に切っても、色は元のまま（縁だけ明るくならない）."""
+    rgba = _light_rect(CANVAS, (238, 200, 120))
+    result = generate_dtf(_png(rgba), "tshirt", "M", "t")
+    _, page = _page(result.pdf)
+    plate = 255 - _image(page, "/Im0")
+    comp = _image(page, "/Im2").astype(np.int64)
+    solid = plate == 255
+    assert solid.sum() > 0
+    # 白地に合成した RGB。不透明度が 100% の所では元の色と 1 以内
+    assert (np.abs(comp[solid] - np.array([238, 200, 120])) <= 1).all()
+
+
+def test_mixed_white_touching_transparency_keeps_its_edge() -> None:
+    """混在で、真っ白の部分が生地に接する縁（拡大でぼけた縁も含む）は縮めない。カラーの縁は縮める."""
+    rgba = _rgba(alpha=0)
+    rgba[300:800, 100:500] = (255, 255, 255, 255)
+    rgba[300:800, 500:1000] = (200, 40, 40, 255)
+    png = _png(rgba)
+    result = generate_dtf(png, "tshirt", "M", "t")
+    assert result.white_plate == "mixed"
+    # 縮めないときの白版（＝不透明度）と比べる
+    unchoked = generate_dtf(png, "tshirt", "M", "t", DtfOptions(choke_mm=0))
+    plate = 255 - _image(_page(result.pdf)[1], "/Im0")
+    a8 = 255 - _image(_page(unchoked.pdf)[1], "/Im0")
+    # 絵柄の幅 900px のうち、左 400px がホワイト。境目から少し離した所で分ける
+    art_w = plate.shape[1] - 2 * PAD_PX
+    white_end = PAD_PX + art_w * 380 // 900
+    color_start = PAD_PX + art_w * 420 // 900
+    # 四隅には拡大の行き過ぎで、絵柄から離れた不透明度 1/255 ほどの点ができる（1mm² 未満なので
+    # カラー扱いで縮む）。これを除いた、絵柄本体（8 近傍で最大の連結領域）で比べる
+    labels, _ = ndimage.label(a8 > 0, structure=np.ones((3, 3), dtype=np.bool_))
+    body = labels == np.bincount(labels.ravel())[1:].argmax() + 1
+    # ホワイト側は、生地に接するぼけた縁も含めて縮めない
+    side = body[:, :white_end]
+    assert np.array_equal(plate[:, :white_end][side], a8[:, :white_end][side])
+    # カラー側の、生地に接する縁は縮める
+    assert (plate[:, color_start:] < a8[:, color_start:]).any()
+    assert (plate <= a8).all()
+
+
 def _speck(area_px: int, diagonal: bool = False) -> tuple[U8, Mask]:
     """カラーの中に、真っ白の連結領域 1 つ（``area_px`` 画素）."""
     a8 = np.full((80, 80), 255, dtype=np.uint8)
