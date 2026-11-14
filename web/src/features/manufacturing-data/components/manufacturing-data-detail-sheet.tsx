@@ -27,6 +27,7 @@ import type {
   SourceImageLayer,
   SourceImageLayerType,
 } from "@/types/api";
+import { PrintRecordDetails } from "./print-record";
 
 const layerLabels: Record<SourceImageLayerType, string> = {
   color: "カラー",
@@ -144,6 +145,13 @@ function DetailBody({ detail }: { detail: ManufacturingDataDetail }) {
           <pre className="whitespace-pre-wrap break-all rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800">
             {detail.error_message}
           </pre>
+        </Section>
+      )}
+
+      {/* T シャツ・トートの DTF 版だけ（ほかは記録が無い） */}
+      {detail.variant === "dtf" && (
+        <Section title="印刷の条件（DTF）">
+          <PrintRecordDetails record={detail} status={detail.status} />
         </Section>
       )}
 

@@ -17,6 +17,7 @@ import {
 import { getProductTypeLabel } from "@/constants/product";
 import { cn, formatDateTime } from "@/lib/utils";
 import type { ManufacturingDataRow } from "@/types/api";
+import { ResolutionCell } from "./print-record";
 
 /**
  * 「生成待ち」の内訳を出す。
@@ -93,6 +94,7 @@ export function ManufacturingDataList({
             <TableHead>商品コード</TableHead>
             <TableHead>商品種別</TableHead>
             <TableHead>サイズ / バリアント</TableHead>
+            <TableHead>解像度</TableHead>
             <TableHead>試行</TableHead>
             <TableHead>更新</TableHead>
             <TableHead>詳細</TableHead>
@@ -148,6 +150,9 @@ export function ManufacturingDataList({
                 <TableCell>{getProductTypeLabel(row.product_type)}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {[row.size, row.variant].filter(Boolean).join(" / ") || "—"}
+                </TableCell>
+                <TableCell className="text-sm">
+                  <ResolutionCell record={row} status={row.status} />
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {row.attempts}

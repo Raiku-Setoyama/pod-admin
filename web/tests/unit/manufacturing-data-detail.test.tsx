@@ -66,6 +66,12 @@ function detail(overrides: Partial<ManufacturingDataDetail> = {}): Manufacturing
       },
     ],
     order_items_total: 1,
+    source_dpi: null,
+    resolution_level: null,
+    art_width_mm: null,
+    art_height_mm: null,
+    art_top_below_rib_mm: null,
+    white_plate: null,
     ...overrides,
   }
 }
@@ -175,6 +181,12 @@ describe('ManufacturingDataList の行クリック', () => {
       source_images_replaced_by: null,
       created_at: '2026-11-10T00:00:00Z',
       updated_at: '2026-11-10T00:00:00Z',
+      source_dpi: null,
+      resolution_level: null,
+      art_width_mm: null,
+      art_height_mm: null,
+      art_top_below_rib_mm: null,
+      white_plate: null,
     },
   ]
 

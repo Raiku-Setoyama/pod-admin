@@ -59,6 +59,12 @@ const detail: ManufacturingDataDetail = {
   updated_at: '2026-07-26T10:00:00Z',
   order_items: [],
   order_items_total: 0,
+  source_dpi: null,
+  resolution_level: null,
+  art_width_mm: null,
+  art_height_mm: null,
+  art_top_below_rib_mm: null,
+  white_plate: null,
 }
 
 function pngFile(name = 'new_color.png'): File {
