@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import enum
 import logging
+import posixpath
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -639,19 +640,22 @@ class ManufacturingDataService:
         return detail
 
     async def get_output_file(self, md_id: str) -> tuple[bytes, str]:
-        """生成済みの製造データ（.ai）の内容とファイル名を返す.
+        """生成済みの製造データ（アクリル系は .ai、T シャツ・トートは .pdf）の内容とファイル名を返す.
 
         生成が終わっていない（ready でない）行や、保存先から消えている行は 404 とする。
+        ファイル名は生成時に記録した output_filename。無い行では商品コードに保存先の
+        拡張子（保存時に生成物の拡張子を保持している）を付ける。
         """
         md = await self._require_row(md_id)
-        content = (
-            await self._storage().get(md.file_path)
-            if md.status == MfgDataStatus.READY.value and md.file_path
-            else None
-        )
+        file_path = md.file_path
+        if md.status != MfgDataStatus.READY.value or not file_path:
+            raise NotFoundError("ManufacturingDataFile", md_id)
+        content = await self._storage().get(file_path)
         if content is None:
             raise NotFoundError("ManufacturingDataFile", md_id)
-        return content, md.output_filename or f"{md.product_code}.ai"
+        if md.output_filename:
+            return content, md.output_filename
+        return content, md.product_code + posixpath.splitext(file_path)[1]
 
     async def replace_source_images(
         self,

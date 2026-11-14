@@ -48,6 +48,21 @@ function formatFileSize(bytes: number | null): string | null {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+/**
+ * 生成済みの製造データのファイルの拡張子（例: ".ai" / ".pdf"）。
+ *
+ * 拡張子は生成側（API）が商品種別で決めるので、画面は API が返すファイル名から読むだけにする
+ * （アクリル系は .ai、T シャツ・トートは .pdf）。生成済みでない行は、再生成前のファイル名が
+ * 残っていてもまだダウンロードできないので null。ファイル名が分からないときも推測しない。
+ */
+function outputFileExtension(
+  detail: Pick<ManufacturingDataDetail, "status" | "output_filename">,
+): string | null {
+  if (detail.status !== "ready" || !detail.output_filename) return null;
+  const match = /\.[^./\\]+$/.exec(detail.output_filename);
+  return match ? match[0].toLowerCase() : null;
+}
+
 interface ManufacturingDataDetailSheetProps {
   /** 表示する製造データの ID。null なら閉じている。 */
   manufacturingDataId: string | null;
@@ -57,7 +72,7 @@ interface ManufacturingDataDetailSheetProps {
 /**
  * 製造データ 1 件の詳細を右側に開くパネル。
  *
- * 一覧では切れてしまうエラー文の全文、生成済みファイル（.ai）、元画像、そして
+ * 一覧では切れてしまうエラー文の全文、生成済みファイル（.ai / .pdf）、元画像、そして
  * **この製造データを使っている注文**を 1 か所で見られるようにする。製造データは
  * 複数の注文で共有されるので、失敗したときにどの注文が止まっているかはここで分かる。
  */
@@ -101,6 +116,7 @@ export function ManufacturingDataDetailSheet({
 
 function DetailBody({ detail }: { detail: ManufacturingDataDetail }) {
   const fileSize = formatFileSize(detail.file_size);
+  const extension = outputFileExtension(detail);
 
   return (
     <>
@@ -155,7 +171,7 @@ function DetailBody({ detail }: { detail: ManufacturingDataDetail }) {
         </Section>
       )}
 
-      <Section title="製造データ（.ai）">
+      <Section title={extension ? `製造データ（${extension}）` : "製造データ"}>
         <OutputFile detail={detail} fileSize={fileSize} />
       </Section>
 
@@ -204,7 +220,8 @@ function OutputFile({
     );
   }
 
-  const filename = detail.output_filename ?? `${detail.product_code}.ai`;
+  // 記録が無い行では拡張子を推測で付けない（API の既定ファイル名も保存先の拡張子を使う）
+  const filename = detail.output_filename ?? detail.product_code;
   const handleDownload = async () => {
     setDownloading(true);
     try {

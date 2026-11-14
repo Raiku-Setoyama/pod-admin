@@ -392,6 +392,53 @@ class TestGenerateDriver:
         assert set(images.keys()) == {"color", "cutline"}
 
 
+class TestGetOutputFile:
+    """生成済みファイルのダウンロードで返すファイル名."""
+
+    def _ready_md(self, *, file_path: str, output_filename: str | None) -> ManufacturingData:
+        md = ManufacturingData(product_code="RKSYO-1", product_type="tshirt", size="M")
+        md.id = "md-1"
+        md.status = MfgDataStatus.READY.value
+        md.file_path = file_path
+        md.output_filename = output_filename
+        return md
+
+    async def _get(self, md: ManufacturingData) -> tuple[bytes, str]:
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        storage = MagicMock()
+        storage.get = AsyncMock(return_value=b"body")
+        result: tuple[bytes, str] = await _service(md_repo, file_storage=storage).get_output_file(
+            "md-1"
+        )
+        return result
+
+    @pytest.mark.asyncio
+    async def test_returns_the_recorded_output_filename(self) -> None:
+        md = self._ready_md(
+            file_path="manufacturing_data/20261114_000000_1a2b3c4d.pdf",
+            output_filename="Tシャツ_M_md-1.pdf",
+        )
+        assert await self._get(md) == (b"body", "Tシャツ_M_md-1.pdf")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("file_path", "expected"),
+        [
+            # 保存先のパスは生成物の拡張子を保持している（generate_stored_filename）
+            ("manufacturing_data/20261114_000000_1a2b3c4d.pdf", "RKSYO-1.pdf"),
+            ("manufacturing_data/20261114_000000_1a2b3c4d.ai", "RKSYO-1.ai"),
+            # 拡張子が分からなければ推測で付けない
+            ("manufacturing_data/20261114_000000_1a2b3c4d", "RKSYO-1"),
+        ],
+    )
+    async def test_default_filename_uses_the_stored_file_extension(
+        self, file_path: str, expected: str
+    ) -> None:
+        md = self._ready_md(file_path=file_path, output_filename=None)
+        assert await self._get(md) == (b"body", expected)
+
+
 class TestRetry:
     @pytest.mark.asyncio
     async def test_retry_resets_to_pending_without_generating_inline(self) -> None:
