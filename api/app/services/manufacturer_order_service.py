@@ -461,6 +461,11 @@ class ManufacturerOrderService:
                     # v2: 生成済み製造データ（保存先）。v1 は None。
                     "manufacturing_data_id": order_item.manufacturing_data_id,
                     "manufacturing_file_path": md.file_path if md else None,
+                    # 発注リストの DTF の列（印刷方法・印刷位置・白版）に使う（#189）。
+                    # DTF 版（variant dtf）だけ値が入る。
+                    "variant": md.variant if md else None,
+                    "art_top_below_rib_mm": md.art_top_below_rib_mm if md else None,
+                    "white_plate": md.white_plate if md else None,
                 }
             )
 
