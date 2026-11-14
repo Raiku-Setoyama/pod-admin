@@ -286,13 +286,20 @@ def _resample(rgba: U8, out_w: int, out_h: int, white_min_rgb: int) -> tuple[U8,
     拡大縮小は乗算済みの色で行う（透明な所の色が縁に混ざらない）。白地への合成も線形なので、
     合成してから拡大縮小するのと同じ結果になる。
 
+    BICUBIC は段差の両側で値が行き過ぎる。不透明度が 1 を超えた所は 1 に切るが、そのとき乗算済みの
+    色も同じ比で縮める（色だけ行き過ぎたまま残すと、縁の内側が元より明るくなり、明るい色は真っ白になる）。
+    明るい色と暗い色の境目でも色そのものが行き過ぎるので、真っ白の範囲は拡大後の色だけでは決めず、
+    元画像の真っ白の画素（の台の半径だけ広げた範囲）に限る。元画像に真っ白が無ければ真っ白は出ない（#198）。
+
     メモリを抑えるため、出力を ``_BAND_ROWS`` 行ずつに分け、それぞれに必要な元画像の行だけを
     浮動小数にする。Pillow の拡大縮小は、``box`` の外でも画像の中なら台の範囲の画素を使うので、
     台の半径より広く元画像を切り出しておけば、全体を一度に拡大縮小するのと同じ結果になる。
     """
     h0, w0 = rgba.shape[:2]
     sy = h0 / out_h
-    margin = math.ceil(_BICUBIC_SUPPORT * max(sy, 1.0)) + 2
+    # 出力 1 画素の値に効く元画像の画素の半径（元画像の画素数）
+    reach = math.ceil(_BICUBIC_SUPPORT * max(sy, w0 / out_w, 1.0))
+    margin = reach + 2
     comp = np.empty((out_h, out_w, 3), dtype=np.uint8)
     a8 = np.empty((out_h, out_w), dtype=np.uint8)
     white = np.empty((out_h, out_w), dtype=np.bool_)
@@ -307,17 +314,52 @@ def _resample(rgba: U8, out_w: int, out_h: int, white_min_rgb: int) -> tuple[U8,
         box = (0.0, top - r0, float(w0), bottom - r0)
         size = (out_w, y1 - y0)
         src_a = src[..., 3].astype(np.float32) / np.float32(255)
-        a = np.clip(_resize(src_a, size, box), 0.0, 1.0)
+        a_raw = _resize(src_a, size, box)
+        a = np.clip(a_raw, 0.0, 1.0)
+        # 不透明度を切った比（0 < a_raw <= 1 では a / a_raw は厳密に 1 なので、行き過ぎの無い所は変わらない）
+        keep = np.divide(a, a_raw, out=np.zeros_like(a), where=a_raw > 0)
+        del a_raw
         a8[y0:y1] = np.rint(a * 255)
-        band_white = a8[y0:y1] > 0
+        band_white = (a8[y0:y1] > 0) & _near_source_white(
+            rgba, r0, r1, reach, white_min_rgb, size, box
+        )
         for c in range(3):
             pm = _resize(src[..., c].astype(np.float32) / np.float32(255) * src_a, size, box)
-            pm = np.clip(pm, 0.0, a)
+            pm = np.clip(pm * keep, 0.0, a)
             comp[y0:y1, :, c] = np.rint((pm + (1.0 - a)) * 255)
             band_white &= pm >= white_ratio * a
         white[y0:y1] = band_white
     comp[a8 == 0] = 255
     return comp, a8, white
+
+
+def _near_source_white(
+    rgba: U8,
+    r0: int,
+    r1: int,
+    reach: int,
+    white_min_rgb: int,
+    size: tuple[int, int],
+    box: tuple[float, float, float, float],
+) -> Mask:
+    """出力の帯（元画像の行 ``r0:r1`` を ``box`` で拡大縮小したもの）のうち、元画像の真っ白の画素
+    （不透明度 > 0 で RGB がすべて ``white_min_rgb`` 以上）から ``reach`` 画素以内に当たる所.
+
+    出力 1 画素の値はこの半径の中の元画像の画素だけで決まるので、真っ白の画素がこの範囲に無ければ、
+    拡大後に真っ白に見えても行き過ぎによるものである。最近傍で写すときの半画素のずれの分、1 画素広げる。
+    """
+    grow = reach + 1
+    g0, g1 = max(0, r0 - grow), min(rgba.shape[0], r1 + grow)
+    src = rgba[g0:g1]
+    src_white = (src[..., 3] > 0) & (src[..., :3] >= white_min_rgb).all(axis=2)
+    if not src_white.any():
+        # カラーの絵柄ではほとんどの帯がこれ。広げる・写すを省く
+        return np.zeros((size[1], size[0]), dtype=np.bool_)
+    near = ndimage.maximum_filter(src_white, size=2 * grow + 1, mode="constant", cval=False)
+    del src_white
+    im = Image.fromarray(near[r0 - g0 : r1 - g0])
+    out: Mask = np.asarray(im.resize(size, Image.Resampling.NEAREST, box=box), dtype=np.bool_)
+    return out
 
 
 def _bbox(a8: U8) -> tuple[int, int, int, int] | None:
