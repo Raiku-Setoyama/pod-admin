@@ -82,6 +82,16 @@ class Settings(BaseSettings):
     # 本番・ステージングでは Terraform（infra/modules/stack の local.generation_timeout_seconds）が
     # ワーカーに渡し、同じ値から Job のタイムアウトを導出する。ここの既定値は手元で動かすとき用。
     GENERATOR_TIMEOUT_SECONDS: float = 120.0
+    # T シャツ・トートの DTF 版の製造データ（app/generator/dtf.py。#187）
+    # 白版の「真っ白」とみなす RGB の下限（3 つとも、この値以上）。ホワイト部分＝真っ白の部分（メーカー回答）
+    GENERATOR_DTF_WHITE_MIN_RGB: int = 255
+    # 白版の種類の判定で無視する、真っ白の連結領域の大きさ（mm²）。これ未満はカラー部分として扱う
+    # （写真のハイライトや白い点で「混在」にしない）
+    GENERATOR_DTF_IGNORE_WHITE_AREA_MM2: float = 1.0
+    # 混在のとき、カラー部分のうち透明な所に接する縁を縮める量（mm。300dpi で画素に直す）
+    GENERATOR_DTF_CHOKE_MM: float = 0.15
+    # 元画像の画素数の上限。超えたら作らない（ワーカーは 1 CPU・1GiB。上限付近でピーク約 400MB）
+    GENERATOR_DTF_MAX_SOURCE_PIXELS: int = 25_000_000
 
     # 外部注文 v2 の元データ画像取得（SSRF/DoS 防御）
     # 信頼して素通しするホスト名の許可リスト（例: ["assets.rksyo.com"]）。空なら
