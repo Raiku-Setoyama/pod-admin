@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 import type { ReactNode } from 'react'
@@ -125,6 +125,65 @@ describe('ManufacturingDataDetailSheet', () => {
     renderSheet(detail({ status: 'pending', output_filename: null, file_size: null }))
 
     expect(await screen.findByText(/生成が終わるとダウンロードできます/)).toBeInTheDocument()
+  })
+
+  it('見出しの拡張子は製造データのファイルに合わせる（アクリル系は .ai）', async () => {
+    renderSheet(detail())
+
+    expect(
+      await screen.findByRole('heading', { name: '製造データ（.ai）' }),
+    ).toBeInTheDocument()
+  })
+
+  it('T シャツ・トートの PDF は見出しが .pdf になり、PDF のファイル名でダウンロードする', async () => {
+    const user = userEvent.setup()
+    renderSheet(
+      detail({
+        product_code: 'RKSYO-TEE',
+        product_type: 'tshirt',
+        size: 'M',
+        variant: 'dtf',
+        output_filename: 'Tシャツ_M_md-1.pdf',
+      }),
+    )
+
+    const heading = await screen.findByRole('heading', { name: '製造データ（.pdf）' })
+    expect(screen.queryByRole('heading', { name: '製造データ（.ai）' })).not.toBeInTheDocument()
+
+    const section = within(heading.closest('section') as HTMLElement)
+    expect(section.getByText('Tシャツ_M_md-1.pdf')).toBeInTheDocument()
+    await user.click(section.getByRole('button', { name: 'ダウンロード' }))
+    expect(mockedDownloadFile).toHaveBeenCalledWith(
+      '/manufacturing-data/md-1/file',
+      'Tシャツ_M_md-1.pdf',
+    )
+  })
+
+  it.each([
+    ['pending', null],
+    ['generating', null],
+    ['failed', null],
+    // 再生成で生成待ちに戻った行は前回のファイル名が残るが、まだダウンロードできない
+    ['pending', 'RKSYO-ABC_50x50.ai'],
+  ] as const)(
+    'ファイルがまだ無い（%s・ファイル名 %s）ときは見出しに拡張子を付けない',
+    async (status, outputFilename) => {
+      renderSheet(detail({ status, output_filename: outputFilename, file_size: null }))
+
+      expect(await screen.findByRole('heading', { name: '製造データ' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: /製造データ（/ })).not.toBeInTheDocument()
+    },
+  )
+
+  it('生成済みでもファイル名が分からなければ、拡張子を推測で付けない', async () => {
+    const user = userEvent.setup()
+    renderSheet(detail({ output_filename: null }))
+
+    const heading = await screen.findByRole('heading', { name: '製造データ' })
+    const section = within(heading.closest('section') as HTMLElement)
+    expect(section.getByText('RKSYO-ABC')).toBeInTheDocument()
+    await user.click(section.getByRole('button', { name: 'ダウンロード' }))
+    expect(mockedDownloadFile).toHaveBeenCalledWith('/manufacturing-data/md-1/file', 'RKSYO-ABC')
   })
 
   it('差し替え済みの元画像はダウンロードでき、外部の元画像はリンクで開く', async () => {
