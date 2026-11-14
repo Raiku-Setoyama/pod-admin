@@ -19,7 +19,7 @@ from app.generator.pdf_finish import finish_pdf
 from app.generator.products import ICC_SRGB, acrylic_mm, output_filename
 from app.generator.vectorcraft import VectorCraft
 from app.generator.white_plate import fill_white_plate
-from app.utils.mfg_product_mapping import GenerationSpec
+from app.utils.mfg_product_mapping import VARIANT_DTF, GenerationSpec
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +29,6 @@ _ACRYLIC = {
     "sticker": pipelines.sticker,
 }
 _ON_TEMPLATE = {"tshirt": pipelines.tshirt, "tote_bag": pipelines.tote_bag}
-# DTF 版を作れる商品（variant が DTF_VARIANT のとき。VectorCraft を使わない）
-DTF_VARIANT = "dtf"
 
 
 def generate(
@@ -48,7 +46,8 @@ def generate(
     （VectorCraft を使う生成だけに効く）。``dtf_options`` は DTF 版の設定値（省略時は既定値）。
     """
     filename = output_filename(spec.product_type, spec.size, spec.variant, order_id)
-    if spec.product_type in _ON_TEMPLATE and spec.variant == DTF_VARIANT:
+    if spec.product_type in _ON_TEMPLATE and spec.variant == VARIANT_DTF:
+        # DTF 版（VectorCraft を使わない）
         dtf = generate_dtf(
             images[spec.required_layers[0]],
             spec.product_type,

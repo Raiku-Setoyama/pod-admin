@@ -7,6 +7,10 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.utils.mfg_product_mapping import LayerType
 
+# DTF 版の白版の種類（生成 app/generator/dtf.py の WhitePlateKind と同じ値。
+# あちらは numpy を読み込むので import しない）
+WhitePlateKind = Literal["color_only", "white_only", "mixed"]
+
 
 class SourceImageLayer(BaseModel):
     """製造データ1レイヤーの元画像（由来つき）."""
@@ -40,6 +44,16 @@ class ManufacturingDataResponse(BaseModel):
     # 元画像の差し替え履歴（未差し替えなら None）
     source_images_replaced_at: datetime | None = None
     source_images_replaced_by: str | None = None
+    # 生成の結果の記録（T シャツ・トートの DTF 版だけ。ほかは None。#188）
+    # 元画像の実寸解像度（dpi）
+    source_dpi: float | None = None
+    # 絵柄の幅・高さ（mm。切り抜く前の絵柄の外形）
+    art_width_mm: float | None = None
+    art_height_mm: float | None = None
+    # リブ下から絵柄の最上部まで（mm）
+    art_top_below_rib_mm: float | None = None
+    # 白版の種類（カラーのみ／ホワイトのみ／混在）
+    white_plate: WhitePlateKind | None = None
     created_at: datetime
     updated_at: datetime
 

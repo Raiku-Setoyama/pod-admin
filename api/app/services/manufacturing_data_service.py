@@ -44,7 +44,13 @@ from app.schemas.manufacturing_data import (
 )
 from app.utils.exceptions import ConflictError, NotFoundError, ValidationError
 from app.utils.file_storage import FileStorage, build_file_storage
-from app.utils.mfg_product_mapping import GenerationSpec, MfgMappingError, build_generation_spec
+from app.utils.mfg_product_mapping import (
+    VARIANT_DTF,
+    GenerationSpec,
+    MfgMappingError,
+    build_generation_spec,
+    dtf_variant,
+)
 from app.utils.url_guard import validate_source_url
 
 logger = logging.getLogger(__name__)
@@ -217,14 +223,18 @@ class ManufacturingDataService:
         assert item.product_code is not None
         assert item.source_images is not None
         layer_types = {img["layer_type"] for img in item.source_images}
+        # T シャツ・トートを DTF 版にするかは、**新しく行を探す・作るときだけ**設定で決める
+        # （既にある行の作り方は行の variant に従う。generate を参照）
+        dtf = settings.MFG_DTF_ENABLED
         try:
-            mapping = build_generation_spec(item.product_type, item.size, layer_types)
+            mapping = build_generation_spec(item.product_type, item.size, layer_types, dtf=dtf)
         except MfgMappingError as exc:
-            # マッピング不能 → failed 行を作成（発注ゲートで保留、管理者が気づける）
+            # マッピング不能 → failed 行を作成（発注ゲートで保留、管理者が気づける）。
+            # DTF 版の T シャツ・トートは variant を dtf にする（インクジェット用の行と同じキーにしない）
             md, _ = await self._insert_row(
                 order_source_id,
                 item,
-                variant=None,
+                variant=dtf_variant(item.product_type, dtf),
                 status=MfgDataStatus.FAILED,
                 error_message=str(exc),
             )
@@ -339,7 +349,12 @@ class ManufacturingDataService:
                 raise GenerationError("source_images is empty")
 
             layer_types = {img["layer_type"] for img in md.source_images}
-            spec = build_generation_spec(md.product_type, md.size, layer_types)
+            # 作り方は**行に保存された variant**で決める（設定ではない）。設定を切り替える前に
+            # 作られた生成待ちの行や、インクジェット版の行の再生成・元画像の差し替えを、
+            # キャッシュキーと食い違う DTF 版で作らないため
+            spec = build_generation_spec(
+                md.product_type, md.size, layer_types, dtf=md.variant == VARIANT_DTF
+            )
 
             images = await self._download_source_images(
                 md.source_images, set(spec.usable_layers)
@@ -361,6 +376,12 @@ class ManufacturingDataService:
                 file_path=file_path,
                 file_size=len(content),
                 error_message=None,
+                # DTF 版だけ値が入る（ほかは None。作り直したときに前の値を残さない）
+                source_dpi=generated.source_dpi,
+                art_width_mm=generated.art_width_mm,
+                art_height_mm=generated.art_height_mm,
+                art_top_below_rib_mm=generated.art_top_below_rib_mm,
+                white_plate=generated.white_plate,
             )
             if not applied:
                 return GenerationOutcome.SKIPPED

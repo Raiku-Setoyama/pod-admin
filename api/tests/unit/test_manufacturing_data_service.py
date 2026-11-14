@@ -612,3 +612,267 @@ class TestManufacturingReadinessGate:
         md.status = MfgDataStatus.PENDING.value
         item.manufacturing_data = md
         assert item.is_manufacturing_ready is False
+
+
+class TestDtfSwitch:
+    """T シャツ・トートの DTF 版への切り替え（#188）.
+
+    新しく探す・作る行だけが設定（MFG_DTF_ENABLED）で variant dtf になり、作り方は行の variant に従う。
+    """
+
+    @staticmethod
+    def _inkjet_row(status: str = MfgDataStatus.READY.value) -> ManufacturingData:
+        md = ManufacturingData(
+            product_code="RKSYO-T", product_type="tshirt", size="M", variant=None
+        )
+        md.id = "md-inkjet"
+        md.status = status
+        return md
+
+    async def _prepare(
+        self, item: Any, md_repo: Any, *, dtf: bool
+    ) -> tuple[list[str], Any]:
+        order = SimpleNamespace(order_source_id="src-1", items=[item])
+        order_repo = AsyncMock()
+        order_repo.find_by_id.return_value = order
+        with patch.object(settings, "MFG_DTF_ENABLED", dtf):
+            return await _service(md_repo, order_repo).prepare_for_order("order-1"), order_repo
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("product_type", ["tshirt", "tote_bag"])
+    async def test_flag_off_keeps_inkjet_row_without_variant(self, product_type: str) -> None:
+        item = _v2_item(product_code="RKSYO-T", product_type=product_type, size="M",
+                        layers=("design",))
+        md_repo = AsyncMock()
+        md_repo.find_by_cache_key.return_value = None
+        md_repo.create.side_effect = lambda m: _assign_id(m, "md-new")
+
+        await self._prepare(item, md_repo, dtf=False)
+
+        assert md_repo.find_by_cache_key.call_args.args == ("src-1", "RKSYO-T", "M", None)
+        assert md_repo.create.call_args.args[0].variant is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("product_type", ["tshirt", "tote_bag"])
+    async def test_flag_on_new_item_creates_dtf_row(self, product_type: str) -> None:
+        item = _v2_item(product_code="RKSYO-T", product_type=product_type, size="M",
+                        layers=("design",))
+        md_repo = AsyncMock()
+        md_repo.find_by_cache_key.return_value = None
+        md_repo.create.side_effect = lambda m: _assign_id(m, "md-dtf")
+
+        to_generate, _ = await self._prepare(item, md_repo, dtf=True)
+
+        assert to_generate == ["md-dtf"]
+        assert md_repo.find_by_cache_key.call_args.args == ("src-1", "RKSYO-T", "M", "dtf")
+        created = md_repo.create.call_args.args[0]
+        assert created.variant == "dtf"
+        assert created.status == MfgDataStatus.PENDING.value
+
+    @pytest.mark.asyncio
+    async def test_flag_on_reorder_does_not_reuse_inkjet_row(self) -> None:
+        """同じ受注元・商品コード・サイズでも、インクジェット用の行（variant なし）は使い回さない."""
+        inkjet = self._inkjet_row()
+
+        async def find_by_cache_key(
+            source: str | None, code: str, size: str | None, variant: str | None
+        ) -> ManufacturingData | None:
+            return inkjet if variant is None else None
+
+        item = _v2_item(product_code="RKSYO-T", product_type="tshirt", size="M",
+                        layers=("design",))
+        md_repo = AsyncMock()
+        md_repo.find_by_cache_key.side_effect = find_by_cache_key
+        md_repo.create.side_effect = lambda m: _assign_id(m, "md-dtf")
+
+        to_generate, _ = await self._prepare(item, md_repo, dtf=True)
+
+        assert item.manufacturing_data_id == "md-dtf"
+        assert to_generate == ["md-dtf"]
+        # 既存のインクジェット用の行には触れない
+        assert inkjet.status == MfgDataStatus.READY.value
+        assert item.status == OrderItemStatus.PREPARING_ORDER.value
+
+    @pytest.mark.asyncio
+    async def test_flag_on_reuses_existing_dtf_row(self) -> None:
+        dtf_row = ManufacturingData(
+            product_code="RKSYO-T", product_type="tshirt", size="M", variant="dtf"
+        )
+        dtf_row.id = "md-dtf"
+        dtf_row.status = MfgDataStatus.READY.value
+        item = _v2_item(product_code="RKSYO-T", product_type="tshirt", size="M",
+                        layers=("design",))
+        md_repo = AsyncMock()
+        md_repo.find_by_cache_key.return_value = dtf_row
+
+        to_generate, _ = await self._prepare(item, md_repo, dtf=True)
+
+        assert to_generate == []
+        assert item.manufacturing_data_id == "md-dtf"
+        md_repo.create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_flag_on_failed_dtf_row_is_reset_keeping_variant(self) -> None:
+        dtf_row = ManufacturingData(
+            product_code="RKSYO-T", product_type="tshirt", size="M", variant="dtf"
+        )
+        dtf_row.id = "md-dtf"
+        dtf_row.status = MfgDataStatus.FAILED.value
+        item = _v2_item(product_code="RKSYO-T", product_type="tshirt", size="M",
+                        layers=("design",))
+        md_repo = AsyncMock()
+        md_repo.find_by_cache_key.return_value = dtf_row
+
+        to_generate, _ = await self._prepare(item, md_repo, dtf=True)
+
+        assert to_generate == ["md-dtf"]
+        assert dtf_row.status == MfgDataStatus.PENDING.value
+        assert dtf_row.variant == "dtf"
+
+    @pytest.mark.asyncio
+    async def test_flag_on_unmappable_tshirt_creates_failed_dtf_row(self) -> None:
+        """マッピングできない T シャツの失敗行も dtf にする（インクジェット用の行と同じキーにしない）."""
+        item = _v2_item(product_code="RKSYO-T", product_type="tshirt", size="XXL",
+                        layers=("design",))
+        md_repo = AsyncMock()
+        md_repo.create.side_effect = lambda m: _assign_id(m, "md-bad")
+
+        await self._prepare(item, md_repo, dtf=True)
+
+        created = md_repo.create.call_args.args[0]
+        assert created.status == MfgDataStatus.FAILED.value
+        assert created.variant == "dtf"
+
+    @pytest.mark.asyncio
+    async def test_flag_on_does_not_change_acrylic_variant(self) -> None:
+        item = _v2_item()  # keychain color+cutline
+        md_repo = AsyncMock()
+        md_repo.find_by_cache_key.return_value = None
+        md_repo.create.side_effect = lambda m: _assign_id(m, "md-new")
+
+        await self._prepare(item, md_repo, dtf=True)
+
+        assert md_repo.find_by_cache_key.call_args.args == ("src-1", "RKSYO-1", "50x50mm", "clear")
+
+    # --- 生成: 行の variant で作り方を決める ---
+
+    @staticmethod
+    def _claimed(variant: str | None) -> ManufacturingData:
+        md = ManufacturingData(
+            product_code="RKSYO-T", product_type="tshirt", size="M", variant=variant
+        )
+        md.id = "md-1"
+        md.status = MfgDataStatus.GENERATING.value
+        md.source_images = [{"layer_type": "design", "url": "https://x/design.png"}]
+        md.attempts = 1
+        md.lease_expires_at = _LEASE
+        return md
+
+    async def _generate(
+        self, md: ManufacturingData, generated: GeneratedFile, *, dtf: bool
+    ) -> tuple[Any, Any]:
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        generate_file = MagicMock(return_value=generated)
+        file_storage = MagicMock()
+        file_storage.save = AsyncMock(return_value="manufacturing_data/out.pdf")
+        svc = _service(md_repo, file_storage=file_storage, generate_file=generate_file)
+        svc._download_source_images = AsyncMock(return_value={"design": b"d"})
+        with patch.object(settings, "MFG_DTF_ENABLED", dtf):
+            assert await svc.generate("md-1", _LEASE) == mds.GenerationOutcome.READY
+        return generate_file, md_repo
+
+    @pytest.mark.asyncio
+    async def test_pending_inkjet_row_is_generated_as_inkjet_after_switch(self) -> None:
+        """フラグ無効の時に作られた生成待ちの行は、フラグ有効後もインクジェットで作る."""
+        md = self._claimed(None)
+        generate_file, md_repo = await self._generate(
+            md, GeneratedFile("tshirt_M.pdf", b"PDF"), dtf=True
+        )
+
+        spec = generate_file.call_args.args[0]
+        assert spec.variant is None
+        assert md.source_dpi is None
+        assert md.white_plate is None
+        values = md_repo.finish_generation.call_args.kwargs["values"]
+        assert values["source_dpi"] is None
+
+    @pytest.mark.asyncio
+    async def test_dtf_row_is_generated_as_dtf_and_records_values(self) -> None:
+        """DTF 用の行は（設定が無効に戻っても）DTF のまま作り、結果の数値を記録する."""
+        md = self._claimed("dtf")
+        # 前回の生成の値（作り直しで上書きされる）
+        md.source_dpi = 50.0
+        md.white_plate = "mixed"
+        generated = GeneratedFile(
+            "tshirt_M.pdf",
+            b"PDF",
+            source_dpi=101.7,
+            art_width_mm=295.0,
+            art_height_mm=221.25,
+            art_top_below_rib_mm=136.0,
+            white_plate="color_only",
+        )
+        generate_file, md_repo = await self._generate(md, generated, dtf=False)
+
+        spec = generate_file.call_args.args[0]
+        assert (spec.product_type, spec.size, spec.variant) == ("tshirt", "M", "dtf")
+        assert md.status == MfgDataStatus.READY.value
+        assert (
+            md.source_dpi,
+            md.art_width_mm,
+            md.art_height_mm,
+            md.art_top_below_rib_mm,
+            md.white_plate,
+        ) == (101.7, 295.0, 221.25, 136.0, "color_only")
+        # 書き戻しはリースの条件付き UPDATE で行う（ORM の値だけを書き換えない）
+        values = md_repo.finish_generation.call_args.kwargs["values"]
+        assert values["white_plate"] == "color_only"
+        assert values["art_top_below_rib_mm"] == 136.0
+
+    @pytest.mark.asyncio
+    async def test_regenerated_dtf_row_stays_dtf(self) -> None:
+        """再生成（行を生成待ちへ戻す）では variant を変えず、次の生成も DTF で作る."""
+        md = self._claimed("dtf")
+        md.status = MfgDataStatus.READY.value
+        md.created_at = datetime.now(UTC)
+        md.updated_at = datetime.now(UTC)
+        md_repo = AsyncMock()
+        md_repo.find_by_id.return_value = md
+        order_repo = AsyncMock()
+        order_repo.has_manufacturing_or_delivered_items.return_value = False
+
+        with patch.object(settings, "MFG_DTF_ENABLED", False):
+            await _service(md_repo, order_repo).regenerate("md-1")
+        assert md.status == MfgDataStatus.PENDING.value
+        assert md.variant == "dtf"
+
+        md.status = MfgDataStatus.GENERATING.value
+        md.lease_expires_at = _LEASE
+        generate_file, _ = await self._generate(
+            md, GeneratedFile("tshirt_M.pdf", b"PDF", source_dpi=120.0), dtf=False
+        )
+        assert generate_file.call_args.args[0].variant == "dtf"
+        assert md.source_dpi == 120.0
+
+    def test_response_exposes_dtf_record(self) -> None:
+        md = self._claimed("dtf")
+        md.status = MfgDataStatus.READY.value
+        md.created_at = datetime.now(UTC)
+        md.updated_at = datetime.now(UTC)
+        md.source_dpi = 101.7
+        md.art_width_mm = 295.0
+        md.art_height_mm = 295.0
+        md.art_top_below_rib_mm = 115.5
+        md.white_plate = "mixed"
+
+        from app.schemas.manufacturing_data import (
+            ManufacturingDataDetailResponse,
+            ManufacturingDataResponse,
+        )
+
+        for schema in (ManufacturingDataResponse, ManufacturingDataDetailResponse):
+            body = schema.model_validate(md).model_dump()
+            assert body["source_dpi"] == 101.7
+            assert body["art_top_below_rib_mm"] == 115.5
+            assert body["white_plate"] == "mixed"
