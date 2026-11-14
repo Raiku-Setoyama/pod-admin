@@ -52,4 +52,7 @@ module "stack" {
   # **ステージングでは鳴らさない。** 使い捨て環境の失敗で本番の通知が埋まると、
   # 本物のアラートを読み飛ばすようになる。
   monitoring_enabled = false
+
+  # T シャツ・トートの DTF 版の製造データ（Issue #191）を、本番より先にステージングで有効にする。
+  mfg_dtf_enabled = true
 }

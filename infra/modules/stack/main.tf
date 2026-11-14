@@ -258,6 +258,9 @@ locals {
     # 一方こちらはメール本文に載る。**宛先は 1 つに定める**ので uri のままにする。
     ADMIN_BASE_URL         = module.web.uri
     MANUFACTURER_LOGIN_URL = "${module.web.uri}/manufacturer-login"
+
+    # 行を探す・作るのは API、作るのはワーカーなので、どちらにも同じ値を渡す。
+    MFG_DTF_ENABLED = tostring(var.mfg_dtf_enabled)
   }
 }
 
