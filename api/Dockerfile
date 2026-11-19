@@ -76,8 +76,8 @@ EXPOSE 8000
 # Run with uvicorn (development mode with reload)
 CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
-# Production stage
-FROM base AS production
+# 本番（production）とワーカー（worker）が共通に使う OS のパッケージ。
+FROM base AS runtime
 
 # Install Weasyprint dependencies and Japanese fonts
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -88,6 +88,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     shared-mime-info \
     fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
+
+# Production stage
+FROM runtime AS production
 
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
@@ -121,9 +124,27 @@ CMD ["sh", "-c", "exec uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:
 # API のイメージに、生成の依存（VectorCraft と numpy / scipy / pypdf）だけを足したもの。
 # **生成は API のサーバーでは動かさない**（REQ-0067 / ADR-0039）。起動コマンドは
 # Terraform の Job 定義（`uv run python -m app.worker`）が持つ。
-FROM production AS worker
+#
+# production の上に積まず、手順を並べ直している。**production の上に積むと、
+# アプリのコードが変わるたびに生成の依存（数百 MB）を入れ直し、キャッシュへの書き出しと
+# push までやり直す**（デプロイで最も時間を食っていた）。ここでは依存を入れてから
+# コードを COPY するので、依存の層は uv.lock が変わったときにしか作り直さない。
+# production の手順を変えたら、ここも合わせること。
+FROM runtime AS worker
 
 COPY --from=vectorcraft /opt/vectorcraft /opt/vectorcraft
 ENV GENERATOR_VECTORCRAFT_CLI=/opt/vectorcraft/bin/vectorcraft-cli
 
+COPY pyproject.toml uv.lock ./
+
+RUN uv sync --frozen --no-install-project --no-dev --extra generator
+
+COPY . .
+
 RUN uv sync --frozen --no-dev --extra generator
+
+RUN python -m compileall -q app
+
+ENV UV_NO_SYNC=1
+
+CMD ["sh", "-c", "exec uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

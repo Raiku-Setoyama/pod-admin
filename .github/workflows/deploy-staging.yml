@@ -6,6 +6,12 @@ name: deploy-staging
 on:
   push:
     branches: [main]
+    # ドキュメントだけの変更はイメージの中身を変えない（api/.dockerignore が *.md と docs/ を除く。
+    # web の *.md もビルドの成果物に入らない）。それだけのマージでデプロイを流さない。
+    # コードと一緒に変わったときは、通常どおり反映される。
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   # 反映だけをやり直したいときのために手動でも起動できるようにする。
   # **main 以外から起動しても GCP の認証で落ちる**（github-oidc の IAM 条件）。
   workflow_dispatch:
