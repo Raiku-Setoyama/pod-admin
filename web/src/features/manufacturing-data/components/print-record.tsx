@@ -59,12 +59,15 @@ function formatNumber(value: number): string {
  * dpi の表示。区分（149.9 は警告、150 は拡大）と食い違わないよう、**四捨五入せず切り捨てる**
  * （149.96 を「150 dpi・低解像度」と出さない）。
  */
+/** 印刷位置の下限（cm）。製造側の指定「リブ下の指定は最短 3cm」（#204。api の PRINT_POSITION_MIN_CM と同じ） */
+const PRINT_POSITION_MIN_CM = 3;
+
 /**
- * リブ下から絵柄の最上部まで（mm）を cm にする。**発注リストと同じく 0.1cm 単位に四捨五入**
- * （mm を整数に四捨五入してから 10 で割る。`(mm / 10).toFixed(1)` は 13.55 を 13.5 にしてしまう）。
+ * リブ下から絵柄の最上部まで（mm）を cm にする。**発注リストと同じく整数の cm に四捨五入し、
+ * 3cm 未満は 3cm**（#204。製造側は整数の cm で位置合わせをする）。
  */
 export function formatTopBelowRib(mm: number): string {
-  return `${(Math.round(mm) / 10).toFixed(1)} cm`;
+  return `${String(Math.max(Math.round(mm / 10), PRINT_POSITION_MIN_CM))} cm`;
 }
 
 export function formatDpi(dpi: number): string {

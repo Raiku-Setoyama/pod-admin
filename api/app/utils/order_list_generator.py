@@ -27,12 +27,13 @@ PRODUCT_TYPE_NAMES: dict[str, str] = {
 # DTF 版（T シャツ・トート）の発注リストに足す列の値（#189）。
 # メーカーは発注リストに書かれた位置をもとに製造側で位置合わせをする。
 PRINT_METHOD_DTF = "DTF印刷"
-# 印刷位置の基準の呼び方（「{基準}{n}cm」の {基準}）。
-# トートは取引先が呼び方を確認中（当社案＝メーカー回答と同じ「リブ下」）。確定したらここを変える。
+# 印刷位置の基準の呼び方（「{基準}{n}cm」の {基準}）。T シャツ・トートとも「リブ下」（製造側の回答、#204）。
 PRINT_POSITION_REFERENCE: dict[str, str] = {
     "tshirt": "リブ下",
     "tote_bag": "リブ下",
 }
+# 印刷位置の下限（cm）。製造側の指定「リブ下の指定は最短 3cm」（#204）
+PRINT_POSITION_MIN_CM = 3
 # 白版の種類（manufacturing_data.white_plate。値は生成 app/generator/dtf.py の WhitePlateKind）
 WHITE_PLATE_LABELS: dict[str, str] = {
     "color_only": "カラーのみ（縮小なし）",
@@ -73,17 +74,19 @@ def format_product_detail(
 
 
 def format_print_position(product_type: str, top_below_rib_mm: float | None) -> str:
-    """リブ下から絵柄の最上部まで（mm）を発注リストの印刷位置（例: ``リブ下13.6cm``）にする.
+    """リブ下から絵柄の最上部まで（mm）を発注リストの印刷位置（例: ``リブ下14cm``）にする.
 
-    0.1cm 単位に四捨五入する（組み込みの ``round`` は偶数丸めで 13.55 が 13.6 にならないことが
-    あるので ``Decimal`` の ``ROUND_HALF_UP``）。値が無いとき・DTF 版の無い商品は空文字。
+    製造側の指定（#204）で整数の cm に四捨五入し、``PRINT_POSITION_MIN_CM`` 未満は下限にそろえる。
+    組み込みの ``round`` は偶数丸めで 13.5 が 14 にならないので ``Decimal`` の ``ROUND_HALF_UP``。
+    データは絵柄の外形で切り抜いていて位置を持たないので、丸めで変わるのはこの値だけ。
+    値が無いとき・DTF 版の無い商品は空文字。
     """
     reference = PRINT_POSITION_REFERENCE.get(product_type)
     if top_below_rib_mm is None or reference is None or not math.isfinite(top_below_rib_mm):
         return ""
     # float の 2 進誤差を持ち込まないよう、10 進の文字列を経由する
-    cm = (Decimal(str(top_below_rib_mm)) / 10).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
-    return f"{reference}{cm}cm"
+    cm = (Decimal(str(top_below_rib_mm)) / 10).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return f"{reference}{max(int(cm), PRINT_POSITION_MIN_CM)}cm"
 
 
 def format_white_plate(white_plate: str | None) -> str:
@@ -210,7 +213,7 @@ class OrderListGenerator:
         T シャツ・トートで DTF 版の製造データ（variant ``dtf``）の明細が 1 件でもあるときだけ、
         「商品種類」の右に 3 列を足す（#189。インクジェット版の明細は 3 列とも空欄）:
         - 印刷方法: ``DTF印刷``
-        - 印刷位置: ``リブ下13.6cm``（manufacturing_data.art_top_below_rib_mm を 0.1cm 単位に四捨五入）
+        - 印刷位置: ``リブ下14cm``（manufacturing_data.art_top_below_rib_mm を整数の cm に四捨五入。最短 3cm）
         - 白版: ``カラーのみ（縮小なし）`` など（manufacturing_data.white_plate）
 
         Args:

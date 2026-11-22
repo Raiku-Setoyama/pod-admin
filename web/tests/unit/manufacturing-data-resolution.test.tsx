@@ -72,11 +72,17 @@ describe('formatDpi', () => {
 })
 
 describe('formatTopBelowRib', () => {
-  it('発注リストと同じく 0.1cm 単位に四捨五入する', () => {
-    expect(formatTopBelowRib(135.5)).toBe('13.6 cm')
-    expect(formatTopBelowRib(135.45)).toBe('13.5 cm')
-    expect(formatTopBelowRib(136)).toBe('13.6 cm')
-    expect(formatTopBelowRib(41)).toBe('4.1 cm')
+  it('発注リストと同じく整数の cm に四捨五入する', () => {
+    expect(formatTopBelowRib(135)).toBe('14 cm')
+    expect(formatTopBelowRib(134.99)).toBe('13 cm')
+    expect(formatTopBelowRib(125)).toBe('13 cm')
+    expect(formatTopBelowRib(41)).toBe('4 cm')
+  })
+
+  it('3cm 未満は 3cm にする', () => {
+    expect(formatTopBelowRib(0)).toBe('3 cm')
+    expect(formatTopBelowRib(34.9)).toBe('3 cm')
+    expect(formatTopBelowRib(35)).toBe('4 cm')
   })
 })
 
@@ -161,7 +167,7 @@ describe('ManufacturingDataDetailSheet の印刷の条件（DTF）', () => {
     expect(within(section).getByText('低解像度')).toBeInTheDocument()
     expect(within(section).getByText(/仕上がりが粗くなる場合があります/)).toBeInTheDocument()
     expect(within(section).getByText('295 × 295 mm')).toBeInTheDocument()
-    expect(within(section).getByText('13.6 cm')).toBeInTheDocument()
+    expect(within(section).getByText('14 cm')).toBeInTheDocument()
     expect(within(section).getByText('混在（カラー部分を縮小済み）')).toBeInTheDocument()
   })
 
