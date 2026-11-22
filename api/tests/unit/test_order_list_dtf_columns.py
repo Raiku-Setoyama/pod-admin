@@ -84,19 +84,26 @@ class TestFormatPrintPosition:
     @pytest.mark.parametrize(
         ("mm", "expected"),
         [
-            (172.4, "リブ下17.2cm"),
-            (135.5, "リブ下13.6cm"),  # 偶数丸めなら 13.6 にならないことがある値
-            (136.45, "リブ下13.6cm"),
-            (116.0, "リブ下11.6cm"),
-            (172.25, "リブ下17.2cm"),
-            (100.0, "リブ下10.0cm"),
+            (172.4, "リブ下17cm"),
+            (135.0, "リブ下14cm"),  # 偶数丸めなら 13 になる値
+            (134.99, "リブ下13cm"),
+            (136.45, "リブ下14cm"),
+            (125.0, "リブ下13cm"),  # 偶数丸めなら 12 になる値
+            (100.0, "リブ下10cm"),
         ],
     )
-    def test_rounds_half_up_to_tenth_cm(self, mm: float, expected: str) -> None:
+    def test_rounds_half_up_to_whole_cm(self, mm: float, expected: str) -> None:
         assert format_print_position("tshirt", mm) == expected
 
     def test_tote_uses_tote_reference(self) -> None:
-        assert format_print_position("tote_bag", 41.0) == "リブ下4.1cm"
+        assert format_print_position("tote_bag", 41.0) == "リブ下4cm"
+
+    @pytest.mark.parametrize(
+        ("mm", "expected"),
+        [(0.0, "リブ下3cm"), (24.9, "リブ下3cm"), (34.9, "リブ下3cm"), (35.0, "リブ下4cm")],
+    )
+    def test_never_below_minimum(self, mm: float, expected: str) -> None:
+        assert format_print_position("tote_bag", mm) == expected
 
     def test_blank_without_value_or_for_non_dtf_product(self) -> None:
         assert format_print_position("tshirt", None) == ""
@@ -127,10 +134,10 @@ class TestGenerateOrderListXlsxDtfColumns:
     @pytest.mark.parametrize(
         ("size", "top_mm", "position"),
         [
-            ("S", 116.0, "リブ下11.6cm"),
-            ("M", 116.4, "リブ下11.6cm"),
-            ("L", 136.0, "リブ下13.6cm"),
-            ("XL", 135.5, "リブ下13.6cm"),
+            ("S", 116.0, "リブ下12cm"),
+            ("M", 116.4, "リブ下12cm"),
+            ("L", 136.0, "リブ下14cm"),
+            ("XL", 135.5, "リブ下14cm"),
         ],
     )
     def test_tshirt_dtf_adds_three_columns(
@@ -167,7 +174,7 @@ class TestGenerateOrderListXlsxDtfColumns:
         assert _row(ws, 2)[3:7] == [
             "トートバッグ - M - 白",
             "DTF印刷",
-            "リブ下4.1cm",
+            "リブ下4cm",
             "ホワイトのみ（縮小なし）",
         ]
 
@@ -182,7 +189,7 @@ class TestGenerateOrderListXlsxDtfColumns:
         # 空欄のセルは openpyxl では None として読み戻る
         assert _row(ws, 2)[4:7] == [None, None, None]
         assert _row(ws, 2)[7:] == [2, "Tシャツ - XL - 正面 - 白【個数】2個_ORD-1_INK-1_1113"]
-        assert _row(ws, 3)[4:7] == ["DTF印刷", "リブ下13.6cm", "カラーのみ（縮小なし）"]
+        assert _row(ws, 3)[4:7] == ["DTF印刷", "リブ下14cm", "カラーのみ（縮小なし）"]
 
     def test_inkjet_only_group_keeps_six_columns(self, generator: OrderListGenerator) -> None:
         ws = _sheet(
@@ -334,11 +341,11 @@ class TestGenerateOrderDocumentsDtfColumns:
 
         tshirt = _sheet(zf.read("Tシャツ- 正面 -_20261113/Tシャツ- 正面 -_発注リスト_20261113.xlsx"))
         assert _headers(tshirt) == DTF_HEADERS
-        assert _row(tshirt, 2)[4:7] == ["DTF印刷", "リブ下13.6cm", "カラーのみ（縮小なし）"]
+        assert _row(tshirt, 2)[4:7] == ["DTF印刷", "リブ下14cm", "カラーのみ（縮小なし）"]
 
         tote = _sheet(zf.read("トートバッグ_20261113/トートバッグ_発注リスト_20261113.xlsx"))
         assert _headers(tote) == DTF_HEADERS
-        assert _row(tote, 2)[4:7] == ["DTF印刷", "リブ下4.1cm", "混在（カラー部分を縮小済み）"]
+        assert _row(tote, 2)[4:7] == ["DTF印刷", "リブ下4cm", "混在（カラー部分を縮小済み）"]
 
         keychain = _sheet(
             zf.read("アクリルキーホルダー_20261113/アクリルキーホルダー_発注リスト_20261113.xlsx")
