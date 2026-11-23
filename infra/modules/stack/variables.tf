@@ -204,7 +204,7 @@ variable "mfg_dtf_enabled" {
   description = <<-EOT
     true なら、T シャツ・トートの製造データを DTF 版（PDF/X-4・白版 2 つ）で作る（Issue #191）。
     アプリの設定 MFG_DTF_ENABLED として api / worker / migrate に同じ値を渡す。
-    **本番は切り替え日が決まるまで false のまま。** 先にステージングで確かめる。
+    既定は false。本番・ステージングとも envs で true にしている（本番は 2026-11-23 から）。
   EOT
   type        = bool
   default     = false
