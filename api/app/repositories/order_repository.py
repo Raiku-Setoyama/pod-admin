@@ -26,6 +26,15 @@ if TYPE_CHECKING:
     from app.schemas.shipment import PendingOrderStatus
 
 
+def item_cost_column() -> ColumnElement[int]:
+    """明細のメーカー原価（請求書・発注リストの単価）.
+
+    明細の作成時点の原価（OrderItem.cost、#207）を使う。NULL の明細だけ製品の今の原価に
+    戻す。NULL になるのは、マイグレーションの後で旧リビジョンが登録した明細（デプロイの間）。
+    """
+    return func.coalesce(OrderItem.cost, Product.cost).label("cost")
+
+
 def order_list_conditions(
     *,
     status: OrderStatus | None = None,
@@ -343,7 +352,7 @@ class OrderRepository:
                 OrderItem,
                 Order.order_number,
                 Order.ordered_at,
-                Product.cost,
+                item_cost_column(),
             )
             .join(Order, OrderItem.order_id == Order.id)
             .join(Product, OrderItem.product_id == Product.id)
@@ -499,7 +508,7 @@ class OrderRepository:
                 Order.order_number,
                 Order.ordered_at,
                 Order.customer_name,
-                Product.cost,
+                item_cost_column(),
                 OrderItem.status,  # item_status
                 Order.status,  # order_status（後方互換性のため）
                 Manufacturer.lead_time_days,
@@ -586,7 +595,7 @@ class OrderRepository:
                 Order.order_number,
                 Order.ordered_at,
                 Order.customer_name,
-                Product.cost,
+                item_cost_column(),
                 OrderItem.status,
                 Manufacturer.id.label("manufacturer_id"),
                 Manufacturer.name.label("manufacturer_name"),

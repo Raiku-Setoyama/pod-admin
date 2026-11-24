@@ -111,6 +111,7 @@ async def create_test_shipment(session: AsyncSession) -> None:
         product_name="テスト商品 アクリルキーホルダー",
         product_type=product.product_type,
         price=1500,
+        cost=product.cost,
         quantity=2,
         size=product.size,
         position=product.position,

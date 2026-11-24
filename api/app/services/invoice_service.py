@@ -117,7 +117,7 @@ class InvoiceService:
             _order_status,
             _lead_time_days,
         ) in rows:
-            # cost is the unit cost from manufacturer's unit_prices
+            # cost は明細の作成時点のメーカー原価（item_cost_column()、#207）
             unit_price = cost if cost else 0
             amount = unit_price * order_item.quantity
             items.append({

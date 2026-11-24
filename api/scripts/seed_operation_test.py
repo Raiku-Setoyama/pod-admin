@@ -465,6 +465,7 @@ async def seed_orders(
                     product_name=product_name,
                     product_type=product.product_type,
                     price=price,
+                    cost=product.cost,
                     quantity=quantity,
                     size=product.size,
                     position=product.position,
