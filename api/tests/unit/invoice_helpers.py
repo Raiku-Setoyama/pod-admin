@@ -22,7 +22,8 @@ ORDERED_ITEM_COLUMNS = [
     "Order.order_number",
     "Order.ordered_at",
     "Order.customer_name",
-    "Product.cost",
+    # 明細の作成時点の原価。NULL なら製品の原価（item_cost_column()、#207）
+    "coalesce(order_items.cost, products.cost)",
     "OrderItem.status",
     "Order.status",
     "Manufacturer.lead_time_days",

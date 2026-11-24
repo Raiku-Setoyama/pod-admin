@@ -239,6 +239,7 @@ def make_order_items(
             product_type=product.product_type,
             status=item_status,
             price=price,
+            cost=product.cost,
             quantity=quantity,
             size=product.size,
             position=product.position,

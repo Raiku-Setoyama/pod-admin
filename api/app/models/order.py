@@ -226,6 +226,11 @@ class OrderItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
     price: Mapped[int] = mapped_column(Integer)
+    # メーカー原価（単価）。明細の作成時点の Product.cost を残す（#207）。
+    # 製品の原価を後から変えても、既存の明細の請求書・発注リストの金額は変わらない。
+    # DB では NULL を許す: マイグレーションの後、新リビジョンに切り替わるまでの間に旧リビジョンが
+    # 原価なしで明細を登録しても落ちないように。読む側は item_cost_column() で製品の原価に戻す。
+    cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     size: Mapped[str | None] = mapped_column(String(50), nullable=True)
     position: Mapped[str | None] = mapped_column(String(50), nullable=True)

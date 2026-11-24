@@ -118,7 +118,7 @@ class OrderListGenerator:
         - 製品番号: OrderItem.uid
         - 商品名: OrderItem.product_name
         - 商品種類: {商品種類} - {サイズ} - {位置} - {色} (ex. Tシャツ - XL - 正面 - 白)
-        - 原価: Product.cost
+        - 原価: OrderItem.cost（明細の作成時点の原価。NULL なら Product.cost）
         - 個数: OrderItem.quantity
         - シール用テキスト情報: {商品名}【個数】{個数}個_{注文番号}_{製品番号}_{MMDD}
 
